@@ -1,0 +1,673 @@
+# =============================================================================
+# Summoner's Ledger — Menu + Save System + Multi-Folder Assets + Rare Vessels
+# =============================================================================
+
+# ===== LAYOUT / WINDOW =======================================================
+import os, glob, random, json
+import pygame
+from pygame.math import Vector2
+pygame.init()
+
+# Ensure relative paths work regardless of how the script is launched
+os.chdir(os.path.dirname(os.path.abspath(__file__)))
+
+APP_NAME = "Summoner's Ledger"
+WIDTH, HEIGHT = 800, 480
+FLAGS = pygame.RESIZABLE
+screen = pygame.display.set_mode((WIDTH, HEIGHT), FLAGS)
+pygame.display.set_caption(APP_NAME)
+clock = pygame.time.Clock()
+
+# ===== WORLD ================================================================
+WORLD_W, WORLD_H = 2400, 100000
+TILE = 64
+BG_COLOR   = (34, 40, 48)
+GRID_COLOR = (50, 58, 68)
+
+# ===== SAVE SYSTEM ==========================================================
+SAVE_DIR  = "Saves"
+SAVE_PATH = os.path.join(SAVE_DIR, "savegame.json")
+
+def ensure_save_dir():
+    if not os.path.exists(SAVE_DIR):
+        os.makedirs(SAVE_DIR, exist_ok=True)
+
+def has_save():
+    return os.path.exists(SAVE_PATH)
+
+def save_game():
+    """Write a minimal snapshot of the run needed to 'Continue'."""
+    ensure_save_dir()
+    data = {
+        "player_y": float(player_pos.y),
+        "distance_travelled": float(distance_travelled),
+        "next_event_at": float(next_event_at),
+        # you can add more later (seed, difficulty, etc.)
+    }
+    try:
+        with open(SAVE_PATH, "w", encoding="utf-8") as f:
+            json.dump(data, f)
+        print(f"💾 Saved game -> {SAVE_PATH}")
+    except Exception as e:
+        print(f"⚠️ Save failed: {e}")
+
+def load_game():
+    """Load snapshot; if something fails, return False and keep current defaults."""
+    global player_pos, distance_travelled, next_event_at
+    try:
+        with open(SAVE_PATH, "r", encoding="utf-8") as f:
+            data = json.load(f)
+        player_pos.y = float(data.get("player_y", player_pos.y))
+        # X is locked to START_X later, so we don't store it
+        # clamp into world bounds
+        player_pos.y = clamp(player_pos.y, PLAYER_HALF.y, WORLD_H - PLAYER_HALF.y)
+        # restore progress pacing
+        set_distance_travelled(float(data.get("distance_travelled", 0.0)))
+        set_next_event_at(float(data.get("next_event_at", 200.0)))
+        # clear any leftover world spawns (we repopulate naturally)
+        rivals_on_map.clear()
+        vessels_on_map.clear()
+        print(f"📂 Loaded save from {SAVE_PATH}")
+        return True
+    except Exception as e:
+        print(f"⚠️ Load failed: {e}")
+        return False
+
+def delete_save():
+    try:
+        if os.path.exists(SAVE_PATH):
+            os.remove(SAVE_PATH)
+            print("🗑️ Deleted savegame.json")
+            return True
+    except Exception as e:
+        print(f"⚠️ Delete failed: {e}")
+    return False
+
+# ===== ASSETS ==============================================================#
+ASSETS_MAP_DIR              = os.path.join("Assets", "Map")
+ASSETS_PLAYABLE_DIR         = os.path.join("Assets", "PlayableCharacters")
+ASSETS_SUMMONERS_MALE_DIR   = os.path.join("Assets", "SummonersMale")
+ASSETS_SUMMONERS_FEMALE_DIR = os.path.join("Assets", "SummonersFemale")
+ASSETS_SUMMONERS_BOSS_DIR   = os.path.join("Assets", "SummonersBoss")
+ASSETS_VESSELS_MALE_DIR     = os.path.join("Assets", "VesselsMale")
+ASSETS_VESSELS_FEMALE_DIR   = os.path.join("Assets", "VesselsFemale")
+ASSETS_VESSELS_RARE_DIR     = os.path.join("Assets", "RareVessels")
+
+SPRITE_SIZE = (108, 108)
+PLAYER_FILE = "CharacterMale.png"  # any file inside PlayableCharacters
+
+def load_image(path: str, size=SPRITE_SIZE) -> pygame.Surface:
+    img = pygame.image.load(path).convert_alpha()
+    if size:
+        img = pygame.transform.scale(img, size)
+    return img
+
+def load_all_sprites(folders, pattern="*.png"):
+    """Load all sprites matching pattern from a list of folders -> list[(name, surface)]."""
+    results = []
+    for folder in folders:
+        for path in glob.glob(os.path.join(folder, pattern)):
+            name = os.path.splitext(os.path.basename(path))[0]
+            try:
+                results.append((name, load_image(path)))
+            except Exception as e:
+                print(f"⚠️ Failed to load sprite {path}: {e}")
+    return results
+
+# Player sprite
+player_image = load_image(os.path.join(ASSETS_PLAYABLE_DIR, PLAYER_FILE))
+PLAYER_HALF  = Vector2(player_image.get_width() / 2, player_image.get_height() / 2)
+
+# Load Summoners (male + female)
+RIVAL_SUMMONERS = load_all_sprites(
+    [ASSETS_SUMMONERS_MALE_DIR, ASSETS_SUMMONERS_FEMALE_DIR],
+    pattern="*Summoner*.png"
+)
+
+# Load common Vessels (male + female)
+VESSELS = load_all_sprites(
+    [ASSETS_VESSELS_MALE_DIR, ASSETS_VESSELS_FEMALE_DIR],
+    pattern="*Vessel*.png"
+)
+
+# Load rare Vessels (e.g., RVesselSorcerer.png, RVesselWizard.png)
+RARE_VESSELS = load_all_sprites(
+    [ASSETS_VESSELS_RARE_DIR],
+    pattern="RVessel*.png"
+)
+
+print(f"🧪 Loaded: {len(RIVAL_SUMMONERS)} summoners, {len(VESSELS)} vessels, {len(RARE_VESSELS)} rare")
+if not RIVAL_SUMMONERS:
+    print("⚠️ No summoners found. Expected MSummoner1-6 / FSummoner1-6.")
+if not VESSELS:
+    print("⚠️ No vessels found. Expected MVessel*/FVessel*.")
+
+# ===== STATE ================================================================#
+# Player (vertical-only control)
+player_speed = 260
+player_pos = Vector2(WORLD_W // 2, WORLD_H - PLAYER_HALF.y - 10)  # start near absolute bottom
+START_X = player_pos.x  # lock X
+
+# Encounter pacing
+distance_travelled = 0.0
+next_event_at = 120                 # spawn sooner at the start
+EVENT_MIN, EVENT_MAX = 160, 320     # shorter distance between spawns
+
+def set_distance_travelled(v):
+    global distance_travelled
+    distance_travelled = float(v)
+
+def set_next_event_at(v):
+    global next_event_at
+    next_event_at = float(v)
+
+# Bias: chance that a spawn is a Vessel (shadow), not a Summoner
+ENCOUNTER_WEIGHT_VESSEL = 0.75  # 75% Vessel, 25% Summoner
+
+# How far ahead to place new spawns (relative to player)
+SPAWN_GAP_MIN = 1500
+SPAWN_GAP_MAX = 10000
+
+# Encounter popup state
+in_encounter = False
+encounter_timer = 0.0
+encounter_name = ""
+encounter_sprite = None
+ENCOUNTER_SHOW_TIME = 2.0
+
+# Debug overlay for vessel shadows
+DEBUG_OVERWORLD = False  # set True to see magenta boxes around mist
+
+# Game mode
+MODE_MENU = "MENU"
+MODE_GAME = "GAME"
+game_mode = MODE_MENU
+
+# ===== SYSTEMS =============================================================#
+def clamp(v, lo, hi):
+    return max(lo, min(hi, v))
+
+def get_camera_offset(target_pos: Vector2, screen_w: int, screen_h: int) -> Vector2:
+    """Keep the player fixed near the bottom of the screen."""
+    bottom_margin = 40  # pixels from bottom edge
+    desired_screen_y = screen_h - (PLAYER_HALF.y + bottom_margin)
+    desired_x = target_pos.x - screen_w / 2
+    desired_y = target_pos.y - desired_screen_y
+    cam_x = clamp(desired_x, 0, max(0, WORLD_W - screen_w))
+    cam_y = clamp(desired_y, 0, max(0, WORLD_H - screen_h))
+    return Vector2(cam_x, cam_y)
+
+def draw_repeating_background(surface: pygame.Surface, cam_x: float, cam_y: float):
+    # Simple grid (you can swap to road tiling later)
+    surface.fill(BG_COLOR)
+    w, h = surface.get_size()
+    x = - (cam_x % TILE)
+    while x < w:
+        pygame.draw.line(surface, GRID_COLOR, (x, 0), (x, h))
+        x += TILE
+    y = - (cam_y % TILE)
+    while y < h:
+        pygame.draw.line(surface, GRID_COLOR, (0, y), (w, y))
+        y += TILE
+
+# ===== ACTORS (SUMMONERS) ===================================================#
+LANE_OFFSET = 140
+RIVAL_SPEED = 0
+ENCOUNTER_X_THRESHOLD = LANE_OFFSET + SPRITE_SIZE[0]
+FRONT_TOLERANCE = 4
+
+rivals_on_map = []  # list of dicts: {name, sprite, pos(Vector2), side}
+
+def spawn_rival_ahead():
+    """Spawn a rival some distance above the player, randomly left or right."""
+    if not RIVAL_SUMMONERS:
+        return
+    name, sprite = random.choice(RIVAL_SUMMONERS)
+    side = random.choice(["left", "right"])
+    x = START_X + (-LANE_OFFSET if side == "left" else LANE_OFFSET)
+    spawn_gap = random.randint(SPAWN_GAP_MIN, SPAWN_GAP_MAX)
+    y = player_pos.y - spawn_gap
+    rivals_on_map.append({
+        "name": name,
+        "sprite": sprite,
+        "pos": Vector2(x, y),
+        "side": side,
+    })
+
+def update_rivals(dt):
+    """Keep rivals stationary; trigger encounter when player's top reaches rival's bottom."""
+    global in_encounter, encounter_timer, encounter_name, encounter_sprite
+    if in_encounter:
+        return
+    triggered_index = None
+    player_top    = player_pos.y - PLAYER_HALF.y
+    player_bottom = player_pos.y + PLAYER_HALF.y
+    for i, r in enumerate(rivals_on_map):
+        same_lane = abs(r["pos"].x - player_pos.x) <= ENCOUNTER_X_THRESHOLD
+        rival_top    = r["pos"].y - SPRITE_SIZE[1] // 2
+        rival_bottom = r["pos"].y + SPRITE_SIZE[1] // 2
+        in_front = player_top <= (rival_bottom + FRONT_TOLERANCE)
+        overlapping_vertically = player_bottom >= (rival_top - FRONT_TOLERANCE)
+        if same_lane and in_front and overlapping_vertically:
+            in_encounter = True
+            encounter_timer = ENCOUNTER_SHOW_TIME
+            encounter_name = r["name"]
+            encounter_sprite = r["sprite"]
+            print(f"⚔️  Encounter: {encounter_name} crosses your path!")
+            triggered_index = i
+            break
+    if triggered_index is not None:
+        rivals_on_map.pop(triggered_index)
+    cutoff = player_pos.y + HEIGHT * 1.5
+    rivals_on_map[:] = [r for r in rivals_on_map if r["pos"].y < cutoff]
+
+def draw_rivals(cam):
+    for r in rivals_on_map:
+        pos = r["pos"]
+        screen.blit(
+            r["sprite"],
+            (pos.x - cam.x - SPRITE_SIZE[0] // 2,
+             pos.y - cam.y - SPRITE_SIZE[1] // 2)
+        )
+
+# ===== ACTORS (VESSELS) =====================================================#
+# Overworld shows a shadow/mist; the real Vessel is revealed on encounter.
+MIST_SPRITE_FILENAME = "mist.png"
+MIST_SPRITE_PATH = os.path.join(ASSETS_MAP_DIR, MIST_SPRITE_FILENAME)
+
+VESSEL_MIST = None
+if os.path.exists(MIST_SPRITE_PATH):
+    try:
+        VESSEL_MIST = load_image(MIST_SPRITE_PATH)  # scales to SPRITE_SIZE
+        print(f"✅ Loaded mist sprite: {MIST_SPRITE_PATH} size={VESSEL_MIST.get_size()}")
+    except Exception as e:
+        print(f"⚠️ Failed to load mist sprite at {MIST_SPRITE_PATH}: {e}")
+else:
+    print(f"⚠️ Could not find mist at {MIST_SPRITE_PATH}")
+
+VESSEL_LANE_OFFSET     = LANE_OFFSET
+VESSEL_X_THRESHOLD     = LANE_OFFSET + SPRITE_SIZE[0]
+VESSEL_FRONT_TOLERANCE = 4
+
+vessels_on_map = []  # list of dicts: {pos: Vector2, side: "left"/"right"}
+
+def spawn_vessel_shadow_ahead():
+    """Spawn a mist shadow some distance above the player (left/right lane)."""
+    side = random.choice(["left", "right"])
+    x = START_X + (-VESSEL_LANE_OFFSET if side == "left" else VESSEL_LANE_OFFSET)
+    spawn_gap = random.randint(SPAWN_GAP_MIN, SPAWN_GAP_MAX)
+    y = player_pos.y - spawn_gap
+    vessels_on_map.append({"pos": Vector2(x, y), "side": side})
+    print(f"🌫️  Spawned Vessel shadow at y={y:.0f}, side={side}")
+
+def update_vessels(dt):
+    """Keep shadows stationary; when you cross in front, reveal a random Vessel (encounter)."""
+    global in_encounter, encounter_timer, encounter_name, encounter_sprite
+    if in_encounter:
+        return
+    triggered_index = None
+    player_top    = player_pos.y - PLAYER_HALF.y
+    player_bottom = player_pos.y + PLAYER_HALF.y
+    for i, v in enumerate(vessels_on_map):
+        same_lane = abs(v["pos"].x - player_pos.x) <= VESSEL_X_THRESHOLD
+        rival_top    = v["pos"].y - SPRITE_SIZE[1] // 2
+        rival_bottom = v["pos"].y + SPRITE_SIZE[1] // 2
+        in_front = player_top <= (rival_bottom + VESSEL_FRONT_TOLERANCE)
+        overlapping_vertically = player_bottom >= (rival_top - VESSEL_FRONT_TOLERANCE)
+        if same_lane and in_front and overlapping_vertically:
+            # 0.5% rare chance, else common (male/female have equal weight in VESSELS).
+            rare_roll = random.random()
+            if RARE_VESSELS and rare_roll <= 0.005:
+                encounter_name, encounter_sprite = random.choice(RARE_VESSELS)
+                print(f"✨ Rare reveal: {encounter_name}")
+            elif VESSELS:
+                encounter_name, encounter_sprite = random.choice(VESSELS)
+                print(f"📜 Reveal: {encounter_name}")
+            else:
+                encounter_name, encounter_sprite = "Unknown Vessel", None
+                print("⚠️ No vessel sprites available.")
+            in_encounter = True
+            encounter_timer = ENCOUNTER_SHOW_TIME
+            triggered_index = i
+            break
+    if triggered_index is not None:
+        vessels_on_map.pop(triggered_index)
+    cutoff = player_pos.y + HEIGHT * 1.5
+    vessels_on_map[:] = [v for v in vessels_on_map if v["pos"].y < cutoff]
+
+def draw_vessels(cam):
+    """Draw mist shadows; in DEBUG, also draw a bright marker."""
+    for v in vessels_on_map:
+        pos = v["pos"]
+        screen_x = int(pos.x - cam.x - SPRITE_SIZE[0] // 2)
+        screen_y = int(pos.y - cam.y - SPRITE_SIZE[1] // 2)
+        if DEBUG_OVERWORLD:
+            rect = pygame.Rect(screen_x, screen_y, SPRITE_SIZE[0], SPRITE_SIZE[1])
+            pygame.draw.rect(screen, (255, 0, 255), rect, 2)
+            pygame.draw.circle(screen, (255, 255, 0), rect.center, 3)
+        if VESSEL_MIST:
+            screen.blit(VESSEL_MIST, (screen_x, screen_y))
+        else:
+            temp = pygame.Surface(SPRITE_SIZE, pygame.SRCALPHA)
+            temp.fill((30, 30, 30, 220))
+            pygame.draw.circle(
+                temp, (0, 0, 0, 255),
+                (SPRITE_SIZE[0] // 2, SPRITE_SIZE[1] // 2),
+                SPRITE_SIZE[0] // 2
+            )
+            screen.blit(temp, (screen_x, screen_y))
+
+# ===== MENU UI ==============================================================
+FONT_TITLE = pygame.font.SysFont(None, 64)
+FONT_BTN   = pygame.font.SysFont(None, 36)
+BTN_W, BTN_H = 280, 52
+BTN_MARGIN = 16
+
+class Button:
+    def __init__(self, label, center, enabled=True):
+        self.label = label
+        self.center = center
+        self.enabled = enabled
+        self.rect = pygame.Rect(0, 0, BTN_W, BTN_H)
+        self.rect.center = center
+
+    def draw(self, surf):
+        color_bg = (60, 70, 85) if self.enabled else (40, 45, 55)
+        color_border = (120, 135, 160)
+        mx, my = pygame.mouse.get_pos()
+        hovered = self.rect.collidepoint(mx, my) and self.enabled
+        if hovered:
+            color_bg = (80, 95, 115)
+        pygame.draw.rect(surf, color_bg, self.rect, border_radius=10)
+        pygame.draw.rect(surf, color_border, self.rect, 2, border_radius=10)
+        text = FONT_BTN.render(self.label, True, (240, 240, 240) if self.enabled else (160, 160, 160))
+        surf.blit(text, text.get_rect(center=self.rect.center))
+
+    def clicked(self, event):
+        if not self.enabled: return False
+        return event.type == pygame.MOUSEBUTTONDOWN and event.button == 1 and self.rect.collidepoint(event.pos)
+
+def draw_menu():
+    screen.fill((20, 24, 30))
+    title = FONT_TITLE.render(APP_NAME, True, (230, 230, 240))
+    screen.blit(title, title.get_rect(center=(WIDTH//2, HEIGHT//2 - 130)))
+
+    # Buttons
+    can_continue = has_save()
+    buttons = [
+        Button("New Game",        (WIDTH//2, HEIGHT//2 - 30)),
+        Button("Continue Game",   (WIDTH//2, HEIGHT//2 + 30), enabled=can_continue),
+        Button("Delete Save",     (WIDTH//2, HEIGHT//2 + 90), enabled=can_continue),
+        Button("Quit",            (WIDTH//2, HEIGHT//2 + 150)),
+    ]
+    for b in buttons: b.draw(screen)
+    pygame.display.flip()
+    return buttons
+
+def start_new_game():
+    global player_pos
+    player_pos = Vector2(WORLD_W // 2, WORLD_H - PLAYER_HALF.y - 10)
+    reset_run_state()
+
+def continue_game():
+    # Start defaults, then try to load
+    start_new_game()
+    load_game()
+
+def reset_run_state():
+    """Reset per-run variables—used by New Game and initial load."""
+    global in_encounter, encounter_timer, encounter_name, encounter_sprite
+    global rivals_on_map, vessels_on_map
+    in_encounter = False
+    encounter_timer = 0.0
+    encounter_name = ""
+    encounter_sprite = None
+    rivals_on_map.clear()
+    vessels_on_map.clear()
+    set_distance_travelled(0.0)
+    set_next_event_at(120.0)
+
+# ===== UPDATE ===============================================================
+def handle_window_events_menu():
+    global WIDTH, HEIGHT, screen
+    for event in pygame.event.get():
+        if event.type == pygame.QUIT:
+            return False, None
+        elif event.type == pygame.VIDEORESIZE:
+            WIDTH, HEIGHT = event.w, event.h
+            screen = pygame.display.set_mode((WIDTH, HEIGHT), FLAGS)
+        else:
+            return True, event
+    return True, None
+
+def handle_window_events_game():
+    global WIDTH, HEIGHT, screen, game_mode
+    for event in pygame.event.get():
+        if event.type == pygame.QUIT:
+            save_game()  # autosave on quit
+            return False
+        elif event.type == pygame.VIDEORESIZE:
+            WIDTH, HEIGHT = event.w, event.h
+            screen = pygame.display.set_mode((WIDTH, HEIGHT), FLAGS)
+        elif event.type == pygame.KEYDOWN:
+            if event.key == pygame.K_ESCAPE:
+                # Save and go back to menu
+                save_game()
+                switch_to_menu()
+            elif event.key == pygame.K_F5:
+                save_game()
+    return True
+
+def update_player(dt):
+    global player_pos, distance_travelled
+    keys = pygame.key.get_pressed()
+    move = Vector2(0, 0)
+    # vertical-only control
+    move.y += (keys[pygame.K_DOWN] or keys[pygame.K_s]) - (keys[pygame.K_UP] or keys[pygame.K_w])
+
+    prev_y = player_pos.y
+    if move.length_squared() > 0:
+        move = move.normalize() * player_speed * dt
+        player_pos += move
+        # Only count ascent (Y decreasing)
+        distance_travelled += max(0.0, prev_y - player_pos.y)
+
+    # Lock X and clamp Y
+    player_pos.x = START_X
+    player_pos.y = clamp(player_pos.y, PLAYER_HALF.y, WORLD_H - PLAYER_HALF.y)
+
+def try_trigger_encounter():
+    """Periodically spawn either a rival summoner (visible) or a wild vessel shadow."""
+    global next_event_at, in_encounter
+    if in_encounter:
+        return
+    if distance_travelled >= next_event_at:
+        roll = random.random()
+        if roll < ENCOUNTER_WEIGHT_VESSEL:
+            spawn_vessel_shadow_ahead()
+        elif RIVAL_SUMMONERS:
+            spawn_rival_ahead()
+        else:
+            spawn_vessel_shadow_ahead()
+        next_event_at += random.randint(EVENT_MIN, EVENT_MAX)
+
+def update_encounter_popup(dt):
+    """Show/dismiss the encounter popup."""
+    global in_encounter, encounter_timer, encounter_name, encounter_sprite
+    if not in_encounter:
+        return False
+    encounter_timer -= dt
+
+    # Draw scene (no movement during popup)
+    cam = get_camera_offset(player_pos, WIDTH, HEIGHT)
+    draw_repeating_background(screen, cam.x, cam.y)
+    draw_vessels(cam)  # draw shadows during popup too
+    draw_rivals(cam)
+    screen.blit(
+        player_image,
+        (player_pos.x - cam.x - PLAYER_HALF.x,
+         player_pos.y - cam.y - PLAYER_HALF.y)
+    )
+
+    # Popup UI
+    panel_w = min(440, WIDTH - 40)
+    panel_h = 160
+    panel = pygame.Surface((panel_w, panel_h), pygame.SRCALPHA)
+    panel.fill((0, 0, 0, 190))
+    px = (WIDTH - panel_w) // 2
+    py = 40
+    screen.blit(panel, (px, py))
+
+    font = pygame.font.SysFont(None, 28)
+    title = f"Encounter: {encounter_name}"
+    screen.blit(font.render(title, True, (230, 230, 230)), (px + 16, py + 12))
+
+    if encounter_sprite:
+        screen.blit(encounter_sprite, (px + 16, py + 48))
+
+    pygame.display.flip()
+
+    if encounter_timer <= 0:
+        in_encounter = False
+        encounter_name = ""
+        encounter_sprite = None
+
+    return True
+
+# ===== RENDER ===============================================================
+def render_game():
+    cam = get_camera_offset(player_pos, WIDTH, HEIGHT)
+    draw_repeating_background(screen, cam.x, cam.y)
+    draw_vessels(cam)
+    draw_rivals(cam)
+    screen.blit(
+        player_image,
+        (player_pos.x - cam.x - PLAYER_HALF.x, player_pos.y - cam.y - PLAYER_HALF.y)
+    )
+    pygame.display.flip()
+
+# ===== MODE SWITCHING =======================================================
+def switch_to_menu():
+    global game_mode
+    game_mode = MODE_MENU
+
+def switch_to_game_new():
+    global game_mode
+    start_new_game()
+    game_mode = MODE_GAME
+
+def switch_to_game_continue():
+    global game_mode
+    if has_save():
+        continue_game()
+        game_mode = MODE_GAME
+
+# ===== MAIN MENU (D&D STYLE) ================================================#
+def main_menu():
+    menu_font_path = os.path.join("Assets", "Fonts", "UncialAntiqua-Regular.ttf")  # You can use any D&D-like font here
+    if not os.path.exists(menu_font_path):
+        menu_font = pygame.font.SysFont("georgia", 52, bold=True)
+        print("⚠️ D&D font not found. Using Georgia fallback.")
+    else:
+        menu_font = pygame.font.Font(menu_font_path, 52)
+
+    small_font = pygame.font.SysFont("georgia", 28)
+
+    bg_path = os.path.join(ASSETS_MAP_DIR, "menu_bg.png")  # optional, use your Map folder
+    if os.path.exists(bg_path):
+        bg_img = pygame.image.load(bg_path).convert()
+        bg_img = pygame.transform.scale(bg_img, (WIDTH, HEIGHT))
+    else:
+        bg_img = None
+
+    menu_items = ["New Game", "Continue Game", "Delete Save", "Quit"]
+    selected = 0
+
+    def draw_menu():
+        screen.fill((20, 10, 10))
+        if bg_img:
+            screen.blit(bg_img, (0, 0))
+
+        title = menu_font.render("Summoner's Ledger", True, (160, 0, 0))
+        title_rect = title.get_rect(center=(WIDTH // 2, HEIGHT // 4))
+        screen.blit(title, title_rect)
+
+        for i, item in enumerate(menu_items):
+            color = (220, 50, 50) if i == selected else (120, 30, 30)
+            text = small_font.render(item, True, color)
+            rect = text.get_rect(center=(WIDTH // 2, HEIGHT // 2 + i * 60))
+            screen.blit(text, rect)
+
+        pygame.display.flip()
+
+    # Menu loop
+    running = True
+    while running:
+        for event in pygame.event.get():
+            if event.type == pygame.QUIT:
+                pygame.quit()
+                return "quit"
+            elif event.type == pygame.KEYDOWN:
+                if event.key in (pygame.K_DOWN, pygame.K_s):
+                    selected = (selected + 1) % len(menu_items)
+                elif event.key in (pygame.K_UP, pygame.K_w):
+                    selected = (selected - 1) % len(menu_items)
+                elif event.key in (pygame.K_RETURN, pygame.K_SPACE):
+                    choice = menu_items[selected]
+                    if choice == "Quit":
+                        pygame.quit()
+                        return "quit"
+                    return choice
+        draw_menu()
+
+
+# ===== MAIN =================================================================
+def main():
+    global game_mode
+    running = True
+    while running:
+        dt = clock.tick(60) / 1000.0
+
+        if game_mode == MODE_MENU:
+            # Draw menu every frame
+            buttons = draw_menu()
+
+            # Handle events
+            ok, event = handle_window_events_menu()
+            if not ok:
+                break
+
+            if event:
+                # Button mapping by order
+                b_new, b_cont, b_del, b_quit = buttons
+                if b_new.clicked(event):
+                    switch_to_game_new()
+                elif b_cont.clicked(event):
+                    switch_to_game_continue()
+                elif b_del.clicked(event):
+                    if delete_save():
+                        # redraw to disable Continue/Delete
+                        buttons = draw_menu()
+                elif b_quit.clicked(event):
+                    running = False
+
+        elif game_mode == MODE_GAME:
+            running = handle_window_events_game()
+            if not running:
+                break
+
+            # Popup blocks movement/world updates
+            if update_encounter_popup(dt):
+                continue
+
+            # Normal updates
+            update_player(dt)
+            update_rivals(dt)
+            update_vessels(dt)
+            try_trigger_encounter()
+            render_game()
+
+    pygame.quit()
+
+if __name__ == "__main__":
+    main()

@@ -1,0 +1,15 @@
+How you’ll call it (example)
+from combat.capturing import attempt_capture, CaptureContext
+
+ctx = CaptureContext(
+    level=90,
+    max_hp=200,
+    cur_hp=40,                  # ~20% → big DC reduction
+    scroll="subjugation",       # –4 DC
+    status=None,
+    capture_bonus=0,            # e.g., feats/boons could add here
+    advantage=0,                # +1 adv / –1 disadv
+)
+
+result = attempt_capture(ctx)
+# result.success, result.dc, result.text, result.shakes, etc.

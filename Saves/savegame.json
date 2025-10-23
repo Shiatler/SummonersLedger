@@ -1,0 +1,224 @@
+{
+  "player_y": 93721.03999999823,
+  "distance_travelled": 6199.959999999968,
+  "next_event_at": 6255.0,
+  "player_gender": "female",
+  "party_slots_names": [
+    "FTokenSorcerer2.png",
+    "FTokenBarbarian1.png",
+    null,
+    null,
+    null,
+    "StarterTokenRogue2.png"
+  ],
+  "party_vessel_stats": [
+    {
+      "name": "FVesselSorcerer2",
+      "class_name": "Sorcerer",
+      "level": 1,
+      "abilities": {
+        "STR": 13,
+        "DEX": 14,
+        "CON": 14,
+        "INT": 9,
+        "WIS": 7,
+        "CHA": 16
+      },
+      "mods": {
+        "STR": 1,
+        "DEX": 2,
+        "CON": 2,
+        "INT": -1,
+        "WIS": -2,
+        "CHA": 3
+      },
+      "prof": 2,
+      "ac": 12,
+      "hp": 8,
+      "initiative": 2,
+      "attack_stat": "CHA",
+      "attack_bonus": 5,
+      "notes": "Generated from asset name",
+      "current_hp": 0,
+      "xp_needed": 3,
+      "xp_total": 0,
+      "xp_current": 0
+    },
+    {
+      "name": "FVesselBarbarian1.png",
+      "class_name": "Barbarian",
+      "level": 1,
+      "abilities": {
+        "STR": 18,
+        "DEX": 16,
+        "CON": 15,
+        "INT": 13,
+        "WIS": 13,
+        "CHA": 9
+      },
+      "mods": {
+        "STR": 4,
+        "DEX": 3,
+        "CON": 2,
+        "INT": 1,
+        "WIS": 1,
+        "CHA": -1
+      },
+      "prof": 2,
+      "ac": 17,
+      "hp": 14,
+      "initiative": 3,
+      "attack_stat": "STR",
+      "attack_bonus": 6,
+      "notes": "Migrated to current AC/HP rules (ledger auto-repair)",
+      "xp_current": 0,
+      "xp_needed": 3,
+      "xp_total": 0,
+      "current_hp": 0
+    },
+    null,
+    null,
+    null,
+    {
+      "name": "StarterRogue2.png",
+      "class_name": "Rogue",
+      "level": 1,
+      "abilities": {
+        "STR": 13,
+        "DEX": 16,
+        "CON": 11,
+        "INT": 16,
+        "WIS": 10,
+        "CHA": 15
+      },
+      "mods": {
+        "STR": 1,
+        "DEX": 3,
+        "CON": 0,
+        "INT": 3,
+        "WIS": 0,
+        "CHA": 2
+      },
+      "prof": 2,
+      "ac": 15,
+      "hp": 8,
+      "initiative": 3,
+      "attack_stat": "DEX",
+      "attack_bonus": 5,
+      "notes": "Migrated to current AC/HP rules (ledger auto-repair)"
+    }
+  ],
+  "rivals_on_map": [
+    {
+      "name": "MSummoner3",
+      "side": "right",
+      "x": 1340.0,
+      "y": 90051.23999999926
+    },
+    {
+      "name": "FSummoner5",
+      "side": "left",
+      "x": 1060.0,
+      "y": 90652.15999999922
+    },
+    {
+      "name": "FSummoner4",
+      "side": "right",
+      "x": 1340.0,
+      "y": 86125.63999999879
+    },
+    {
+      "name": "FSummoner2",
+      "side": "right",
+      "x": 1340.0,
+      "y": 89756.97999999874
+    },
+    {
+      "name": "MSummoner3",
+      "side": "left",
+      "x": 1060.0,
+      "y": 87874.1599999987
+    },
+    {
+      "name": "FSummoner1",
+      "side": "right",
+      "x": 1340.0,
+      "y": 84777.67999999833
+    }
+  ],
+  "vessels_on_map": [
+    {
+      "side": "right",
+      "x": 1340.0,
+      "y": 93291.89999999975
+    },
+    {
+      "side": "right",
+      "x": 1340.0,
+      "y": 88813.63999999958
+    },
+    {
+      "side": "right",
+      "x": 1340.0,
+      "y": 93009.47999999949
+    },
+    {
+      "side": "left",
+      "x": 1060.0,
+      "y": 91694.75999999943
+    },
+    {
+      "side": "right",
+      "x": 1340.0,
+      "y": 88426.95999999932
+    },
+    {
+      "side": "right",
+      "x": 1340.0,
+      "y": 92125.47999999914
+    },
+    {
+      "side": "right",
+      "x": 1340.0,
+      "y": 90352.79999999906
+    },
+    {
+      "side": "right",
+      "x": 1340.0,
+      "y": 88167.17999999899
+    },
+    {
+      "side": "right",
+      "x": 1340.0,
+      "y": 89404.8599999989
+    },
+    {
+      "side": "left",
+      "x": 1060.0,
+      "y": 90854.27999999863
+    },
+    {
+      "side": "right",
+      "x": 1340.0,
+      "y": 92520.91999999856
+    },
+    {
+      "side": "right",
+      "x": 1340.0,
+      "y": 92774.6199999985
+    },
+    {
+      "side": "right",
+      "x": 1340.0,
+      "y": 91513.93999999842
+    },
+    {
+      "side": "right",
+      "x": 1340.0,
+      "y": 91248.73999999826
+    }
+  ],
+  "inventory": {
+    "scroll_of_command": 97
+  }
+}
