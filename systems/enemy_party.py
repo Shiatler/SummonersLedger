@@ -1,12 +1,5 @@
 # ============================================================
 # systems/enemy_party.py
-# Simple enemy team generator (easy-leaning, duplicates OK)
-# - Scans vessel asset folders and builds a catalog of exact basenames
-#   (keeps gender + index, e.g. MVesselWizard2, FVesselRogue1)
-# - Picks N based on player's highest level
-# - Generates stats via combat.vessel_stats.generate_vessel_stats_from_asset
-# - Returns entries ready for UIs:
-#     { 'vessel_png': 'FVesselWizard2.png', 'level': L, 'stats': {...} }
 # ============================================================
 from __future__ import annotations
 import os, glob, re, random
@@ -51,7 +44,7 @@ def _scan_vessel_basenames() -> List[str]:
 # ------------------------------ Difficulty knobs ------------------------------
 def _enemy_count_for_player_level(player_lvl: int, rng: random.Random) -> int:
     L = max(1, int(player_lvl))
-    if L <= 10:  return 2 if rng.random() < 0.10 else 1
+    if L <= 10:  return 2 if rng.random() < 0.99 else 1
     if L <= 20:  return 2
     if L <= 30:  return 3
     if L <= 40:  return 4
@@ -76,16 +69,20 @@ def _bracket_for_level(player_lvl: int) -> str:
 
 # ------------------------------ Public helpers ------------------------------
 def highest_player_level(gs) -> int:
+    """
+    Track highest vessel level from the player's active party.
+    """
     try:
         stats = getattr(gs, "party_vessel_stats", None) or []
         hi = 1
         for st in stats:
             if isinstance(st, dict):
                 try:
+                    # Track the highest level of ally vessels
                     hi = max(hi, int(st.get("level", 1)))
                 except Exception:
                     pass
-        return max(1, int(hi))
+        return max(1, hi)  # Ensure a minimum of level 1
     except Exception:
         return 1
 
@@ -108,7 +105,7 @@ def generate_enemy_party(gs,
         return []
 
     rng.shuffle(catalog)  # small randomness in picks
-    player_hi = highest_player_level(gs)
+    player_hi = highest_player_level(gs)  # Track highest ally level
     bracket = _bracket_for_level(player_hi)
     count = min(max_party, _enemy_count_for_player_level(player_hi, rng))
 

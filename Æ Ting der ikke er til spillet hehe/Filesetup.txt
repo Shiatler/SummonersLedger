@@ -33,6 +33,7 @@ SummonersLedger/
 ├─ combat/
 │  ├─ __init__.py
 │  ├─ stats.py
+│  ├─ summoner_battle.py
 │  ├─ vessel_stats.py
 │  ├─ wild_vessel.py                      # [UPDATED] hooks bag + roll popup
 │  ├─ capturing.py                        # [NEW] DC-based capture system
@@ -59,6 +60,7 @@ SummonersLedger/
 │  ├─ save_system.py
 │  ├─ theme.py
 │  ├─ ui.py
+│  ├─ enemy_party.py
 │  ├─ xp.py
 │  └─ asset_links.py                      # token↔vessel helpers
 │

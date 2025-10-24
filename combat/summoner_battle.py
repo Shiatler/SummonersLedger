@@ -36,6 +36,7 @@ from rolling import ui as roll_ui
 from rolling.roller import set_roll_callback
 from systems.enemy_party import generate_enemy_party
 from systems.asset_links import token_to_vessel, find_image
+from combat.helpers import _enemy_party_has_living, _trigger_forced_switch_if_needed
 
 from combat import moves
 from combat import turn_order
@@ -158,6 +159,15 @@ def _extract_summoner_display(raw: str | None) -> str:
         return f"Summoner {tail}" if tail else "Summoner"
     pretty = re.sub(r"\d+$", "", base).replace("_", " ").replace("-", " ").strip()
     return f"Summoner {pretty}" if pretty else "Summoner"
+
+#---------- Loading scrolls ----------------
+def _load_scroll_icon():
+    scroll_path = os.path.join("Assets", "Items", "Scroll_Of_Sealing.png")
+    scroll_icon = pygame.image.load(scroll_path).convert_alpha()
+    grey_scroll_icon = pygame.Surface(scroll_icon.get_size(), pygame.SRCALPHA)
+    grey_scroll_icon.fill((100, 100, 100, 128))  # Grey out the icon
+    grey_scroll_icon.blit(scroll_icon, (0, 0))
+    return scroll_icon, grey_scroll_icon
 
 # ---------- Exit helper ----------
 def _exit_to_overworld(gs):
@@ -306,6 +316,77 @@ def _load_vessel_big(name_or_token: str | None, *, target_h: int) -> pygame.Surf
     except Exception as e:
         print(f"⚠️ load vessel fail {path}: {e}")
         return None
+    
+
+def _trigger_forced_enemy_switch_if_needed(gs, st):
+    """
+    Checks if the enemy's current vessel is knocked out and triggers a forced switch
+    if a living vessel is available, or ends the battle if all enemies are defeated.
+    """
+    # Retrieve the enemy party
+    enemy_party = getattr(gs, "_pending_enemy_party", [])
+    
+    # Check for any living enemy vessels
+    living_enemy_vessels = [
+        entry for entry in enemy_party if int(entry["stats"].get("current_hp", 0)) > 0
+    ]
+    
+    if len(living_enemy_vessels) == 0:
+        # No living vessels, end the battle
+        st["enemy_fade_active"] = True
+        st["enemy_fade_t"] = 0.0
+        st["enemy_defeated"] = True
+        return True
+    
+    # If there are living vessels, check if the current vessel is KO'd
+    enemy_idx = getattr(gs, "enemy_active_idx", 0)  # Default to 0 if not set
+    enemy_entry = enemy_party[enemy_idx] if enemy_party else None
+    enemy_stats = enemy_entry.get("stats", {}) if enemy_entry else {}
+
+    # Parse the enemy stats for HP
+    e_cur, e_max = _parse_enemy_hp_fields(enemy_stats)
+    st["enemy_hp_ratio"] = (e_cur / e_max) if e_max > 0 else 1.0
+
+    # Check if the current enemy vessel is KO'd
+    if enemy_stats and int(enemy_stats.get("current_hp", 0)) <= 0:
+        # If there are other living vessels in the enemy party, perform a forced switch
+        living_enemy_indices = [
+            idx for idx, entry in enumerate(enemy_party)
+            if int(entry["stats"].get("current_hp", 0)) > 0
+        ]
+        if living_enemy_indices:
+            # Select a new enemy vessel to replace the KO'd one
+            new_enemy_idx = living_enemy_indices[0]  # You could randomize or prioritize better vessels here
+            gs.enemy_active_idx = new_enemy_idx
+            st["enemy_swap_playing"] = True  # Trigger swap animation
+            
+            # Optionally, you can add SFX for the enemy switch here
+            try:
+                if st.get("swap_sfx"):
+                    st["swap_sfx"].play()
+            except Exception:
+                pass
+
+            # Trigger enemy swap effects (VFX, animations, etc.)
+            st["phase"] = "enemy_swap"
+            return True
+
+    return False
+
+def _finish_forced_enemy_switch_if_done(gs, st):
+    """
+    Finalizes the enemy forced switch, ensuring that everything is set for the next turn.
+    """
+    if st.get("enemy_swap_playing", False):
+        st["enemy_swap_playing"] = False
+        st["phase"] = PHASE_ENEMY
+        gs._turn_ready = True
+        try:
+            battle_action.close_popup(); bag_action.close_popup(); party_action.close_popup()
+        except Exception:
+            pass
+
+
 
 # ---------- Ally summon (shared with wild_vessel semantics) ----------
 def _first_living_party_index(gs) -> int:
@@ -692,8 +773,27 @@ def enter(gs, **_):
     # Enemy party (single entry for this scene)
     enemy_party = getattr(gs, "_pending_enemy_party", None)
     if not enemy_party:
-        enemy_party = generate_enemy_party(gs, max_party=1)
+        enemy_party = generate_enemy_party(gs, max_party=6)
         setattr(gs, "_pending_enemy_party", enemy_party)
+
+    # ✅ Normalize enemy party stats so every entry has a sane current_hp
+    for entry in enemy_party:
+        stats = entry.setdefault("stats", {})
+        try:
+            max_hp = max(1, int(stats.get("hp", 10)))
+        except Exception:
+            max_hp = 10
+        cur_hp = stats.get("current_hp")
+        try:
+            cur_hp = int(cur_hp) if cur_hp is not None else max_hp
+        except Exception:
+            cur_hp = max_hp
+        stats["hp"] = max_hp
+        stats["current_hp"] = max(0, min(cur_hp, max_hp))
+
+    # Make sure we have an active enemy index
+    if not hasattr(gs, "enemy_active_idx"):
+        gs.enemy_active_idx = 0
     enemy_entry = enemy_party[0] if enemy_party else None
     enemy_vessel_basename = _vessel_basename_from_entry(enemy_entry)
     enemy_stats = enemy_entry.get("stats") if enemy_entry else None
@@ -822,6 +922,9 @@ def enter(gs, **_):
     gs._turn_ready = True  # player starts able to act
 
 def handle(events, gs, **_):
+    # Avoid top-level circular import by importing when needed
+    from combat.summoner_battle import _trigger_forced_switch_if_needed
+
     st = getattr(gs, "_summ_ui", None)
     if st is None:
         enter(gs); st = gs._summ_ui
@@ -923,6 +1026,11 @@ def handle(events, gs, **_):
                 return None
         return None
 
+    # ===== Check if the ally Vessel is KO'd and trigger forced switch =====
+    if st.get("phase") == "battle":
+        # Check if the ally Vessel is KO'd and if a forced switch is needed
+        _trigger_forced_switch_if_needed(gs, st)
+
     # Normal routing (not during enemy phase)
     if st.get("phase") not in ("intro", "slide_out", "vfx"):
         if st.get("turn_phase") != PHASE_ENEMY:
@@ -1011,6 +1119,7 @@ def handle(events, gs, **_):
                 st["turn_phase"] = PHASE_PLAYER
 
     return None
+
 
 
 def draw(screen: pygame.Surface, gs, dt, **_):
@@ -1195,6 +1304,48 @@ def draw(screen: pygame.Surface, gs, dt, **_):
         if isinstance(ally_stats, dict):
             _draw_xp_strip(screen, pygame.Rect(ally_bar.x, ally_bar.bottom + 6, ally_bar.w, 22), ally_stats)
         _draw_hp_bar(screen, enemy_bar, st.get("enemy_hp_ratio", 1.0), enemy_label, "right")
+    
+    # --- HP/XP Bars and Enemy Icons ---
+    bar_w, bar_h = 400, 70
+    ally_w = st["ally_img"].get_width() if st.get("ally_img") else 0
+    ally_h = st["ally_img"].get_height() if st.get("ally_img") else 0
+    ally_bar = pygame.Rect(ax + (ally_w // 2) - (bar_w // 2), ay + ally_h + 12, bar_w, bar_h)
+
+    enemy_bar = pygame.Rect(ex - bar_w - 24, ey + 12, bar_w, bar_h)
+
+    # Get the enemy stats to determine if any of the vessels are KO'd or alive
+    enemy_party = getattr(gs, "_pending_enemy_party", [])
+
+    # Calculate the position for the scroll icons (relative to the enemy HP bar)
+    icon_pos_x = ex + (bar_w // 2) - 330  # Adjust horizontally to center icons near the enemy bar
+    icon_pos_y = enemy_bar.bottom + 0    # Position just below the enemy HP bar, with spacing
+
+    # Ensure scroll icons are not drawn during intro phase or while fade effect is active
+    if st.get("enemy_fade_active", False):
+        return None  # Skip drawing icons if fade is active
+
+    # Load scroll icons (normal and greyed out for fainted vessels)
+    scroll_icon, grey_scroll_icon = _load_scroll_icon()
+
+    # Scale the icons to ensure they fit consistently within the UI
+    scaled_scroll_icon = pygame.transform.smoothscale(scroll_icon, (50, 50))  # Resize to 50x50
+    scaled_grey_scroll_icon = pygame.transform.smoothscale(grey_scroll_icon, (50, 50))  # Resize to 50x50
+
+    # Check if the enemy HP bar is visible and we are not in the intro or VFX phase
+    phase = st.get("phase", "intro")
+    if phase != "intro" and not st.get("vfx_playing", False):  # Ensure the VFX phase is complete
+        # Draw the icons for each vessel in the enemy party
+        for idx, entry in enumerate(enemy_party):
+            # Get the vessel's current HP (fainted or alive)
+            cur_hp = int(entry["stats"].get("current_hp", 0))
+            is_fainted = cur_hp <= 0
+            
+            # Draw the icon based on the vessel's status (fainted or alive)
+            icon = scaled_grey_scroll_icon if is_fainted else scaled_scroll_icon
+            icon_rect = icon.get_rect(topleft=(icon_pos_x + (idx * 55), icon_pos_y))  # Space out icons horizontally
+            screen.blit(icon, icon_rect)
+
+
 
     # Enemy KO debounce & fade trigger (only during battle)
     if st.get("phase") == "battle" and st.get("enemy_img") is not None:

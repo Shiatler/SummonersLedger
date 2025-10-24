@@ -1,224 +1,155 @@
 {
-  "player_y": 93721.03999999823,
-  "distance_travelled": 6199.959999999968,
-  "next_event_at": 6255.0,
-  "player_gender": "female",
+  "player_y": 96006.69999999866,
+  "distance_travelled": 3914.2999999999906,
+  "next_event_at": 4076.0,
+  "player_gender": "male",
   "party_slots_names": [
-    "FTokenSorcerer2.png",
-    "FTokenBarbarian1.png",
+    "StarterTokenDruid3.png",
     null,
     null,
     null,
-    "StarterTokenRogue2.png"
+    null,
+    "FTokenBarbarian1.png"
   ],
   "party_vessel_stats": [
     {
-      "name": "FVesselSorcerer2",
-      "class_name": "Sorcerer",
+      "name": "StarterDruid3.png",
+      "class_name": "Druid",
       "level": 1,
       "abilities": {
-        "STR": 13,
+        "STR": 14,
         "DEX": 14,
-        "CON": 14,
-        "INT": 9,
-        "WIS": 7,
-        "CHA": 16
+        "CON": 15,
+        "INT": 12,
+        "WIS": 16,
+        "CHA": 9
       },
       "mods": {
-        "STR": 1,
+        "STR": 2,
         "DEX": 2,
         "CON": 2,
-        "INT": -1,
-        "WIS": -2,
-        "CHA": 3
+        "INT": 1,
+        "WIS": 3,
+        "CHA": -1
       },
       "prof": 2,
-      "ac": 12,
-      "hp": 8,
+      "ac": 13,
+      "hp": 10,
       "initiative": 2,
-      "attack_stat": "CHA",
+      "attack_stat": "WIS",
       "attack_bonus": 5,
-      "notes": "Generated from asset name",
-      "current_hp": 0,
+      "notes": "Rolled on add to party",
+      "xp_current": 0,
       "xp_needed": 3,
-      "xp_total": 0,
-      "xp_current": 0
+      "xp_total": 0
     },
+    null,
+    null,
+    null,
+    null,
     {
       "name": "FVesselBarbarian1.png",
       "class_name": "Barbarian",
       "level": 1,
       "abilities": {
         "STR": 18,
-        "DEX": 16,
-        "CON": 15,
-        "INT": 13,
-        "WIS": 13,
-        "CHA": 9
+        "DEX": 17,
+        "CON": 12,
+        "INT": 11,
+        "WIS": 11,
+        "CHA": 10
       },
       "mods": {
         "STR": 4,
         "DEX": 3,
-        "CON": 2,
-        "INT": 1,
-        "WIS": 1,
-        "CHA": -1
+        "CON": 1,
+        "INT": 0,
+        "WIS": 0,
+        "CHA": 0
       },
       "prof": 2,
-      "ac": 17,
-      "hp": 14,
+      "ac": 16,
+      "hp": 13,
       "initiative": 3,
       "attack_stat": "STR",
       "attack_bonus": 6,
       "notes": "Migrated to current AC/HP rules (ledger auto-repair)",
       "xp_current": 0,
       "xp_needed": 3,
-      "xp_total": 0,
-      "current_hp": 0
-    },
-    null,
-    null,
-    null,
-    {
-      "name": "StarterRogue2.png",
-      "class_name": "Rogue",
-      "level": 1,
-      "abilities": {
-        "STR": 13,
-        "DEX": 16,
-        "CON": 11,
-        "INT": 16,
-        "WIS": 10,
-        "CHA": 15
-      },
-      "mods": {
-        "STR": 1,
-        "DEX": 3,
-        "CON": 0,
-        "INT": 3,
-        "WIS": 0,
-        "CHA": 2
-      },
-      "prof": 2,
-      "ac": 15,
-      "hp": 8,
-      "initiative": 3,
-      "attack_stat": "DEX",
-      "attack_bonus": 5,
-      "notes": "Migrated to current AC/HP rules (ledger auto-repair)"
+      "xp_total": 0
     }
   ],
   "rivals_on_map": [
     {
-      "name": "MSummoner3",
-      "side": "right",
-      "x": 1340.0,
-      "y": 90051.23999999926
-    },
-    {
-      "name": "FSummoner5",
-      "side": "left",
-      "x": 1060.0,
-      "y": 90652.15999999922
-    },
-    {
-      "name": "FSummoner4",
-      "side": "right",
-      "x": 1340.0,
-      "y": 86125.63999999879
-    },
-    {
-      "name": "FSummoner2",
-      "side": "right",
-      "x": 1340.0,
-      "y": 89756.97999999874
-    },
-    {
-      "name": "MSummoner3",
-      "side": "left",
-      "x": 1060.0,
-      "y": 87874.1599999987
-    },
-    {
       "name": "FSummoner1",
-      "side": "right",
-      "x": 1340.0,
-      "y": 84777.67999999833
+      "side": "left",
+      "x": 1060.0,
+      "y": 90439.27999999994
     }
   ],
   "vessels_on_map": [
     {
-      "side": "right",
-      "x": 1340.0,
-      "y": 93291.89999999975
+      "side": "left",
+      "x": 1060.0,
+      "y": 90074.91999999987
     },
     {
       "side": "right",
       "x": 1340.0,
-      "y": 88813.63999999958
-    },
-    {
-      "side": "right",
-      "x": 1340.0,
-      "y": 93009.47999999949
+      "y": 93565.03999999972
     },
     {
       "side": "left",
       "x": 1060.0,
-      "y": 91694.75999999943
-    },
-    {
-      "side": "right",
-      "x": 1340.0,
-      "y": 88426.95999999932
-    },
-    {
-      "side": "right",
-      "x": 1340.0,
-      "y": 92125.47999999914
-    },
-    {
-      "side": "right",
-      "x": 1340.0,
-      "y": 90352.79999999906
-    },
-    {
-      "side": "right",
-      "x": 1340.0,
-      "y": 88167.17999999899
-    },
-    {
-      "side": "right",
-      "x": 1340.0,
-      "y": 89404.8599999989
+      "y": 91687.51999999964
     },
     {
       "side": "left",
       "x": 1060.0,
-      "y": 90854.27999999863
+      "y": 91399.39999999935
     },
     {
       "side": "right",
       "x": 1340.0,
-      "y": 92520.91999999856
+      "y": 92914.01999999925
+    },
+    {
+      "side": "left",
+      "x": 1060.0,
+      "y": 89866.91999999917
+    },
+    {
+      "side": "left",
+      "x": 1060.0,
+      "y": 93201.23999999909
+    },
+    {
+      "side": "left",
+      "x": 1060.0,
+      "y": 94918.399999999
+    },
+    {
+      "side": "left",
+      "x": 1060.0,
+      "y": 88315.73999999896
+    },
+    {
+      "side": "left",
+      "x": 1060.0,
+      "y": 86754.83999999889
     },
     {
       "side": "right",
       "x": 1340.0,
-      "y": 92774.6199999985
+      "y": 89571.71999999878
     },
     {
-      "side": "right",
-      "x": 1340.0,
-      "y": 91513.93999999842
-    },
-    {
-      "side": "right",
-      "x": 1340.0,
-      "y": 91248.73999999826
+      "side": "left",
+      "x": 1060.0,
+      "y": 87138.1999999987
     }
   ],
   "inventory": {
-    "scroll_of_command": 97
+    "scroll_of_command": 100
   }
 }

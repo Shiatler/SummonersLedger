@@ -1,4 +1,6 @@
-# rolling/ui.py
+# ============================================================
+# rolling/stat_rolls.py
+# ============================================================
 import os
 import pygame, re
 import settings as S
