@@ -79,8 +79,12 @@ DND_FONT_FILE = "DH.otf"
 # ===================== Modes ================================
 MODE_MENU = "MENU"
 MODE_GAME = "GAME"
+MODE_DEATH = "DEATH"
 
 
 # ===================== Road / Background =====================
 # Used for horizontal cropping and lane positioning (world.py tiles vertically)
 ROAD_W = 1200  # width of the road (centered at WORLD_W//2)
+
+LEVEL_UP_HEALS_FULL = True  # set False to preserve previous HP ratio on level-up
+

@@ -1,0 +1,206 @@
+
+Asset paths should be defined in settings.py (e.g., ASSETS_MAP_DIR, etc.), so code uses those base dirs rather than hardcoding.
+
+Assets
+SummonersLedger/
+└─ Assets/
+   ├─ Map/                                # backgrounds, menu art, road, mist, class art, videos
+   │  ├─ road.png
+   │  ├─ Mist1.png                        # Mist*.png sequence (animation)
+   │  ├─ Mist2.png
+   │  ├─ Mist3.png
+   │  ├─ ...
+   │  ├─ MainMenu.png                     # optional menu background
+   │  ├─ MainMenuM.png                    # optional menu side art
+   │  ├─ MainMenuF.png
+   │  ├─ Logo.png                         # optional logo
+   │  ├─ BarbarianL.png                   # class “ledger” art used on black_screen
+   │  ├─ DruidL.png
+   │  ├─ RogueL.png
+   │  ├─ Grass_UI.png
+   │  ├─ BarbarianV.mp4                   # optional intro video (per class)
+   │  ├─ BarbarianV.mp3                   # optional audio for the video (mp3 or wav)
+   │  ├─ DruidV.mp4
+   │  ├─ DruidV.mp3
+   │  ├─ RogueV.mp4
+   │  └─ RogueV.wav
+   │
+   ├─ PlayableCharacters/                 # player sprites + (optional) walk anim frames
+   │  ├─ CharacterMale.png                # S.PLAYER_MALE_FILE
+   │  ├─ CharacterFemale.png              # S.PLAYER_FEMALE_FILE
+   │  ├─ Mwalk1.png                       # optional walk anim (male)
+   │  ├─ Mwalk2.png
+   │  ├─ Mwalk3.png
+   │  ├─ Fwalk1.png                       # optional walk anim (female)
+   │  ├─ Fwalk2.png
+   │  └─ Fwalk3.png
+   │
+├─ Starters/
+│  ├─ StarterBarbarian1.png
+│  ├─ StarterBarbarian2.png
+│  ├─ StarterBarbarian3.png
+│  ├─ StarterBarbarian4.png
+│  ├─ StarterBarbarian5.png
+│  ├─ StarterTokenBarbarian1.png
+│  ├─ StarterTokenBarbarian2.png
+│  ├─ StarterTokenBarbarian3.png
+│  ├─ StarterTokenBarbarian4.png
+│  ├─ StarterTokenBarbarian5.png
+│  ├─ StarterRogue1.png
+│  ├─ StarterRogue2.png
+│  ├─ StarterRogue3.png
+│  ├─ StarterRogue4.png
+│  ├─ StarterRogue5.png
+│  ├─ StarterTokenRogue1.png
+│  ├─ StarterTokenRogue2.png
+│  ├─ StarterTokenRogue3.png
+│  ├─ StarterTokenRogue4.png
+│  ├─ StarterTokenRogue5.png
+│  ├─ StarterDruid1.png
+│  ├─ StarterDruid2.png
+│  ├─ StarterDruid3.png
+│  ├─ StarterDruid4.png
+│  ├─ StarterDruid5.png
+│  ├─ StarterTokenDruid1.png
+│  ├─ StarterTokenDruid2.png
+│  ├─ StarterTokenDruid3.png
+│  ├─ StarterTokenDruid4.png
+│  └─ StarterTokenDruid5.png
+│
+├─ RareVessels/
+│  ├─ RTokenArtificer1.png
+│  ├─ RVesselArtificer.png
+│  ├─ RTokenBarbarian1.png
+│  ├─ RVesselBarbarian.png
+│  ├─ RTokenBard1.png
+│  ├─ RVesselBard.png
+│  ├─ RTokenBloodhunter1.png
+│  ├─ RVesselBloodhunter.png
+│  ├─ RTokenCleric1.png
+│  ├─ RVesselCleric.png
+│  ├─ RTokenDruid1.png
+│  ├─ RVesselDruid.png
+│  ├─ RTokenFighter1.png
+│  ├─ RVesselFighter.png
+│  ├─ RTokenMonk1.png
+│  ├─ RVesselMonk.png
+│  ├─ RTokenPaladin1.png
+│  ├─ RVesselPaladin.png
+│  ├─ RTokenRanger1.png
+│  ├─ RVesselRanger.png
+│  ├─ RTokenRogue1.png
+│  ├─ RVesselRogue.png
+│  ├─ RTokenSorcerer1.png
+│  ├─ RVesselSorcerer.png
+│  ├─ RTokenWarlock1.png
+│  ├─ RVesselWarlock.png
+│  ├─ RTokenWizard1.png
+│  └─ RVesselWizard.png
+│
+├─ VesselsFemale/
+│  ├─ FTokenArtificer1.png
+│  ├─ FTokenBarbarian1.png
+│  ├─ FTokenBard1.png
+│  ├─ FTokenBloodhunter1.png
+│  ├─ FTokenCleric1.png
+│  ├─ FTokenDruid1.png
+│  ├─ FTokenFighter1.png
+│  ├─ FTokenMonk1.png
+│  ├─ FTokenPaladin1.png
+│  ├─ FTokenRanger1.png
+│  ├─ FTokenRogue1.png
+│  ├─ FTokenSorcerer1.png
+│  ├─ FTokenWarlock1.png
+│  ├─ FTokenWizard1.png
+│  ├─ FVesselArtificer1.png
+│  ├─ FVesselArtificer2.png
+│  ├─ FVesselBarbarian1.png
+│  ├─ FVesselBarbarian2.png
+│  ├─ FVesselBard1.png
+│  ├─ FVesselBard2.png
+│  ├─ FVesselBloodhunter1.png
+│  ├─ FVesselBloodhunter2.png
+│  ├─ FVesselCleric1.png
+│  ├─ FVesselCleric2.png
+│  ├─ FVesselDruid1.png
+│  ├─ FVesselDruid2.png
+│  ├─ FVesselFighter1.png
+│  ├─ FVesselFighter2.png
+│  ├─ FVesselMonk1.png
+│  ├─ FVesselMonk2.png
+│  ├─ FVesselPaladin1.png
+│  ├─ FVesselPaladin2.png
+│  ├─ FVesselRanger1.png
+│  ├─ FVesselRanger2.png
+│  ├─ FVesselRogue1.png
+│  ├─ FVesselRogue2.png
+│  ├─ FVesselSorcerer1.png
+│  ├─ FVesselSorcerer2.png
+│  ├─ FVesselWarlock1.png
+│  ├─ FVesselWarlock2.png
+│  └─ FVesselWizard1.png
+│     FVesselWizard2.png
+│
+├─ VesselsMale/
+│  ├─ MTokenArtificer1.png
+│  ├─ MTokenBarbarian1.png
+│  ├─ MTokenBard1.png
+│  ├─ MTokenBloodhunter1.png
+│  ├─ MTokenCleric1.png
+│  ├─ MTokenDruid1.png
+│  ├─ MTokenFighter1.png
+│  ├─ MTokenMonk1.png
+│  ├─ MTokenPaladin1.png
+│  ├─ MTokenRanger1.png
+│  ├─ MTokenRogue1.png
+│  ├─ MTokenSorcerer1.png
+│  ├─ MTokenWarlock1.png
+│  ├─ MTokenWizard1.png
+│  ├─ MVesselArtificer1.png
+│  ├─ MVesselArtificer2.png
+│  ├─ MVesselBarbarian1.png
+│  ├─ MVesselBarbarian2.png
+│  ├─ MVesselBard1.png
+│  ├─ MVesselBard2.png
+│  ├─ MVesselBloodhunter1.png
+│  ├─ MVesselBloodhunter2.png
+│  ├─ MVesselCleric1.png
+│  ├─ MVesselCleric2.png
+│  ├─ MVesselDruid1.png
+│  ├─ MVesselDruid2.png
+│  ├─ MVesselFighter1.png
+│  ├─ MVesselFighter2.png
+│  ├─ MVesselMonk1.png
+│  ├─ MVesselMonk2.png
+│  ├─ MVesselPaladin1.png
+│  ├─ MVesselPaladin2.png
+│  ├─ MVesselRanger1.png
+│  ├─ MVesselRanger2.png
+│  ├─ MVesselRogue1.png
+│  ├─ MVesselRogue2.png
+│  ├─ MVesselSorcerer1.png
+│  ├─ MVesselSorcerer2.png
+│  ├─ MVesselWarlock1.png
+│  ├─ MVesselWarlock2.png
+│  └─ MVesselWizard1.png
+│     MVesselWizard2.png
+│
+├─ SummonersFemale/
+│  ├─ FSummoner1.png
+│  ├─ FSummoner2.png
+│  ├─ FSummoner3.png
+│  ├─ FSummoner4.png
+│  ├─ FSummoner5.png
+│  └─ FSummoner6.png
+│
+├─ SummonersMale/
+│  ├─ MSummoner1.png
+│  ├─ MSummoner2.png
+│  ├─ MSummoner3.png
+│  ├─ MSummoner4.png
+│  ├─ MSummoner5.png
+│  └─ MSummoner6.png
+│
+└─ SummonersBoss/
+   ├─ BSummoner1.png
+   └─ BSummoner2.png

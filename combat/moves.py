@@ -32,7 +32,7 @@ class Move:
     ability: str            # "STR","DEX","CON","INT","WIS","CHA" or "STR|DEX"
     to_hit: bool = True
     self_hp_cost: int = 0
-    max_pp: int = 20        # default PP cap (level 1 moves → 20)
+    max_pp: int = 40        # default PP cap (level 1 moves → 20)
 
 # --------------------- helpers: state ------------------------
 

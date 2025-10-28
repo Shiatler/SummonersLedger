@@ -1,82 +1,5 @@
 Summoner’s Ledger — Game Vision (clean write-up) High concept A Pokémon × D&D hybrid roguelike. You roam forward through an overworld, trigger encounters, and fight turn-based battles that use D&D-style rolls (attack rolls, crits, damage dice). Instead of Pokémon you collect Vessels (embodiments of D&D classes). Instead of Pokéballs you use spells from your Ledger to bind/capture Vessels. Human opponents are Summoners. Lexicon (terminology map) Vessels = collectible creatures themed on D&D classes (Fighter, Rogue, Wizard, etc.). Ledger = your spellbook; houses capture spells and utility effects. Spells (Ledger) = functionally like Pokéballs (capture attempts), plus buffs/debuffs. Summoners = trainer-style human opponents who command Vessels. Vesseldex = compendium of every Vessel species you’ve encountered/captured. Core loop Overworld travel — Auto/forward walk. Random encounters occur at intervals. Encounter — A Vessel (or Summoner) appears. A popup frames the battle start. Turn-based combat — Choose actions; D&D rolls resolve outcomes. Outcome — KO the enemy (XP/loot) or capture it (adds to party). Return to overworld — Distance and encounter counters progress; special events trigger (shops, bosses, map swaps). Roguelike flow — A run ends on party wipe; scoreboard records stats; start a fresh run. Encounters & generation On encounter, the enemy Vessel’s stat block is rolled: Abilities (STR/DEX/CON/INT/WIS/CHA): 4d6 drop lowest (per ability). Level: starts at 1 (scales with distance/encounter count later). HP: d8 per level + CON mod per level (min 1). AC: 10 + DEX mod (base). Attacks: class-flavored (e.g., Shadow Claw, Fire Bolt, Shortsword), each with a to-hit = proficiency + relevant ability mod, and damage as dice + mod (e.g., 1d6+DEX). Summoner encounters: Summoners own 1–3 random Vessels (rolled when the fight begins) with the same stat system. Turn-based combat (D&D flavored) Initiative: simple alternating turns at first; later you can add initiative rolls (d20+DEX). On your turn choose one: Attack (weapon or class move) Cast (class spell or Ledger spell) Capture attempt (see below) Item/Defend/Swap (future) Attack roll: d20 + attack bonus vs AC. Nat 20 = crit (double dice by default). Nat 1 = automatic miss. Damage: roll weapon/spell dice + relevant ability mod (and apply resist/weakness later). Status (later): conditions like Shaken (disadvantage), Enflamed (DoT), Guarded (AC buff). Capturing (Ledger spell) Action: “Cast Binding” (your Ledger capture spell). Check: opposed capture DC that improves when the target is weakened. Base DC rises with Vessel rarity/level. Modifiers: + if target is low HP, debuffed, or outnumbered; − if enraged/buffed. Resolve as spell attack (d20 + spell mod) vs DC, or as a save the target must make (target rolls d20 + WIS/CHA save vs your spell DC). Pick one model and stick to it. On success: Vessel is captured → added to first free party slot; Vesseldex updated. On fail: small backlash (chip damage or momentum loss). Progression XP & Leveling: Defeating/capturing grants XP to the active Vessel (and a smaller amount to benched allies); level increases max HP, to-hit, damage, and sometimes unlocks a move. Encounter counter: Global encounter_count increments every fight. Use it to: Gate biomes/maps (e.g., lava map at 100 encounters). Escalate enemy levels/rarity. Trigger boss Summoners at milestones (e.g., 20/50/100). Scoreboard (per run): Total encounters Bosses defeated Distance traveled Rares captured Final party and highest levels Vesseldex: Entries for seen vs captured Shows species art, class, typical moves, and best roll seen. Completion % becomes a meta goal. Boss Summoners Appear at fixed milestones (e.g., after 20 encounters, then every 30). Team of 2–3 tuned Vessels (slightly above curve). On defeat: guaranteed loot (rare spell, permanent buff, or map transition). Maps/biomes Start in Forest/Road. At 100 encounters → switch to Lava map (harder baseline). Future: Swamp, Ruins, Snowfield, Astral. Biomes can bias class/element spawns and add hazards. Shops & events (future) Shops: between encounters; spend currency to learn Ledger spells, buy items, heal. Random events: altars, trainers, riddles—small choices with persistent buffs/debuffs (roguelike spice). Systems checklist (MVP → Stretch) MVP Overworld walk + encounter trigger Vessel stat generation on encounter Turn-based combat with: Attack roll (d20), nat 20 crits, damage dice Simple AI (attack or capture-resist buff) Capture spell with HP-based modifier Party of up to 6 + HUD tokens Save/continue (party, position, counters) Vesseldex (seen/captured) Encounter counter + scoreboard Boss Summoner at least one milestone Map swap at 100 encounters Stretch Advantage/disadvantage conditions Status effects & conditions Multiple capture spell variants (Quick Bind, Heavy Seal) Shops & currency More biomes and hazard rules Rarity tiers & shiny variants Meta progression (unlock starting Ledger spells, cosmetics) Balancing notes (starting points) Player hit chance target ~65% vs equal-level foes (tune AC/proficiency). Capture chances: Full HP common: ~20–25% <35% HP common: ~55–65% Rare baseline −15–20% from common Crits: d20 natural 20 → double dice only (not flat bonuses) to keep spikes exciting but sane. Data you’ll want to track (per run) encounter_count, distance_travelled, biome party_slots (surfaces) + party_slots_names (filenames) For each Vessel: class, level, abilities, mods, HP/AC, moves, XP vesseldex_seen, vesseldex_caught sets scoreboard snapshot on death or boss victory My exact thought= Pokemon and DND hybrid as a roguelike. Pokemon style fighting, capturing and storing Pokemons = Vessels (DND classes) Pokeballs = Spells from you ledger Trainers = Summoners Fighting will work turn based like pokemon, but with DND dmg effects. So fx Nat 20 = crit and you roll dmg, if youre a fighter you attack with sword If youre a mage you use fireball etc Gameplay loop will be - Walk ahead in overworld, encounter Vessels, kill them or catch them - Get xp - back to overworld, maybe encounter summoner and trainerbattle At certain points Boss summoners will appear Whenever you encounter a vessel stats will be rolled and that will indicate the HP, AC stat, and main stat if Rogue = Dexterity, 10+0 8-1 12+1 (DND rules) Summoners will have random vessels with random stats Shops will come in the future, and maybe even random events where you can get buffs since its a roguelike I want encounter counter, scoreboard, Vesseldex (Pokedex), more maps fx after 100 encounters you go to lava map
 
-SummonersLedger/
-│
-├─ Saves/
-│
-├─ bootstrap/
-│  ├─ __init__.py
-│  ├─ default_inventory.py
-│  └─ default_party.py
-│
-├─ items/                                  # [NEW]
-│  ├─ __init__.py
-│  ├─ base_items.py
-│  ├─ items.py
-│  └─ scrolls/
-│     ├─ __init__.py
-│     ├─ scroll_of_command.py
-│     ├─ scroll_of_sealing.py
-│     ├─ scroll_of_subjugation.py
-│     └─ scroll_of_eternity.py
-│
-├─ screens/
-│  ├─ __init__.py
-│  ├─ menu_screen.py
-│  ├─ char_select.py
-│  ├─ name_entry.py
-│  ├─ black_screen.py
-│  ├─ intro_video.py
-│  ├─ settings_screen.py
-│  └─ pause_screen.py
-│
-├─ combat/
-│  ├─ __init__.py
-│  ├─ stats.py
-│  ├─ battle.py				  # Actual summoner battle
-│  ├─ summoner_battle.py		  # Summoner battle intro
-│  ├─ team_randomizer.py		  # Randomizes teams for summoners
-│  ├─ vessel_stats.py
-│  ├─ wild_vessel.py                      # [UPDATED] hooks bag + roll popup
-│  ├─ capturing.py                        # [NEW] DC-based capture system
-│  └─ btn/
-│     ├─ __init__.py
-│     ├─ _btn_layout.py
-│     ├─ _btn_draw.py
-│     ├─ bag_action.py                    # [UPDATED] row click → use callback
-│     ├─ battle_action.py
-│     ├─ party_action.py
-│     └─ run_action.py
-│
-├─ rolling/
-│  ├─ __init__.py
-│  ├─ roller.py                           # set_roll_callback, d20, etc.
-│  ├─ sfx.py                              # dice sound helper
-│  ├─ stat_rolls.py
-│  └─ ui.py                               # roll textbox (modal)
-│
-├─ systems/
-│  ├─ __init__.py
-│  ├─ audio.py                            # play_click(), play_sfx(), bank
-│  ├─ party_ui.py                         # [UPDATED] small HUD improvements
-│  ├─ save_system.py
-│  ├─ theme.py
-│  ├─ ui.py
-│  ├─ xp.py
-│  └─ asset_links.py                      # token↔vessel helpers
-│
-├─ world/
-│  ├─ __init__.py
-│  ├─ actors.py
-│  ├─ assets.py
-│  ├─ procgen.py
-│  └─ world.py
-│
-├─ game_state.py
-├─ settings.py
-├─ main.py
-└─ README.md
-
 
 Import patterns (what you’re using now)
 In main.py:
@@ -112,214 +35,6 @@ Kopier kode
 cd SummonersLedger
 python main.py
 Keep __init__.py in screens/, systems/, and world/ (can be empty).
-
-Remove any old duplicates at root (e.g. an old setting_screen.py). The active file is screens/settings_screen.py.
-
-Asset paths should be defined in settings.py (e.g., ASSETS_MAP_DIR, etc.), so code uses those base dirs rather than hardcoding.
-
-Assets
-SummonersLedger/
-└─ Assets/
-   ├─ Map/                                # backgrounds, menu art, road, mist, class art, videos
-   │  ├─ road.png
-   │  ├─ Mist1.png                        # Mist*.png sequence (animation)
-   │  ├─ Mist2.png
-   │  ├─ Mist3.png
-   │  ├─ ...
-   │  ├─ MainMenu.png                     # optional menu background
-   │  ├─ MainMenuM.png                    # optional menu side art
-   │  ├─ MainMenuF.png
-   │  ├─ Logo.png                         # optional logo
-   │  ├─ BarbarianL.png                   # class “ledger” art used on black_screen
-   │  ├─ DruidL.png
-   │  ├─ RogueL.png
-   │  ├─ Grass_UI.png
-   │  ├─ BarbarianV.mp4                   # optional intro video (per class)
-   │  ├─ BarbarianV.mp3                   # optional audio for the video (mp3 or wav)
-   │  ├─ DruidV.mp4
-   │  ├─ DruidV.mp3
-   │  ├─ RogueV.mp4
-   │  └─ RogueV.wav
-   │
-   ├─ PlayableCharacters/                 # player sprites + (optional) walk anim frames
-   │  ├─ CharacterMale.png                # S.PLAYER_MALE_FILE
-   │  ├─ CharacterFemale.png              # S.PLAYER_FEMALE_FILE
-   │  ├─ Mwalk1.png                       # optional walk anim (male)
-   │  ├─ Mwalk2.png
-   │  ├─ Mwalk3.png
-   │  ├─ Fwalk1.png                       # optional walk anim (female)
-   │  ├─ Fwalk2.png
-   │  └─ Fwalk3.png
-   │
-├─ Starters/
-│  ├─ StarterBarbarian1.png
-│  ├─ StarterBarbarian2.png
-│  ├─ StarterBarbarian3.png
-│  ├─ StarterBarbarian4.png
-│  ├─ StarterBarbarian5.png
-│  ├─ StarterTokenBarbarian1.png
-│  ├─ StarterTokenBarbarian2.png
-│  ├─ StarterTokenBarbarian3.png
-│  ├─ StarterTokenBarbarian4.png
-│  ├─ StarterTokenBarbarian5.png
-│  ├─ StarterRogue1.png
-│  ├─ StarterRogue2.png
-│  ├─ StarterRogue3.png
-│  ├─ StarterRogue4.png
-│  ├─ StarterRogue5.png
-│  ├─ StarterTokenRogue1.png
-│  ├─ StarterTokenRogue2.png
-│  ├─ StarterTokenRogue3.png
-│  ├─ StarterTokenRogue4.png
-│  ├─ StarterTokenRogue5.png
-│  ├─ StarterDruid1.png
-│  ├─ StarterDruid2.png
-│  ├─ StarterDruid3.png
-│  ├─ StarterDruid4.png
-│  ├─ StarterDruid5.png
-│  ├─ StarterTokenDruid1.png
-│  ├─ StarterTokenDruid2.png
-│  ├─ StarterTokenDruid3.png
-│  ├─ StarterTokenDruid4.png
-│  └─ StarterTokenDruid5.png
-│
-├─ RareVessels/
-│  ├─ RTokenArtificer1.png
-│  ├─ RVesselArtificer.png
-│  ├─ RTokenBarbarian1.png
-│  ├─ RVesselBarbarian.png
-│  ├─ RTokenBard1.png
-│  ├─ RVesselBard.png
-│  ├─ RTokenBloodhunter1.png
-│  ├─ RVesselBloodhunter.png
-│  ├─ RTokenCleric1.png
-│  ├─ RVesselCleric.png
-│  ├─ RTokenDruid1.png
-│  ├─ RVesselDruid.png
-│  ├─ RTokenFighter1.png
-│  ├─ RVesselFighter.png
-│  ├─ RTokenMonk1.png
-│  ├─ RVesselMonk.png
-│  ├─ RTokenPaladin1.png
-│  ├─ RVesselPaladin.png
-│  ├─ RTokenRanger1.png
-│  ├─ RVesselRanger.png
-│  ├─ RTokenRogue1.png
-│  ├─ RVesselRogue.png
-│  ├─ RTokenSorcerer1.png
-│  ├─ RVesselSorcerer.png
-│  ├─ RTokenWarlock1.png
-│  ├─ RVesselWarlock.png
-│  ├─ RTokenWizard1.png
-│  └─ RVesselWizard.png
-│
-├─ VesselsFemale/
-│  ├─ FTokenArtificer1.png
-│  ├─ FTokenBarbarian1.png
-│  ├─ FTokenBard1.png
-│  ├─ FTokenBloodhunter1.png
-│  ├─ FTokenCleric1.png
-│  ├─ FTokenDruid1.png
-│  ├─ FTokenFighter1.png
-│  ├─ FTokenMonk1.png
-│  ├─ FTokenPaladin1.png
-│  ├─ FTokenRanger1.png
-│  ├─ FTokenRogue1.png
-│  ├─ FTokenSorcerer1.png
-│  ├─ FTokenWarlock1.png
-│  ├─ FTokenWizard1.png
-│  ├─ FVesselArtificer1.png
-│  ├─ FVesselArtificer2.png
-│  ├─ FVesselBarbarian1.png
-│  ├─ FVesselBarbarian2.png
-│  ├─ FVesselBard1.png
-│  ├─ FVesselBard2.png
-│  ├─ FVesselBloodhunter1.png
-│  ├─ FVesselBloodhunter2.png
-│  ├─ FVesselCleric1.png
-│  ├─ FVesselCleric2.png
-│  ├─ FVesselDruid1.png
-│  ├─ FVesselDruid2.png
-│  ├─ FVesselFighter1.png
-│  ├─ FVesselFighter2.png
-│  ├─ FVesselMonk1.png
-│  ├─ FVesselMonk2.png
-│  ├─ FVesselPaladin1.png
-│  ├─ FVesselPaladin2.png
-│  ├─ FVesselRanger1.png
-│  ├─ FVesselRanger2.png
-│  ├─ FVesselRogue1.png
-│  ├─ FVesselRogue2.png
-│  ├─ FVesselSorcerer1.png
-│  ├─ FVesselSorcerer2.png
-│  ├─ FVesselWarlock1.png
-│  ├─ FVesselWarlock2.png
-│  └─ FVesselWizard1.png
-│     FVesselWizard2.png
-│
-├─ VesselsMale/
-│  ├─ MTokenArtificer1.png
-│  ├─ MTokenBarbarian1.png
-│  ├─ MTokenBard1.png
-│  ├─ MTokenBloodhunter1.png
-│  ├─ MTokenCleric1.png
-│  ├─ MTokenDruid1.png
-│  ├─ MTokenFighter1.png
-│  ├─ MTokenMonk1.png
-│  ├─ MTokenPaladin1.png
-│  ├─ MTokenRanger1.png
-│  ├─ MTokenRogue1.png
-│  ├─ MTokenSorcerer1.png
-│  ├─ MTokenWarlock1.png
-│  ├─ MTokenWizard1.png
-│  ├─ MVesselArtificer1.png
-│  ├─ MVesselArtificer2.png
-│  ├─ MVesselBarbarian1.png
-│  ├─ MVesselBarbarian2.png
-│  ├─ MVesselBard1.png
-│  ├─ MVesselBard2.png
-│  ├─ MVesselBloodhunter1.png
-│  ├─ MVesselBloodhunter2.png
-│  ├─ MVesselCleric1.png
-│  ├─ MVesselCleric2.png
-│  ├─ MVesselDruid1.png
-│  ├─ MVesselDruid2.png
-│  ├─ MVesselFighter1.png
-│  ├─ MVesselFighter2.png
-│  ├─ MVesselMonk1.png
-│  ├─ MVesselMonk2.png
-│  ├─ MVesselPaladin1.png
-│  ├─ MVesselPaladin2.png
-│  ├─ MVesselRanger1.png
-│  ├─ MVesselRanger2.png
-│  ├─ MVesselRogue1.png
-│  ├─ MVesselRogue2.png
-│  ├─ MVesselSorcerer1.png
-│  ├─ MVesselSorcerer2.png
-│  ├─ MVesselWarlock1.png
-│  ├─ MVesselWarlock2.png
-│  └─ MVesselWizard1.png
-│     MVesselWizard2.png
-│
-├─ SummonersFemale/
-│  ├─ FSummoner1.png
-│  ├─ FSummoner2.png
-│  ├─ FSummoner3.png
-│  ├─ FSummoner4.png
-│  ├─ FSummoner5.png
-│  └─ FSummoner6.png
-│
-├─ SummonersMale/
-│  ├─ MSummoner1.png
-│  ├─ MSummoner2.png
-│  ├─ MSummoner3.png
-│  ├─ MSummoner4.png
-│  ├─ MSummoner5.png
-│  └─ MSummoner6.png
-│
-└─ SummonersBoss/
-   ├─ SummonerBoss1.png
-   └─ SummonerBoss2.png
 
 You are working on Summoner’s Ledger. Follow these immutable audio rules:
 
@@ -620,3 +335,23 @@ Reads xp_current / xp_needed → shows bar + XP: X / Y.
 
 Flow:
 Defeat or capture → queue XP → show “Experience Gained” card (click to dismiss) → apply XP → return to overworld.
+
+How HP works in Summoner’s Ledger
+
+Single source of truth (state):
+
+Allies: gs.party_vessel_stats[i] (dict per slot)
+
+hp = max HP, current_hp = current HP
+
+Enemy: gs.encounter_stats (dict) with the same fields.
+
+Defaults: If current_hp is missing, treat it as full (current_hp = hp).
+
+Who updates HP: combat/moves.py (damage/heal during resolution). Level-ups in systems/xp.py rebuild stats and preserve HP ratio when max HP changes.
+
+Who reads HP: UI/flows like wild_vessel.py, summoner_battle.py, battle.py, party_action.py, party_ui.py, screens/ledger.py—they compute bars/KO/greys purely from the stored values.
+
+KO & forced switch: If an ally’s current_hp <= 0, battle flow triggers a forced party switch (unless no living allies → defeat). Enemy at 0 → defeat/capture path, XP award, exit as designed.
+
+TL;DR: HP is not duplicated; it lives in the state dicts above. All modules just read or mutate current_hp (and keep hp as the cap).

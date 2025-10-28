@@ -149,10 +149,23 @@ def distribute_xp(gs, active_idx: int, base_xp: int) -> Tuple[int, int, List[Tup
 
 
 # ---------- Level-up ----------
+# ---------- Level-up ----------
 def apply_level_up(gs, idx: int, new_level: int, *, preserve_hp_ratio: bool = True):
     """
-    Rebuild vessel stats at new level while keeping ability rolls.
+    Rebuild stats at new level and handle HP + on-level healing.
+
+    HP growth:
+      • Milestones only (levels 10, 20, 30, 40, 50)
+      • On each milestone: Max HP increases by (1dHitDie + CON mod), minimum +1 total
+      • We keep previous max HP as the base and add milestone gains on top
+
+    Healing on level-up (thematic D&D-style, additive, capped at max):
+      • After we set the new level and HP fields, we heal a small amount
+        based on the *new* level range (implemented in systems.heal.heal_on_level_up).
+
+    We preserve abilities and refresh AC/prof/etc. via build_stats.
     """
+    import random
     try:
         st = gs.party_vessel_stats[idx]
     except Exception:
@@ -160,43 +173,88 @@ def apply_level_up(gs, idx: int, new_level: int, *, preserve_hp_ratio: bool = Tr
     if not isinstance(st, dict):
         return
 
-    # Preserve abilities + HP ratio
+    # Preserve abilities & a snapshot of current/max HP BEFORE rebuild
     abilities = st.get("abilities") or {}
-    old_hp = float(st.get("hp", 1))
-    cur_hp = float(st.get("current_hp", old_hp))
-    ratio = clamp(cur_hp / old_hp if old_hp > 0 else 1.0, 0.0, 1.0)
+    old_hp_max = float(st.get("hp", 1))
+    cur_hp     = float(st.get("current_hp", old_hp_max))
 
-    cls = st.get("class_name") or "Fighter"
+    # --- Rebuild non-HP stats for new level ---
+    cls  = st.get("class_name") or "Fighter"
     name = st.get("name") or cls
-    notes = "Level up rebuild"
-
-    # Build fresh stats
     try:
         new_stats = build_stats(
             name=name,
             class_name=cls,
             level=new_level,
             abilities={k.upper(): int(v) for k, v in abilities.items()},
-            notes=notes,
+            notes="Level up rebuild (milestone HP handled in XP)",
         ).to_dict()
     except Exception as e:
         print(f"⚠️ build_stats failed during level-up for slot {idx}: {e}")
         return
 
-    # Merge back into old dict to preserve XP & other keys
+    # Merge rebuilt stats; keep our XP fields intact if present
     st.update(new_stats)
-    st["level"] = new_level
-    st.setdefault("xp_current", 0)
+    st["level"] = int(new_level)
+    st.setdefault("xp_current", int(st.get("xp_current", 0)))
 
-    if preserve_hp_ratio and "hp" in st:
-        st["current_hp"] = int(round(st["hp"] * ratio))
+    # ---------- HP: carry forward previous max, then apply milestone gains ----------
+    new_hp_max = int(round(old_hp_max))
 
-    # Optional: you could play a sound or trigger animation elsewhere
+    # Milestone levels (every 10)
+    if new_level % 10 == 0:
+        # Determine class hit die and CON modifier
+        try:
+            from combat.stats import hit_die_for_class, ability_mod
+            d = int(hit_die_for_class(cls))
+        except Exception:
+            d = 8  # safe default
+        try:
+            con_mod = int(st.get("mods", {}).get("CON"))
+        except Exception:
+            # fall back to computing from abilities if mods missing
+            try:
+                from combat.stats import ability_mod as _abmod
+                con_mod = int(_abmod(int(abilities.get("CON", 10))))
+            except Exception:
+                con_mod = 0
+
+        # Roll 1d(HitDie) + CON (minimum +1 total gain)
+        roll = random.randint(1, max(2, d))
+        gain = max(1, roll + con_mod)
+        new_hp_max = max(1, int(round(old_hp_max + gain)))
+
+        # Optional: record roll history
+        hist = st.setdefault("hp_rolls", [])
+        hist.append({"level": new_level, "die": d, "roll": roll, "con": con_mod, "gain": gain})
+
+    # Update HP fields (max)
+    st["hp"] = new_hp_max
+
+    # Preserve current HP ratio unless the caller opts to full-heal
+    if preserve_hp_ratio:
+        ratio = 1.0 if old_hp_max <= 0 else max(0.0, min(1.0, cur_hp / old_hp_max))
+        st["current_hp"] = int(round(new_hp_max * ratio))
+    else:
+        st["current_hp"] = int(new_hp_max)
+
+    # ---------- Bonus on-level healing (small dice-based heal; capped; never lowers HP) ----------
+    try:
+        from systems.heal import heal_on_level_up
+        # Heals based on level bands (1d4 / 1d8 / 2d8 / 1d20 / 1d20). min_heal=1 avoids 0 on bad rolls.
+        heal_on_level_up(gs, idx, new_level, min_heal=1)
+    except Exception:
+        pass
+
+    # Optional: SFX
     try:
         from systems import audio as audio_sys
         audio_sys.play_sfx("LevelUp")
     except Exception:
         pass
+
+
+
 
 # ============================================================
 # XP profile initialization

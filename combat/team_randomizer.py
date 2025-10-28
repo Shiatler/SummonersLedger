@@ -48,7 +48,7 @@ def highest_party_level(gs) -> int:
 # ---------------- Probabilistic team size by level (1..6) ----------------
 # Keyframes you can tune any time:
 _KEYFRAMES = {
-    1:  {1: 0.01, 2: 0.99},
+    1:  {1: 0.85, 2: 0.15},
     10: {1: 0.20, 2: 0.75, 3: 0.05},
     20: {1: 0.10, 2: 0.80, 3: 0.10},
     30: {2: 0.10, 3: 0.80, 4: 0.10},

@@ -1,0 +1,77 @@
+
+SummonersLedger/
+│
+├─ Saves/
+│
+├─ bootstrap/
+│  ├─ __init__.py
+│  ├─ default_inventory.py
+│  └─ default_party.py
+│
+├─ items/                                  # [NEW]
+│  ├─ __init__.py
+│  ├─ base_items.py
+│  ├─ items.py
+│  └─ scrolls/
+│     ├─ __init__.py
+│     ├─ scroll_of_command.py
+│     ├─ scroll_of_sealing.py
+│     ├─ scroll_of_subjugation.py
+│     └─ scroll_of_eternity.py
+│
+├─ screens/
+│  ├─ __init__.py
+│  ├─ menu_screen.py
+│  ├─ char_select.py
+│  ├─ name_entry.py
+│  ├─ black_screen.py
+│  ├─ intro_video.py
+│  ├─ settings_screen.py
+│  └─ pause_screen.py
+│
+├─ combat/
+│  ├─ __init__.py
+│  ├─ stats.py
+│  ├─ battle.py				  # Actual summoner battle
+│  ├─ summoner_battle.py		  # Summoner battle intro
+│  ├─ team_randomizer.py		  # Randomizes teams for summoners
+│  ├─ vessel_stats.py
+│  ├─ wild_vessel.py                      # [UPDATED] hooks bag + roll popup
+│  ├─ capturing.py                        # [NEW] DC-based capture system
+│  └─ btn/
+│     ├─ __init__.py
+│     ├─ _btn_layout.py
+│     ├─ _btn_draw.py
+│     ├─ bag_action.py                    # [UPDATED] row click → use callback
+│     ├─ battle_action.py
+│     ├─ party_action.py
+│     └─ run_action.py
+│
+├─ rolling/
+│  ├─ __init__.py
+│  ├─ roller.py                           # set_roll_callback, d20, etc.
+│  ├─ sfx.py                              # dice sound helper
+│  ├─ stat_rolls.py
+│  └─ ui.py                               # roll textbox (modal)
+│
+├─ systems/
+│  ├─ __init__.py
+│  ├─ audio.py                            # play_click(), play_sfx(), bank
+│  ├─ party_ui.py                         # [UPDATED] small HUD improvements
+│  ├─ save_system.py
+│  ├─ theme.py
+│  ├─ ui.py
+│  ├─ xp.py
+│  └─ asset_links.py                      # token↔vessel helpers
+│
+├─ world/
+│  ├─ __init__.py
+│  ├─ actors.py
+│  ├─ assets.py
+│  ├─ procgen.py
+│  └─ world.py
+│
+├─ game_state.py
+├─ settings.py
+├─ main.py
+└─ README.md

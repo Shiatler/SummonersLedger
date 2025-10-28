@@ -180,15 +180,15 @@ def compute_hp(
         per_level = average_die(d) if use_average else average_die(d)
         hp += (per_level + con) * (lvl - 1)
 
-    # Milestone bonuses (no CON added)
-    ms = list(milestones) if milestones is not None else list(HP_MILESTONES)
+    # Milestone bonuses (no CON) at 10/20/30/40/50
+    ms = list(milestones) if milestones is not None else [10, 20, 30, 40, 50]
     hp += _count_milestones_reached(lvl, ms) * d
 
-    # Apply multipliers (global first, then per-call)
+    # Apply multipliers
     total_mult = max(0.1, float(GLOBAL_HP_MULTIPLIER)) * max(0.1, float(hp_multiplier))
     hp = int(round(hp * total_mult))
-
     return max(1, hp)
+
 
 # ------------ data model ------------
 

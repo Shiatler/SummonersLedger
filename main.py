@@ -30,6 +30,7 @@ from rolling import roller             # <- the dice functions (roll_check, etc.
 from combat.btn import bag_action as bag_ui
 
 from screens import party_manager, ledger
+from screens import death as death_screen
 
 # screens
 from screens import (
@@ -119,6 +120,7 @@ MODE_INTRO_VIDEO  = "INTRO_VIDEO"
 MODE_WILD_VESSEL = "WILD_VESSEL"
 MODE_SUMMONER_BATTLE = "SUMMONER_BATTLE"
 MODE_BATTLE = getattr(S, "MODE_BATTLE", "BATTLE")
+MODE_DEATH = getattr(S, "MODE_DEATH", "DEATH")
 
 
 
@@ -371,6 +373,8 @@ def enter_mode(mode, gs, deps):
         summoner_battle.enter(gs, **deps)
     elif mode == MODE_BATTLE:
         battle.enter(gs, **deps)
+    elif mode == MODE_DEATH:
+        death_screen.enter(gs, **deps) 
     elif mode == S.MODE_GAME:
         # gameplay has no dedicated enter; handled inline
         pass
@@ -464,6 +468,8 @@ while running:
         elif mode == S.MODE_GAME:
             audio.stop_music()
             gs.overworld_music_started = False
+        elif mode == MODE_DEATH:
+            audio.stop_music()
 
         # ensure chosen gender actually updates the player before Name Entry uses it
         if mode == MODE_NAME_ENTRY and getattr(gs, "chosen_gender", None):
@@ -600,9 +606,28 @@ while running:
         if next_mode:
             mode = next_mode
 
+    # ===================== Death ==========================   
+    elif mode == MODE_DEATH:
+        next_mode = death_screen.handle(events, gs, **deps)
+        death_screen.draw(screen, gs, dt, **deps)
+        pygame.display.flip()
+        if next_mode:
+            mode = next_mode
+
 
     # ===================== GAMEPLAY ========================
     elif mode == S.MODE_GAME:
+        # ===== Death gate: if no living vessels, go to Death screen =====
+        stats = getattr(gs, "party_vessel_stats", None) or []
+        has_living = any(isinstance(st, dict) and int(st.get("current_hp", st.get("hp", 0)) or 0) > 0 for st in stats)
+        if not has_living:
+            mode = MODE_DEATH
+            enter_mode(mode, gs, deps)
+            # Draw once to avoid a 1-frame flash of overworld under black
+            death_screen.draw(screen, gs, dt, **deps)
+            pygame.display.flip()
+            continue
+        
         # --- Snapshots for this frame (used to suppress ESC->Pause) ---
         bag_open_at_frame_start = bag_ui.is_open()
         modal_open_at_frame_start = (
