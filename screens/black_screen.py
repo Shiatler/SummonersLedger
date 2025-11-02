@@ -1,6 +1,6 @@
 # =============================================================
 # screens/black_screen.py — Unlimited starters (absolute paths)
-# - Picks a random Starter<Class><N>.png ON REVEAL (click)
+# - Picks a random Starter<Class><N>.png ON FIRST REVEAL only
 # - Uses absolute path to .../Assets/Starters so cwd doesn't matter
 # - Case-insensitive extension (.png / .PNG)
 # - Maps to StarterToken<Class><N>.(png|PNG) in the same folder
@@ -11,9 +11,9 @@ import settings as S
 from systems import audio as audio_sys
 
 # ---------- Absolute paths ----------
-_THIS_DIR = os.path.dirname(os.path.abspath(__file__))     # .../screens
+_THIS_DIR = os.path.dirname(os.path.abspath(__file__))          # .../screens
 _PROJECT_ROOT = os.path.abspath(os.path.join(_THIS_DIR, ".."))  # .../SummonersLedger
-_STARTERS_DIR = os.path.join(_PROJECT_ROOT, "Assets", "Starters")  # .../Assets/Starters
+_STARTERS_DIR = os.path.join(_PROJECT_ROOT, "Assets", "Starters")
 
 # ---------- FS helpers ----------
 def _safe_load(path):
@@ -51,16 +51,14 @@ def _scan_starters(prefix: str) -> list[str]:
     pref_low = prefix.lower()
     for fname in os.listdir(_STARTERS_DIR):
         fl = fname.lower()
-        if not fl.endswith((".png",)):
+        if not fl.endswith(".png"):  # .PNG handled via lower()
             continue
         if not fl.startswith(pref_low):
             continue
         name_no_ext = os.path.splitext(fname)[0]
         # must end with digits
-        m = _DIGIT_RX.search(name_no_ext)
-        if not m:
+        if not _DIGIT_RX.search(name_no_ext):
             continue
-        # keep it
         out.append(os.path.join(_STARTERS_DIR, fname))
 
     print(f"[starter] {_STARTERS_DIR} | {prefix}: {len(out)} candidate(s)")
@@ -77,7 +75,7 @@ def _pick_random_starter(prefix: str):
             return None, None, None
         choice = random.choice(candidates)
         surf = pygame.image.load(choice).convert_alpha()
-        base = os.path.splitext(os.path.basename(choice))[0]  # 'StarterBarbarian12'
+        base = os.path.splitext(os.path.basename(choice))[0]  # e.g. 'StarterBarbarian12'
         print(f"[starter] chosen -> {base}")
         return surf, base, choice
     except Exception as e:
@@ -140,6 +138,33 @@ def _draw_spotlight_with_starter(surface, book_rect, color, starter_img):
     pygame.draw.circle(ring, (*color, 120), (radius, radius), int(radius * 0.88), width=2)
     surface.blit(ring, circle_rect.topleft)
     return starter_rect, circle_rect
+
+# ---------- Internal helpers ----------
+_PREFIX_MAP = {
+    "barbarian": "StarterBarbarian",
+    "druid":     "StarterDruid",
+    "rogue":     "StarterRogue",
+}
+
+def _ensure_revealed_starter_for_class(gs, class_key: str):
+    """
+    Ensure class_key has a chosen starter stored.
+    Only picks once; subsequent calls do nothing (so it 'remembers').
+    """
+    data = gs._class_select.get(class_key, {})
+    if data.get("starter") is not None and data.get("starter_name"):
+        return  # already chosen for this class
+
+    prefix = _PREFIX_MAP.get(class_key)
+    if not prefix:
+        return
+
+    starter_img, starter_name, _full = _pick_random_starter(prefix)
+    data["starter"] = starter_img
+    data["starter_name"] = starter_name
+    gs._class_select[class_key] = data  # write back in case dict view is a copy
+    if not starter_img:
+        print(f"[starter] No candidates found for {prefix} in {_STARTERS_DIR}")
 
 # ---------- Screen lifecycle ----------
 def enter(gs, **_):
@@ -235,33 +260,46 @@ def handle(events, gs, saves=None, audio_bank=None, **_):
                 gs.intro_class = gs.revealed_class
                 try:
                     cls_data = gs._class_select.get(gs.revealed_class, {})
-                    starter_name = cls_data.get("starter_name")  # e.g. StarterBarbarian12
+                    starter_name = cls_data.get("starter_name")  # e.g. StarterRogue5 (NO 'Token', NO extension)
                     if starter_name:
-                        token_path = _find_token_path(starter_name)
+                        token_path = _find_token_path(starter_name)  # maps StarterX -> StarterTokenX.(png|PNG)
                         if token_path and os.path.exists(token_path):
                             token_surf = pygame.image.load(token_path).convert_alpha()
                             if not getattr(gs, "party_slots", None):
                                 gs.party_slots = [None] * 6
                             if not getattr(gs, "party_slots_names", None):
                                 gs.party_slots_names = [None] * 6
+                            if not getattr(gs, "party_vessel_stats", None):
+                                gs.party_vessel_stats = [None] * 6
 
-                            token_base = os.path.basename(token_path)
+                            token_base = os.path.basename(token_path)  # e.g. StarterTokenRogue5.png
+
+                            # If already in party, don't touch stats (preserves HP/damage/faint)
                             if token_base in (gs.party_slots_names or []):
                                 print(f"ℹ️ {token_base} already in party; skipping add.")
                             else:
+                                # Place into first empty slot
                                 placed = False
                                 for i in range(len(gs.party_slots)):
                                     if gs.party_slots[i] is None:
                                         gs.party_slots[i] = token_surf
                                         gs.party_slots_names[i] = token_base
+                                        # Initialize stats ONCE with the correct ASSET NAME (starter_name)
+                                        if gs.party_vessel_stats[i] is None:
+                                            from combat.vessel_stats import generate_vessel_stats_from_asset
+                                            # Use 'Starter<Class><N>' — NOT the token filename.
+                                            gs.party_vessel_stats[i] = generate_vessel_stats_from_asset(starter_name)
                                         placed = True
                                         print(f"🎉 Added {token_base} to party slot {i+1}")
                                         break
                                 if not placed:
                                     print("ℹ️ No empty party slots available.")
+
                             if saves:
-                                try: saves.save_game(gs)
-                                except Exception as se: print(f"⚠️ Save after starter pick failed: {se}")
+                                try:
+                                    saves.save_game(gs)
+                                except Exception as se:
+                                    print(f"⚠️ Save after starter pick failed: {se}")
                         else:
                             print(f"ℹ️ Token file not found for '{starter_name}' in {_STARTERS_DIR}")
                     else:
@@ -270,7 +308,7 @@ def handle(events, gs, saves=None, audio_bank=None, **_):
                     print(f"⚠️ Failed to add starter token to party: {e}")
                 return "INTRO_VIDEO"
 
-            # Reveal: pick a fresh random starter now (unlimited)
+            # Reveal: pick ONCE per class (remember thereafter)
             for key, data in gs._class_select.items():
                 if key in ("order", "grass", "starters_dir"):
                     continue
@@ -278,19 +316,9 @@ def handle(events, gs, saves=None, audio_bank=None, **_):
                     audio_sys.play_click(audio_bank)
                     gs.selected_class = key
                     gs.revealed_class = key
-
-                    prefix_map = {
-                        "barbarian": "StarterBarbarian",
-                        "druid":     "StarterDruid",
-                        "rogue":     "StarterRogue",
-                    }
-                    prefix = prefix_map.get(key)
-                    if prefix:
-                        starter_img, starter_name, _full = _pick_random_starter(prefix)
-                        data["starter"] = starter_img
-                        data["starter_name"] = starter_name
-                        if not starter_img:
-                            print(f"[starter] No candidates found for {prefix} in {_STARTERS_DIR}")
+                    # Only pick if we haven't already chosen for this class:
+                    if data.get("starter") is None or not data.get("starter_name"):
+                        _ensure_revealed_starter_for_class(gs, key)
                     print(f"✅ Selected class: {gs.selected_class} (starter revealed)")
                     break
     return None

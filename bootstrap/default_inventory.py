@@ -7,8 +7,18 @@
 import re
 
 STARTING_ITEMS = [
-    {"id": "scroll_of_command", "name": "Scroll of Command", "qty": 100},
+    # --- Capture Scrolls ---
+    {"id": "scroll_of_command",     "name": "Scroll of Command",     "qty": 5},
+    {"id": "scroll_of_sealing",     "name": "Scroll of Sealing",     "qty": 5},
+    {"id": "scroll_of_subjugation", "name": "Scroll of Subjugation", "qty": 3},
+    {"id": "scroll_of_eternity",    "name": "Scroll of Eternity",    "qty": 1},
+
+    # --- Healing Scrolls (new) ---
+    {"id": "scroll_of_mending",     "name": "Scroll of Mending",     "qty": 3},
+    {"id": "scroll_of_regeneration","name": "Scroll of Regeneration","qty": 2},
+    {"id": "scroll_of_revivity",    "name": "Scroll of Revivity",    "qty": 1},
 ]
+
 
 def _snake_from_name(s: str) -> str:
     s = (s or "").strip().replace("’", "'")

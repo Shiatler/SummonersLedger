@@ -1,11 +1,11 @@
 {
-  "player_y": 99921.0,
-  "distance_travelled": 0.0,
-  "next_event_at": 120.0,
-  "player_gender": "female",
+  "player_y": 96140.85999999924,
+  "distance_travelled": 3780.1400000000026,
+  "next_event_at": 4047.0,
+  "player_gender": "male",
   "party_slots_names": [
-    "StarterTokenBarbarian2.png",
-    null,
+    "StarterTokenBarbarian4.png",
+    "FTokenBarbarian1.png",
     null,
     null,
     "RTokenRanger1.png",
@@ -13,24 +13,24 @@
   ],
   "party_vessel_stats": [
     {
-      "name": "StarterBarbarian2.png",
+      "name": "StarterBarbarian4",
       "class_name": "Barbarian",
-      "level": 1,
+      "level": 2,
       "abilities": {
-        "STR": 17,
+        "STR": 16,
         "DEX": 12,
         "CON": 14,
-        "INT": 11,
-        "WIS": 9,
-        "CHA": 4
+        "INT": 12,
+        "WIS": 11,
+        "CHA": 9
       },
       "mods": {
         "STR": 3,
         "DEX": 1,
         "CON": 2,
-        "INT": 0,
-        "WIS": -1,
-        "CHA": -3
+        "INT": 1,
+        "WIS": 0,
+        "CHA": -1
       },
       "prof": 2,
       "ac": 15,
@@ -38,9 +38,44 @@
       "initiative": 1,
       "attack_stat": "STR",
       "attack_bonus": 5,
-      "notes": "Rolled on add to party"
+      "notes": "Level up rebuild (milestone HP handled in XP)",
+      "xp_current": 0,
+      "xp_needed": 4,
+      "xp_total": 3,
+      "current_hp": 5
     },
-    null,
+    {
+      "name": "FVesselBarbarian1",
+      "class_name": "Barbarian",
+      "level": 1,
+      "abilities": {
+        "STR": 13,
+        "DEX": 13,
+        "CON": 13,
+        "INT": 12,
+        "WIS": 8,
+        "CHA": 8
+      },
+      "mods": {
+        "STR": 1,
+        "DEX": 1,
+        "CON": 1,
+        "INT": 1,
+        "WIS": -1,
+        "CHA": -1
+      },
+      "prof": 2,
+      "ac": 14,
+      "hp": 13,
+      "initiative": 1,
+      "attack_stat": "STR",
+      "attack_bonus": 3,
+      "notes": "Generated from asset name",
+      "current_hp": 13,
+      "xp_needed": 3,
+      "xp_total": 0,
+      "xp_current": 0
+    },
     null,
     null,
     {
@@ -48,61 +83,147 @@
       "class_name": "Ranger",
       "level": 1,
       "abilities": {
-        "STR": 10,
-        "DEX": 16,
-        "CON": 11,
-        "INT": 9,
+        "STR": 12,
+        "DEX": 13,
+        "CON": 12,
+        "INT": 12,
         "WIS": 13,
-        "CHA": 8
+        "CHA": 5
       },
       "mods": {
-        "STR": 0,
-        "DEX": 3,
-        "CON": 0,
-        "INT": -1,
+        "STR": 1,
+        "DEX": 1,
+        "CON": 1,
+        "INT": 1,
         "WIS": 1,
-        "CHA": -1
+        "CHA": -3
       },
       "prof": 2,
-      "ac": 16,
-      "hp": 10,
-      "initiative": 3,
+      "ac": 14,
+      "hp": 11,
+      "initiative": 1,
       "attack_stat": "DEX",
-      "attack_bonus": 5,
-      "notes": "Generated from asset name"
+      "attack_bonus": 3,
+      "notes": "Generated from asset name",
+      "xp_current": 0,
+      "xp_needed": 3,
+      "xp_total": 0
     },
     {
       "name": "FVesselBarbarian1.png",
       "class_name": "Barbarian",
       "level": 1,
       "abilities": {
-        "STR": 17,
+        "STR": 15,
         "DEX": 15,
-        "CON": 12,
-        "INT": 10,
+        "CON": 13,
+        "INT": 13,
         "WIS": 9,
-        "CHA": 9
+        "CHA": 6
       },
       "mods": {
-        "STR": 3,
+        "STR": 2,
         "DEX": 2,
         "CON": 1,
-        "INT": 0,
+        "INT": 1,
         "WIS": -1,
-        "CHA": -1
+        "CHA": -2
       },
       "prof": 2,
       "ac": 15,
       "hp": 13,
       "initiative": 2,
       "attack_stat": "STR",
-      "attack_bonus": 5,
-      "notes": "Migrated to current AC/HP rules (ledger auto-repair)"
+      "attack_bonus": 4,
+      "notes": "Migrated to current AC/HP rules (ledger auto-repair)",
+      "xp_current": 0,
+      "xp_needed": 3,
+      "xp_total": 0
     }
   ],
-  "rivals_on_map": [],
-  "vessels_on_map": [],
+  "rivals_on_map": [
+    {
+      "name": "FSummoner3",
+      "side": "right",
+      "x": 1340.0,
+      "y": 91517.11999999968
+    },
+    {
+      "name": "FSummoner10",
+      "side": "left",
+      "x": 1060.0,
+      "y": 93595.11999999959
+    },
+    {
+      "name": "FSummoner7",
+      "side": "left",
+      "x": 1060.0,
+      "y": 89699.39999999953
+    }
+  ],
+  "vessels_on_map": [
+    {
+      "side": "left",
+      "x": 1060.0,
+      "y": 93149.25999999991
+    },
+    {
+      "side": "left",
+      "x": 1060.0,
+      "y": 92294.59999999986
+    },
+    {
+      "side": "right",
+      "x": 1340.0,
+      "y": 92590.51999999973
+    },
+    {
+      "side": "left",
+      "x": 1060.0,
+      "y": 92843.35999999972
+    },
+    {
+      "side": "left",
+      "x": 1060.0,
+      "y": 92041.17999999951
+    },
+    {
+      "side": "right",
+      "x": 1340.0,
+      "y": 89468.09999999947
+    },
+    {
+      "side": "right",
+      "x": 1340.0,
+      "y": 90241.43999999942
+    },
+    {
+      "side": "left",
+      "x": 1060.0,
+      "y": 91774.51999999938
+    },
+    {
+      "side": "right",
+      "x": 1340.0,
+      "y": 90508.21999999932
+    },
+    {
+      "side": "left",
+      "x": 1060.0,
+      "y": 91269.03999999928
+    },
+    {
+      "side": "right",
+      "x": 1340.0,
+      "y": 91083.39999999927
+    }
+  ],
   "inventory": {
-    "scroll_of_command": 100
+    "scroll_of_command": 5,
+    "scroll_of_sealing": 5,
+    "scroll_of_subjugation": 2,
+    "scroll_of_mending": 3,
+    "scroll_of_regeneration": 2,
+    "scroll_of_revivity": 1
   }
 }

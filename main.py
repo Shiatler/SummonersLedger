@@ -30,6 +30,7 @@ from rolling import roller             # <- the dice functions (roll_check, etc.
 from combat.btn import bag_action as bag_ui
 
 from screens import party_manager, ledger
+from screens import death_saves as death_saves_screen
 from screens import death as death_screen
 
 # screens
@@ -120,7 +121,9 @@ MODE_INTRO_VIDEO  = "INTRO_VIDEO"
 MODE_WILD_VESSEL = "WILD_VESSEL"
 MODE_SUMMONER_BATTLE = "SUMMONER_BATTLE"
 MODE_BATTLE = getattr(S, "MODE_BATTLE", "BATTLE")
+MODE_DEATH_SAVES = getattr(S, "MODE_DEATH_SAVES", "DEATH_SAVES")
 MODE_DEATH = getattr(S, "MODE_DEATH", "DEATH")
+
 
 
 
@@ -373,6 +376,8 @@ def enter_mode(mode, gs, deps):
         summoner_battle.enter(gs, **deps)
     elif mode == MODE_BATTLE:
         battle.enter(gs, **deps)
+    elif mode == MODE_DEATH_SAVES:                           
+        death_saves_screen.enter(gs, **deps)    
     elif mode == MODE_DEATH:
         death_screen.enter(gs, **deps) 
     elif mode == S.MODE_GAME:
@@ -605,6 +610,15 @@ while running:
         pygame.display.flip()
         if next_mode:
             mode = next_mode
+    
+    # ===================== Death Saves ==========================
+    elif mode == MODE_DEATH_SAVES:
+        next_mode = death_saves_screen.handle(events, gs, **deps)
+        death_saves_screen.draw(screen, gs, dt, **deps)
+        pygame.display.flip()
+        if next_mode:
+            mode = next_mode
+
 
     # ===================== Death ==========================   
     elif mode == MODE_DEATH:
@@ -617,16 +631,22 @@ while running:
 
     # ===================== GAMEPLAY ========================
     elif mode == S.MODE_GAME:
-        # ===== Death gate: if no living vessels, go to Death screen =====
+        # ===== Death gate: only when we actually have a party and none are alive =====
         stats = getattr(gs, "party_vessel_stats", None) or []
-        has_living = any(isinstance(st, dict) and int(st.get("current_hp", st.get("hp", 0)) or 0) > 0 for st in stats)
-        if not has_living:
-            mode = MODE_DEATH
+        has_any_member = any(isinstance(st, dict) for st in stats)
+        has_living = any(
+            isinstance(st, dict) and int(st.get("current_hp", st.get("hp", 0)) or 0) > 0
+            for st in stats
+        )
+        if has_any_member and not has_living:
+            mode = MODE_DEATH_SAVES
             enter_mode(mode, gs, deps)
             # Draw once to avoid a 1-frame flash of overworld under black
-            death_screen.draw(screen, gs, dt, **deps)
+            death_saves_screen.draw(screen, gs, dt, **deps)
             pygame.display.flip()
             continue
+
+
         
         # --- Snapshots for this frame (used to suppress ESC->Pause) ---
         bag_open_at_frame_start = bag_ui.is_open()

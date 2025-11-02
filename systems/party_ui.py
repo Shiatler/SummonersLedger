@@ -246,14 +246,27 @@ def draw_party_hud(screen: pygame.Surface, gs):
 
         _slot_rects.append(r)
 
-        # Ensure stats as soon as a slot has a filename
-        if getattr(gs, "party_slots_names", None) and i < len(gs.party_slots_names):
-            if gs.party_slots_names[i]:
-                try:
-                    from screens.ledger import _ensure_stats_for_slot as _ensure
-                    _ensure(gs, i)
-                except Exception as ex:
-                    print(f"⚠️ stats ensure failed for slot {i}: {ex}")
+        # Ensure stats ONLY if missing for this slot
+        name_list = getattr(gs, "party_slots_names", None)
+        stats_list = getattr(gs, "party_vessel_stats", None)
+
+        need_ensure = False
+        if name_list and i < len(name_list) and name_list[i]:
+            if not stats_list or i >= len(stats_list) or not isinstance(stats_list[i], dict):
+                need_ensure = True
+            else:
+                cur = stats_list[i]
+                # If current_hp exists, never rebuild here (preserve damage/faint)
+                if "current_hp" not in cur:
+                    need_ensure = True
+
+        if need_ensure:
+            try:
+                from screens.ledger import _ensure_stats_for_slot as _ensure
+                _ensure(gs, i)
+            except Exception as ex:
+                print(f"⚠️ stats ensure failed for slot {i}: {ex}")
+
 
         # Lazy-load token surface from filename if needed
         if (token is None or not isinstance(token, pygame.Surface)) \

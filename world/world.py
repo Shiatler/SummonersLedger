@@ -7,6 +7,7 @@ from pygame.math import Vector2
 import settings as S
 from screens import party_manager
 from screens import death as death_screen
+from screens import death_saves as death_saves_screen
 
 # ====================================================
 # ================ PLAYER & CAMERA ===================
@@ -178,15 +179,17 @@ def draw_repeating_road(surface: pygame.Surface, cam_x_or_y: float, maybe_cam_y:
 
 def enter(gs, **_):
     """Initialize overworld state."""
-    # If party has no living vessels, jump to death screen immediately.
+    # If we actually have a party and none are alive, jump to death screen.
     stats = getattr(gs, "party_vessel_stats", None) or []
+    has_any_member = any(isinstance(st, dict) for st in stats)
     has_living = any(
         isinstance(st, dict) and int(st.get("current_hp", st.get("hp", 0)) or 0) > 0
         for st in stats
     )
-    if not has_living:
-        death_screen.enter(gs)
+    if has_any_member and not has_living:
+        death_saves_screen.enter(gs)
         return
+
 
     if ROAD_IMG is None:
         load_road()
@@ -229,14 +232,17 @@ def handle(events, gs, **_):
 def update(gs, dt, **_):
     """Advance player & camera (frozen when Party Manager is open)."""
 
-    # If party wipes outside of battle, go to death screen immediately.
+    # If we actually have a party and it's fully wiped outside of battle, go to death screen.
     stats = getattr(gs, "party_vessel_stats", None) or []
-    if not any(
+    has_any_member = any(isinstance(st, dict) for st in stats)
+    has_living = any(
         isinstance(st, dict) and int(st.get("current_hp", st.get("hp", 0)) or 0) > 0
         for st in stats
-    ):
-        death_screen.enter(gs)
+    )
+    if has_any_member and not has_living:
+        death_saves_screen.enter(gs)
         return
+
 
     player_half = Vector2(S.PLAYER_SIZE[0] / 2, S.PLAYER_SIZE[1] / 2)
     update_player(gs, dt, player_half)

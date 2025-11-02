@@ -86,9 +86,9 @@ _BOX_POS_REL = (0.5, 0.55)   # where the box is centered inside the *visible* ba
 _BOX_SIZE_PX = (700, 400)    # width, height in pixels
 
 # tight “Pokémon-ish” metrics
-_ROW_H        = 30      # per row height
+_ROW_H        = 72      # per row height
 _ROW_GAP      = 6       # vertical gap
-_ICON_SZ      = 25      # small square icon frame
+_ICON_SZ      = 64      # small square icon frame
 _SCROLL_SPEED = 36      # px per wheel step
 _QTY_RIGHT_MARGIN = 8
 _SB_TRACK_INSET   = 3
@@ -97,6 +97,33 @@ _VIEWPORT_RECT: pygame.Rect | None = None
 _SCROLL_Y = 0
 _TOTAL_CONTENT_H = 0
 _ITEM_RECTS: list[pygame.Rect] = []
+
+# --- Small icon cache for item thumbnails ---
+_ICON_CACHE: dict[tuple[str, int], pygame.Surface | None] = {}
+
+def _get_icon_surface(path: str | None, size: int) -> pygame.Surface | None:
+    """
+    Load and cache an icon, scaled to fit within 'size'x'size' (preserve aspect).
+    Returns None if path missing or load fails.
+    """
+    if not path or not os.path.exists(path):
+        return None
+    key = (path, size)
+    surf = _ICON_CACHE.get(key)
+    if surf is not None:
+        return surf
+    try:
+        base = pygame.image.load(path).convert_alpha()
+        bw, bh = base.get_size()
+        s = min(size / max(1, bw), size / max(1, bh))
+        w, h = max(1, int(bw * s)), max(1, int(bh * s))
+        surf = pygame.transform.smoothscale(base, (w, h))
+        _ICON_CACHE[key] = surf
+        return surf
+    except Exception as e:
+        print(f"⚠️ bag_action: failed to load icon '{path}': {e}")
+        _ICON_CACHE[key] = None
+        return None
 
 # ---------------- Inventory plumbing ----------------
 _FONT_CACHE: dict[tuple[int,bool], pygame.font.Font] = {}
@@ -486,16 +513,27 @@ def _draw_inventory_on_popup(screen: pygame.Surface, popup_rect: pygame.Rect, fa
                 hover.fill((255, 255, 255, 22))
                 layer.blit(hover, row_rect.topleft)
 
-            # tiny icon frame
-            frame = pygame.Rect(row_rect.x, row_rect.y + (_ROW_H - _ICON_SZ)//2, _ICON_SZ, _ICON_SZ)
-            pygame.draw.rect(layer, (230, 220, 200, 96), frame, border_radius=4)
-            pygame.draw.rect(layer, (90, 70, 50, 160), frame, 1, border_radius=4)
+            # --- ICON only (no frame) ---
+            icon_path = it.get("icon")
+            if icon_path:
+                # load with a slightly larger target so it fills its row nicely
+                icon_surf = _get_icon_surface(icon_path, int(_ROW_H * 0.9))
+                if icon_surf:
+                    ir = icon_surf.get_rect()
+                    # vertically center the icon in the row
+                    ir.midleft = (row_rect.x + 8, row_rect.centery)
+                    layer.blit(icon_surf, ir)
+                name_x = ir.right + 12
+            else:
+                # fallback spacing if no icon
+                name_x = row_rect.x + 10
 
             # name
             name = it.get("name") or ""
             name_s = name_font.render(name, True, ink if name else ink_dim)
-            name_x = frame.right + 10
             layer.blit(name_s, name_s.get_rect(midleft=(name_x, row_rect.centery)))
+
+
 
             # qty right aligned (pad away from scrollbar)
             qty = it.get("qty", None)
