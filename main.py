@@ -17,6 +17,7 @@ from game_state import GameState
 # systems & world
 from world import assets, actors, world, procgen
 from systems import save_system as saves, theme, ui, audio, party_ui
+from systems import score_display, hud_buttons
 from bootstrap.default_party import add_default_on_new_game   # ← add this
 from bootstrap.default_inventory import add_default_inventory  # ← NEW
 
@@ -658,6 +659,25 @@ while running:
         just_toggled_bag = False
         just_opened_ledger = False  # suppress first click that opened it
 
+        # Track HUD button clicks to prevent event propagation
+        hud_button_click_positions = set()
+
+        # --- Handle HUD button clicks FIRST (before other UI) ---
+        for e in events:
+            if e.type == pygame.MOUSEBUTTONDOWN and e.button == 1:
+                button_clicked = hud_buttons.handle_click(e.pos)
+                if button_clicked == 'bag':
+                    bag_ui.toggle_popup()
+                    just_toggled_bag = True
+                    hud_button_click_positions.add(e.pos)
+                    audio.play_click(AUDIO)
+                elif button_clicked == 'party':
+                    if not bag_ui.is_open() and not ledger.is_open():
+                        party_manager.toggle()
+                        just_toggled_pm = True
+                        hud_button_click_positions.add(e.pos)
+                        audio.play_click(AUDIO)
+
         # --- Global hotkeys ---
         for e in events:
             # Bag toggle (I)
@@ -670,9 +690,10 @@ while running:
                 if not bag_ui.is_open() and not ledger.is_open():
                     party_manager.toggle()
                     just_toggled_pm = True
-
+        
         # --- Let HUD handle clicks ONLY when no modal is open (this can open the Ledger) ---
-        if not bag_ui.is_open() and not party_manager.is_open() and not ledger.is_open():
+        # Only if we didn't click a HUD button (to avoid conflicts)
+        if not hud_button_click_positions and not bag_ui.is_open() and not party_manager.is_open() and not ledger.is_open():
             was_ledger_open = ledger.is_open()  # should be False, safety check
             for e in events:
                 party_ui.handle_event(e, gs)
@@ -681,10 +702,14 @@ while running:
 
         # --- Route events to modals (priority: Bag → Party Manager → Ledger) ---
         for e in events:
+            # Skip mouse clicks that were HUD button clicks (prevent immediate close)
+            if e.type == pygame.MOUSEBUTTONDOWN and e.button == 1:
+                if e.pos in hud_button_click_positions:
+                    continue  # Skip this event, already handled by HUD button
             # Ignore the exact key that toggled a modal this frame to avoid double-handling
             if bag_ui.is_open():
                 if not (just_toggled_bag and e.type == pygame.KEYDOWN and e.key == pygame.K_i):
-                    if bag_ui.handle_event(e, gs):
+                    if bag_ui.handle_event(e, gs, screen):
                         continue
 
             if party_manager.is_open():
@@ -814,6 +839,8 @@ while running:
 
         # --- Draw HUD then modals (z-order: Bag < Party Manager < Ledger) ---
         party_ui.draw_party_hud(screen, gs)
+        score_display.draw_score(screen, gs, dt)  # Score in top right (animated)
+        hud_buttons.draw(screen)  # Bag & Party buttons in bottom right
         if bag_ui.is_open():
             bag_ui.draw_popup(screen, gs)
         if party_manager.is_open():

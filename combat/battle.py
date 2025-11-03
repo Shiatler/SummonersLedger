@@ -18,6 +18,7 @@ import settings as S
 # Systems
 from systems import audio as audio_sys
 from systems import xp as xp_sys
+from systems import points as points_sys
 
 # Enemy team generator
 from combat.team_randomizer import generate_enemy_team
@@ -1111,7 +1112,24 @@ def _finalize_battle_xp(gs, st):
     st["suppress_enemy_draw"] = True
     gs._ending_battle = True
 
-    _show_result_screen(st, "Victory!", "All enemies defeated.", kind="success", exit_on_close=True)
+    # Calculate and award points for this summoner battle
+    points_sys.ensure_points_field(gs)
+    enemy_team = st.get("enemy_team", {})
+    points_earned = points_sys.award_points(gs, enemy_team)
+    total_points = points_sys.get_total_points(gs)
+    
+    # Determine difficulty tier for display
+    from combat.team_randomizer import highest_party_level
+    player_level = highest_party_level(gs)
+    enemy_levels = enemy_team.get("levels", [])
+    avg_enemy_level = int(round(sum(enemy_levels) / len(enemy_levels))) if enemy_levels else player_level
+    level_diff = avg_enemy_level - player_level
+    tier_name = points_sys.get_points_tier_name(level_diff)
+    
+    # Build victory message with points
+    victory_msg = f"All enemies defeated.\n\nPoints Earned: {points_earned:,} ({tier_name})\nTotal Points: {total_points:,}"
+    
+    _show_result_screen(st, "Victory!", victory_msg, kind="success", exit_on_close=True)
     st["pending_exit"] = True
 
     # Clear any queued XP defensively

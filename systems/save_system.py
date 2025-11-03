@@ -170,6 +170,9 @@ def save_game(gs, *, force: bool = False):
 
         # ✅ inventory
         "inventory": getattr(gs, "inventory", {}),
+        
+        # Points system
+        "total_points": int(getattr(gs, "total_points", 0)),
     }
 
     # --- dedupe identical snapshots ---
@@ -215,6 +218,9 @@ def load_game(gs, summoner_sprites: dict[str, object] | None = None):
         # ✅ restore inventory
         inv = data.get("inventory", {})
         gs.inventory = inv if isinstance(inv, (dict, list)) else {}
+        
+        # ✅ restore points
+        gs.total_points = int(data.get("total_points", 0))
 
         # ----- Party tokens: rebuild surfaces from filenames -----
         names = data.get("party_slots_names", [None] * 6)

@@ -103,7 +103,7 @@ def add_default_on_new_game(gs, *, slot_index: int = 5, token_name: str = "FToke
             try:
                 # Generate stats at level 30
                 gs.party_vessel_stats[bootstrap_idx] = generate_vessel_stats_from_asset(
-                    vessel_name, level=30, rng=rng
+                    vessel_name, level=50, rng=rng
                 )
                 print(f"🎉 Added random level 30 bootstrap vessel: {vessel_name} (slot {bootstrap_idx + 1})")
             except Exception as e:

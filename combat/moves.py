@@ -18,8 +18,7 @@ from typing import Optional, Dict, Any, Iterable, Tuple, List
 
 from systems import audio as audio_sys
 from rolling import roller  # calls are wrapped in try/except
-
-PROF_FLAT = 2
+from combat.stats import proficiency_for_level
 
 # --------------------- Data model ----------------------------
 
@@ -244,7 +243,16 @@ def _perform_enemy_basic_attack(gs, mv: Move) -> bool:
     if not isinstance(st, dict):
         return False
 
-    atk_bonus = _ability_mod_enemy(gs, mv.ability) + PROF_FLAT
+    # Get proficiency from enemy stats, or calculate from level
+    enemy_stats = _enemy_stats(gs)
+    prof = enemy_stats.get("prof") if isinstance(enemy_stats, dict) else 2
+    if prof is None or not isinstance(prof, int):
+        level = enemy_stats.get("level", 1) if isinstance(enemy_stats, dict) else 1
+        try:
+            prof = proficiency_for_level(int(level))
+        except Exception:
+            prof = 2
+    atk_bonus = _ability_mod_enemy(gs, mv.ability) + prof
     ac = _ally_ac(gs)
 
     _set_resolving(True)
@@ -579,9 +587,17 @@ _MOVE_REGISTRY: Dict[str, List[Move]] = {
     ],
     "fighter": [
         Move("fighter_l1_weapon_strike", "Weapon Strike", "Disciplined opening attack.", (1, 5), "STR|DEX", True, 0, 20),
+        Move("fighter_l10_action_surge", "Action Surge", "Unleash a flurry of precise strikes.", (2, 8), "STR|DEX", True, 0, 10),
+        Move("fighter_l20_second_wind", "Second Wind", "Channel renewed vigor into a devastating blow.", (3, 10), "STR|DEX", True, 0, 5),
+        Move("fighter_l40_ultimate_technique", "Ultimate Technique", "Masterful execution of combat perfection.", (4, 12), "STR|DEX", True, 0, 2),
+        Move("fighter_l50_legendary_strike", "Legendary Strike", "A strike that transcends mortal skill.", (5, 12), "STR|DEX", True, 0, 1),
     ],
     "bard": [
         Move("bard_l1_vicious_mockery", "Vicious Mockery", "Psychic jab that rattles.", (1, 4), "CHA", True, 0, 20),
+        Move("bard_l10_cutting_words", "Cutting Words", "Sharp words that strike like blades.", (2, 6), "CHA", True, 0, 12),
+        Move("bard_l20_inspire_combat", "Combat Inspiration", "Rally your allies with powerful song; channel that energy into a devastating strike.", (3, 8), "CHA", True, 0, 6),
+        Move("bard_l40_sonic_boom", "Sonic Boom", "Unleash a wave of pure sound that shatters reality.", (4, 10), "CHA", True, 0, 2),
+        Move("bard_l50_final_cadence", "Final Cadence", "The ultimate performance that brings all things to their end.", (6, 10), "CHA", True, 0, 1),
     ],
 }
 
@@ -742,7 +758,15 @@ def _perform_basic_attack(gs, mv: Move) -> bool:
         return False
 
     stats = _active_stats(gs)
-    atk_bonus = _ability_mod(stats, mv.ability) + PROF_FLAT
+    # Get proficiency from stats, or calculate from level
+    prof = stats.get("prof") if isinstance(stats, dict) else 2
+    if prof is None or not isinstance(prof, int):
+        level = stats.get("level", 1) if isinstance(stats, dict) else 1
+        try:
+            prof = proficiency_for_level(int(level))
+        except Exception:
+            prof = 2
+    atk_bonus = _ability_mod(stats, mv.ability) + prof
     ac = _enemy_ac(gs)
 
     _set_resolving(True)
