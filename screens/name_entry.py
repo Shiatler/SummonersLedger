@@ -55,7 +55,7 @@ def handle(events, gs, dt, **_):
                     delattr(gs, "_class_select")
                 gs.selected_class = None
                 gs.revealed_class = None
-                return "BLACK_SCREEN"
+                return "MASTER_OAK"
             elif event.key == pygame.K_BACKSPACE:
                 st["text"] = st["text"][:-1]
             else:

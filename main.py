@@ -37,7 +37,7 @@ from screens import death as death_screen
 # screens
 from screens import (
     menu_screen, char_select, name_entry,
-    black_screen, intro_video, settings_screen, pause_screen
+    black_screen, intro_video, settings_screen, pause_screen, master_oak
 )
 
 def _try_load(path: str | None):
@@ -117,6 +117,7 @@ MODE_CHAR_SELECT  = "CHAR_SELECT"
 MODE_SETTINGS     = "SETTINGS"
 MODE_PAUSE        = "PAUSE"
 MODE_NAME_ENTRY   = "NAME_ENTRY"
+MODE_MASTER_OAK   = "MASTER_OAK"
 MODE_BLACK_SCREEN = "BLACK_SCREEN"
 MODE_INTRO_VIDEO  = "INTRO_VIDEO"
 MODE_WILD_VESSEL = "WILD_VESSEL"
@@ -453,6 +454,8 @@ def enter_mode(mode, gs, deps):
         char_select.enter(gs, **deps)
     elif mode == MODE_NAME_ENTRY:
         name_entry.enter(gs, **deps)
+    elif mode == MODE_MASTER_OAK:
+        master_oak.enter(gs, **deps)
     elif mode == MODE_BLACK_SCREEN:
         black_screen.enter(gs, **deps)
     elif mode == MODE_INTRO_VIDEO:
@@ -626,6 +629,14 @@ while running:
         name_entry.draw(screen, gs, dt, **deps)
         pygame.display.flip()
         if next_mode:
+            mode = next_mode
+
+    # ===================== MASTER OAK ======================
+    elif mode == MODE_MASTER_OAK:
+        next_mode = master_oak.handle(events, gs, dt, **deps)
+        master_oak.draw(screen, gs, dt, **deps)
+        pygame.display.flip()
+        if next_mode:
             if next_mode == MODE_BLACK_SCREEN:
                 start_new_game(gs)
                 from systems import save_system as saves
@@ -641,10 +652,7 @@ while running:
                     pygame.mixer.music.fadeout(120)
                 except Exception:
                     pass
-            # ✅ THIS LINE WAS MISSING
             mode = next_mode
-
-
 
     # ===================== BLACK SCREEN ====================
     elif mode == MODE_BLACK_SCREEN:

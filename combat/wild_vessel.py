@@ -896,6 +896,22 @@ def _resolve_capture_after_popup(gs):
         # _add_captured_to_party expects vessel asset names (FVesselBarbarian1.png)
         # and will convert them to token names internally
         if vessel_png and stats and _add_captured_to_party(gs, vessel_png, stats):
+            # Play victory music immediately when capture succeeds
+            if not st.get("victory_music_played", False):
+                victory_path = os.path.join("Assets", "Music", "Sounds", "Victory.mp3")
+                if os.path.exists(victory_path):
+                    try:
+                        # Stop current battle music immediately and play victory music
+                        pygame.mixer.music.stop()
+                        pygame.mixer.music.load(victory_path)
+                        pygame.mixer.music.play(loops=-1)  # Loop until exit
+                        st["victory_music_played"] = True
+                        print(f"🎵 Victory music started (capture): {victory_path}")
+                    except Exception as e:
+                        print(f"⚠️ Failed to play victory music: {e}")
+                else:
+                    print(f"⚠️ Victory music not found at: {victory_path}")
+            
             # ✅ Queue XP for capture
             st["pending_xp_award"] = (
                 "capture",
@@ -1421,6 +1437,25 @@ def draw(screen, gs, dt, **_):
         moves_busy = bool(moves.is_resolving())
     except Exception:
         moves_busy = False
+
+    # Play victory music immediately when enemy HP hits 0
+    if (e_cur <= 0 and st.get("enemy_img") is not None and
+        not st.get("victory_music_played", False) and
+        not st.get("cap_vfx_playing", False) and
+        not st.get("result", None)):
+        victory_path = os.path.join("Assets", "Music", "Sounds", "Victory.mp3")
+        if os.path.exists(victory_path):
+            try:
+                # Stop current battle music immediately and play victory music
+                pygame.mixer.music.stop()
+                pygame.mixer.music.load(victory_path)
+                pygame.mixer.music.play(loops=-1)  # Loop until exit
+                st["victory_music_played"] = True
+                print(f"🎵 Victory music started: {victory_path}")
+            except Exception as e:
+                print(f"⚠️ Failed to play victory music: {e}")
+        else:
+            print(f"⚠️ Victory music not found at: {victory_path}")
 
     should_consider_ko = (
         e_cur <= 0 and st.get("enemy_img") is not None and

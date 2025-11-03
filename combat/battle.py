@@ -1524,6 +1524,32 @@ def draw(screen: pygame.Surface, gs, dt: float, **_):
     except Exception:
         moves_busy = False
 
+    # Play victory music immediately when last enemy HP hits 0
+    if (e_cur <= 0 and st.get("enemy_img") is not None and
+        not st.get("victory_music_played", False) and
+        not st.get("result", None) and
+        not suppress_enemy):
+        # Check if this is the last enemy
+        team = st.get("enemy_team") or {}
+        names = team.get("names") or []
+        current_idx = int(st.get("enemy_idx", 0))
+        is_last_enemy = (current_idx + 1 >= len(names))
+        
+        if is_last_enemy:
+            victory_path = os.path.join("Assets", "Music", "Sounds", "Victory.mp3")
+            if os.path.exists(victory_path):
+                try:
+                    # Stop current battle music immediately and play victory music
+                    pygame.mixer.music.stop()
+                    pygame.mixer.music.load(victory_path)
+                    pygame.mixer.music.play(loops=-1)  # Loop until exit
+                    st["victory_music_played"] = True
+                    print(f"🎵 Victory music started: {victory_path}")
+                except Exception as e:
+                    print(f"⚠️ Failed to play victory music: {e}")
+            else:
+                print(f"⚠️ Victory music not found at: {victory_path}")
+
     should_consider_ko = (
         e_cur <= 0 and st.get("enemy_img") is not None and
         not st.get("enemy_fade_active", False) and
