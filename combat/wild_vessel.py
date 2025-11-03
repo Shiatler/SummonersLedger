@@ -339,9 +339,9 @@ _CAPTURE_SCROLLS = {
 }
 _HEAL_SCROLL_MODES = {
     # id: mode dict for party_manager.start_use_mode
-    "scroll_of_mending":      {"kind":"heal","dice":(1,8), "add_con":True,  "revive":False},
+    "scroll_of_mending":      {"kind":"heal","dice":(1,4), "add_con":True,  "revive":False},
     "scroll_of_regeneration": {"kind":"heal","dice":(2,8), "add_con":True,  "revive":False},
-    "scroll_of_revivity":     {"kind":"heal","dice":(0,0), "add_con":False, "revive":True},
+    "scroll_of_revivity":     {"kind":"heal","dice":(2,8), "add_con":False, "revive":True},
 }
 
 # ============================================================
@@ -365,9 +365,9 @@ def _on_use_item(gs, item) -> bool:
     iid = _iid(item)
 
     HEAL = {
-        "scroll_of_mending":      {"kind": "heal", "dice": (1, 8), "add_con": True,  "revive": False},
+        "scroll_of_mending":      {"kind": "heal", "dice": (1, 4), "add_con": True,  "revive": False},
         "scroll_of_regeneration": {"kind": "heal", "dice": (2, 8), "add_con": True,  "revive": False},
-        "scroll_of_revivity":     {"kind": "heal", "dice": (0, 0), "add_con": False, "revive": True},
+        "scroll_of_revivity":     {"kind": "heal", "dice": (2, 8), "add_con": False, "revive": True},
     }
     CAPTURE_KIND = {
         "scroll_of_command":      "command",

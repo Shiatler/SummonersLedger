@@ -871,6 +871,17 @@ def enter(gs, audio_bank=None, **_):
 
 
 def _exit_battle(gs):
+    # Check if we should trigger score animation (summoner battle victory)
+    st = getattr(gs, "_battle", None)
+    trigger_animation = False
+    start_score = 0
+    target_score = 0
+    
+    if st and st.get("_trigger_score_animation", False):
+        trigger_animation = True
+        start_score = st.get("_score_animation_start", 0)
+        target_score = st.get("_score_animation_target", 0)
+    
     try:
         pygame.mixer.music.fadeout(300)
     except Exception:
@@ -919,6 +930,11 @@ def _exit_battle(gs):
 
     if hasattr(gs, "_ending_battle"):
         delattr(gs, "_ending_battle")
+    
+    # Trigger score animation if this was a summoner battle victory
+    if trigger_animation:
+        from systems import score_display
+        score_display.start_score_animation(gs, start_score, target_score)
 
 def _on_battle_use_item(gs, item) -> bool:
     """Authoritative bag use handler (heals only; capture blocked)."""
@@ -929,9 +945,9 @@ def _on_battle_use_item(gs, item) -> bool:
     iid = _norm_item_id(item)
 
     HEAL = {
-        "scroll_of_mending":      {"kind": "heal", "dice": (1, 8), "add_con": True,  "revive": False},
+        "scroll_of_mending":      {"kind": "heal", "dice": (1, 4), "add_con": True,  "revive": False},
         "scroll_of_regeneration": {"kind": "heal", "dice": (2, 8), "add_con": True,  "revive": False},
-        "scroll_of_revivity":     {"kind": "heal", "dice": (0, 0), "add_con": False, "revive": True},
+        "scroll_of_revivity":     {"kind": "heal", "dice": (2, 8), "add_con": False, "revive": True},
     }
     CAPTURE = {
         "scroll_of_command", "scroll_of_sealing", "scroll_of_subjugation", "scroll_of_eternity"
@@ -1115,8 +1131,20 @@ def _finalize_battle_xp(gs, st):
     # Calculate and award points for this summoner battle
     points_sys.ensure_points_field(gs)
     enemy_team = st.get("enemy_team", {})
+    start_score = points_sys.get_total_points(gs)  # Score before awarding
     points_earned = points_sys.award_points(gs, enemy_team)
-    total_points = points_sys.get_total_points(gs)
+    total_points = points_sys.get_total_points(gs)  # Score after awarding
+    
+    # Store scores for score animation (will be triggered on exit)
+    st["_score_animation_start"] = start_score
+    st["_score_animation_target"] = total_points
+    st["_trigger_score_animation"] = True
+    
+    # Calculate and award currency for this summoner battle
+    from systems import currency as currency_sys
+    currency_sys.ensure_currency_fields(gs)
+    gold_earned, silver_earned, bronze_earned = currency_sys.award_currency(gs, enemy_team)
+    currency_display = currency_sys.format_currency(gold_earned, silver_earned, bronze_earned)
     
     # Determine difficulty tier for display
     from combat.team_randomizer import highest_party_level
@@ -1126,8 +1154,8 @@ def _finalize_battle_xp(gs, st):
     level_diff = avg_enemy_level - player_level
     tier_name = points_sys.get_points_tier_name(level_diff)
     
-    # Build victory message with points
-    victory_msg = f"All enemies defeated.\n\nPoints Earned: {points_earned:,} ({tier_name})\nTotal Points: {total_points:,}"
+    # Build victory message with points and currency
+    victory_msg = f"All enemies defeated.\n\nPoints Earned: {points_earned:,} ({tier_name})\nTotal Points: {total_points:,}\n\nCurrency Earned: {currency_display}"
     
     _show_result_screen(st, "Victory!", victory_msg, kind="success", exit_on_close=True)
     st["pending_exit"] = True

@@ -155,14 +155,15 @@ def _is_heal_item(item_id: str) -> bool:
     iid = (item_id or "").lower()
     return iid in ("scroll_of_mending", "scroll_of_regeneration", "scroll_of_revivity", "scroll_of_healing")
 
-def _heal_roll(num_d8: int) -> int:
+def _heal_roll(num_dice: int, die_size: int = 8) -> int:
+    """Roll healing dice. Default is d8, but can roll other sizes (e.g., d4 for Mending)."""
     if _ROLLER:
         total = 0
-        for _ in range(num_d8):
-            r = _ROLLER.roll_die(8)
+        for _ in range(num_dice):
+            r = _ROLLER.roll_die(die_size)
             total += int(r or 1)
         return max(1, total)
-    return sum(random.randint(1, 8) for _ in range(num_d8))
+    return sum(random.randint(1, die_size) for _ in range(num_dice))
 
 def _con_mod(stats: dict) -> int:
     try:
@@ -188,10 +189,11 @@ def _apply_heal_or_revive(gs, idx: int, item_id: str) -> None:
     if item_id == "scroll_of_revivity":
         if cur_hp > 0:
             return
-        new_hp = max(1, (max_hp + 1) // 2)
-        st["current_hp"] = min(max_hp, new_hp)
+        # Revives dead ally and heals 2d8
+        heal = _heal_roll(2)
+        st["current_hp"] = min(max_hp, max(1, heal))
     elif item_id == "scroll_of_mending":
-        heal = _heal_roll(1) + cm
+        heal = _heal_roll(1, 4) + cm  # 1d4 + CON for Scroll of Mending
         st["current_hp"] = min(max_hp, max(0, cur_hp) + max(1, heal))
     elif item_id == "scroll_of_regeneration":
         heal = _heal_roll(2) + cm
@@ -528,11 +530,11 @@ def handle_event(e, gs, screen=None) -> bool:
                         # So if we reach here, either no callback exists or callback didn't consume it
                         # In either case, handle healing items directly
                         if item_id == "scroll_of_mending":
-                            party_manager.start_use_mode({"kind": "heal", "dice": (1, 8), "add_con": True, "revive": False, "item_id": item_id})
+                            party_manager.start_use_mode({"kind": "heal", "dice": (1, 4), "add_con": True, "revive": False, "item_id": item_id})
                         elif item_id == "scroll_of_regeneration":
                             party_manager.start_use_mode({"kind": "heal", "dice": (2, 8), "add_con": True, "revive": False, "item_id": item_id})
                         elif item_id == "scroll_of_revivity":
-                            party_manager.start_use_mode({"kind": "heal", "dice": (1, 8), "add_con": True, "revive": True, "item_id": item_id})
+                            party_manager.start_use_mode({"kind": "heal", "dice": (2, 8), "add_con": False, "revive": True, "item_id": item_id})
                         elif item_id == "scroll_of_healing":
                             party_manager.start_use_mode({"kind": "heal", "dice": (1, 8), "add_con": True, "revive": False, "item_id": item_id})
 

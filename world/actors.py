@@ -15,16 +15,20 @@ from rolling.roller import Roller
 # Lists live on the GameState object:
 # gs.rivals_on_map:  list of dict {name, sprite, pos(Vector2), side}
 # gs.vessels_on_map: list of dict {pos(Vector2), side}
+# gs.merchants_on_map: list of dict {animator, pos(Vector2), side}
 
 
 # ===================== Shared spawn helpers ==================
 def _y_too_close(y: float, gs, min_sep: float) -> bool:
-    """Return True if y is within min_sep of any existing spawn (vessels or rivals)."""
+    """Return True if y is within min_sep of any existing spawn (vessels, rivals, or merchants)."""
     for r in gs.rivals_on_map:
         if abs(y - r["pos"].y) < min_sep:
             return True
     for v in gs.vessels_on_map:
         if abs(y - v["pos"].y) < min_sep:
+            return True
+    for m in getattr(gs, "merchants_on_map", []):
+        if abs(y - m["pos"].y) < min_sep:
             return True
     return False
 
@@ -247,3 +251,116 @@ def draw_vessels(screen, cam, gs, vessel_mist, debug=False):
                 SIZE_W // 2
             )
             screen.blit(temp, (screen_x, screen_y))
+
+
+# ===================== Merchants =================
+def spawn_merchant_ahead(gs, start_x, merchant_frames):
+    """Spawn a merchant (left/right lane) some distance above the player, with separation."""
+    if not merchant_frames or len(merchant_frames) == 0:
+        return
+    
+    # Import Animator from main.py (or create a simple animator here)
+    # For now, we'll use a simple frame index
+    side = random.choice(["left", "right"])
+    x = start_x + (-S.LANE_OFFSET if side == "left" else S.LANE_OFFSET)
+    
+    spawn_gap = random.randint(S.SPAWN_GAP_MIN, S.SPAWN_GAP_MAX)
+    base_y = gs.player_pos.y - spawn_gap
+    
+    # Ensure vertical separation from ALL existing spawns
+    sep = getattr(S, "OVERWORLD_MIN_SEPARATION_Y", 200)
+    y = _pick_spawn_y(gs, base_y, sep)
+    if y is None:
+        return
+    
+    # Create animator for merchant (will be updated in update_merchants)
+    # We'll pass frames reference and create animator in update
+    if not hasattr(gs, "merchants_on_map"):
+        gs.merchants_on_map = []
+    
+    gs.merchants_on_map.append({
+        "frames": merchant_frames,
+        "pos": Vector2(x, y),
+        "side": side,
+        "anim_time": 0.0,
+        "frame_index": 0,
+    })
+
+
+def update_merchants(gs, dt, player_half: Vector2):
+    """Update merchant animations and detect player proximity for speech bubble."""
+    if not hasattr(gs, "merchants_on_map"):
+        gs.merchants_on_map = []
+        return
+    
+    # Merchants are slightly bigger than player (1.2x)
+    MERCHANT_SIZE_MULT = 1.2
+    SIZE_W = int(S.PLAYER_SIZE[0] * MERCHANT_SIZE_MULT)
+    SIZE_H = int(S.PLAYER_SIZE[1] * MERCHANT_SIZE_MULT)
+    x_threshold = S.LANE_OFFSET + SIZE_W
+    
+    player_top    = gs.player_pos.y - player_half.y
+    player_bottom = gs.player_pos.y + player_half.y
+    
+    MERCHANT_ANIM_FPS = 7.0  # Faster animation
+    frame_duration = 1.0 / MERCHANT_ANIM_FPS
+    
+    near_merchant = None
+    
+    for m in gs.merchants_on_map:
+        # Update animation
+        m["anim_time"] += dt
+        if m["anim_time"] >= frame_duration:
+            m["anim_time"] = 0.0
+            m["frame_index"] = (m["frame_index"] + 1) % len(m["frames"])
+        
+        # Check if player is near merchant
+        same_lane = abs(m["pos"].x - gs.player_pos.x) <= x_threshold
+        merchant_top = m["pos"].y - SIZE_H // 2
+        merchant_bottom = m["pos"].y + SIZE_H // 2
+        
+        in_front = player_top <= (merchant_bottom + S.FRONT_TOLERANCE)
+        overlapping_vertically = player_bottom >= (merchant_top - S.FRONT_TOLERANCE)
+        
+        if same_lane and in_front and overlapping_vertically:
+            near_merchant = m
+    
+    # Store which merchant is near (for speech bubble display)
+    gs.near_merchant = near_merchant
+    
+    # Cull far below player
+    cutoff = gs.player_pos.y + S.HEIGHT * 1.5
+    gs.merchants_on_map[:] = [m for m in gs.merchants_on_map if m["pos"].y < cutoff]
+
+
+def draw_merchants(screen, cam, gs):
+    """Draw merchant sprites with animation, facing the player."""
+    if not hasattr(gs, "merchants_on_map"):
+        return
+    
+    # Merchants are slightly bigger than player (1.2x)
+    MERCHANT_SIZE_MULT = 1.2
+    SIZE_W = int(S.PLAYER_SIZE[0] * MERCHANT_SIZE_MULT)
+    SIZE_H = int(S.PLAYER_SIZE[1] * MERCHANT_SIZE_MULT)
+    
+    for m in gs.merchants_on_map:
+        pos = m["pos"]
+        frame_index = m.get("frame_index", 0)
+        frames = m.get("frames", [])
+        
+        if frames and 0 <= frame_index < len(frames):
+            current_frame = frames[frame_index]
+            
+            # Make merchant face the player
+            # If merchant is on left side (x < player.x), flip to face right
+            # If merchant is on right side (x > player.x), face left (no flip)
+            flip_horizontal = pos.x < gs.player_pos.x
+            
+            if flip_horizontal:
+                current_frame = pygame.transform.flip(current_frame, True, False)
+            
+            screen.blit(
+                current_frame,
+                (pos.x - cam.x - SIZE_W // 2,
+                 pos.y - cam.y - SIZE_H // 2)
+            )

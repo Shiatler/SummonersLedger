@@ -91,13 +91,31 @@ def load_everything():
             except Exception as e:
                 print(f"⚠️ Failed to load fallback mist {mist_path}: {e}")
 
-    print(f"🧪 Loaded: {len(summoners)} summoners, {len(vessels)} vessels, {len(rare_vessels)} rare, {len(mist_frames)} mist frames")
+    # Merchant ANIMATION frames (Assets/Animations/Merchant1..12.png)
+    # Merchants are slightly bigger than player sprites (1.2x size)
+    merchant_frames = []
+    animations_dir = os.path.join("Assets", "Animations")
+    MERCHANT_SIZE = (int(S.PLAYER_SIZE[0] * 1.2), int(S.PLAYER_SIZE[1] * 1.2))  # ~166x166
+    try:
+        for i in range(1, 13):  # Merchant1.png through Merchant12.png
+            path = os.path.join(animations_dir, f"Merchant{i}.png")
+            if os.path.exists(path):
+                try:
+                    surf = load_image(path, size=MERCHANT_SIZE)
+                    merchant_frames.append(surf)
+                except Exception as e:
+                    print(f"⚠️ Failed to load merchant frame {path}: {e}")
+    except Exception as e:
+        print(f"⚠️ Merchant frame scan failed: {e}")
+
+    print(f"🧪 Loaded: {len(summoners)} summoners, {len(vessels)} vessels, {len(rare_vessels)} rare, {len(mist_frames)} mist frames, {len(merchant_frames)} merchant frames")
     return {
         "player": player,
         "summoners": summoners,
         "vessels": vessels,
         "rare_vessels": rare_vessels,
         "mist_frames": mist_frames,   # <-- frames list
+        "merchant_frames": merchant_frames,  # <-- merchant frames list
     }
 
 

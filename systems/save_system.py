@@ -173,6 +173,11 @@ def save_game(gs, *, force: bool = False):
         
         # Points system
         "total_points": int(getattr(gs, "total_points", 0)),
+        
+        # Currency system
+        "gold": int(getattr(gs, "gold", 0)),
+        "silver": int(getattr(gs, "silver", 0)),
+        "bronze": int(getattr(gs, "bronze", 0)),
     }
 
     # --- dedupe identical snapshots ---
@@ -221,6 +226,11 @@ def load_game(gs, summoner_sprites: dict[str, object] | None = None):
         
         # ✅ restore points
         gs.total_points = int(data.get("total_points", 0))
+        
+        # ✅ restore currency
+        gs.gold = int(data.get("gold", 0))
+        gs.silver = int(data.get("silver", 0))
+        gs.bronze = int(data.get("bronze", 0))
 
         # ----- Party tokens: rebuild surfaces from filenames -----
         names = data.get("party_slots_names", [None] * 6)

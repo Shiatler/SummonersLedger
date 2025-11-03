@@ -28,10 +28,27 @@ class GameState:
     # world spawns
     rivals_on_map: list = field(default_factory=list)
     vessels_on_map: list = field(default_factory=list)
+    merchants_on_map: list = field(default_factory=list)
+    
+    # merchant interaction
+    near_merchant: object | None = None  # merchant dict when player is near
+    shop_open: bool = False  # whether shop UI is open
+    
+    # currency (D&D style: 10 bronze = 1 silver, 10 silver = 1 gold)
+    gold: int = 0
+    silver: int = 0
+    bronze: int = 0
 
     # audio state
     is_walking: bool = False
     overworld_music_started: bool = False
+    
+    # score animation state (only after summoner battle victory)
+    score_animation_active: bool = False
+    score_animation_timer: float = 0.0
+    score_animation_start: int = 0  # Score value before battle
+    score_animation_target: int = 0  # Score value after battle
+    score_thunder_played: bool = False
 
     # party / HUD
     player_token: object | None = None           # small face portrait (pygame.Surface)

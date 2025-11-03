@@ -17,7 +17,7 @@ from game_state import GameState
 # systems & world
 from world import assets, actors, world, procgen
 from systems import save_system as saves, theme, ui, audio, party_ui
-from systems import score_display, hud_buttons
+from systems import score_display, hud_buttons, currency_display, shop
 from bootstrap.default_party import add_default_on_new_game   # ← add this
 from bootstrap.default_inventory import add_default_inventory  # ← NEW
 
@@ -258,16 +258,34 @@ def apply_player_variant(gs, variant_key, variants_dict):
     gs.walk_anim = Animator(walk_frames, fps=8, loop=True)
 
 
-def try_trigger_encounter(gs, summoners):
+def try_trigger_encounter(gs, summoners, merchant_frames):
     if gs.in_encounter:
         return
     if gs.distance_travelled >= gs.next_event_at:
-        if random.random() < S.ENCOUNTER_WEIGHT_VESSEL:
+        roll = random.random()
+        
+        # Merchant chance: 10% (configurable)
+        merchant_chance = 0.10
+        
+        # Remaining 90% split using ENCOUNTER_WEIGHT_VESSEL (75% vessel, 25% summoner of the remaining)
+        remaining_chance = 1.0 - merchant_chance  # 0.90
+        vessel_chance = remaining_chance * S.ENCOUNTER_WEIGHT_VESSEL  # 0.90 * 0.75 = 0.675
+        summoner_chance = remaining_chance * (1.0 - S.ENCOUNTER_WEIGHT_VESSEL)  # 0.90 * 0.25 = 0.225
+        
+        # Total percentages: Merchant 10%, Vessel 67.5%, Summoner 22.5%
+        if merchant_frames and len(merchant_frames) > 0 and roll < merchant_chance:
+            # Spawn merchant (0.0 to 0.10)
+            actors.spawn_merchant_ahead(gs, gs.start_x, merchant_frames)
+        elif roll < merchant_chance + vessel_chance:
+            # Spawn vessel (0.10 to 0.775)
             actors.spawn_vessel_shadow_ahead(gs, gs.start_x)
         elif summoners:
+            # Spawn summoner (0.775 to 1.0)
             actors.spawn_rival_ahead(gs, gs.start_x, summoners)
         else:
+            # Fallback to vessel if no summoners available
             actors.spawn_vessel_shadow_ahead(gs, gs.start_x)
+        
         gs.next_event_at += random.randint(S.EVENT_MIN, S.EVENT_MAX)
 
 
@@ -288,9 +306,10 @@ def update_encounter_popup(screen, dt, gs, mist_frame, width, height, pg_instanc
         pg_instance.update_needed(cam.y, height)
         pg_instance.draw_props(screen, cam.x, cam.y, width, height)
 
-    # Draw any active vessels/rivals in the world behind the popup
+    # Draw any active vessels/rivals/merchants in the world behind the popup
     actors.draw_vessels(screen, cam, gs, mist_frame, S.DEBUG_OVERWORLD)
     actors.draw_rivals(screen, cam, gs)
+    actors.draw_merchants(screen, cam, gs)
 
     # Player sprite
     screen.blit(
@@ -320,6 +339,67 @@ def update_encounter_popup(screen, dt, gs, mist_frame, width, height, pg_instanc
     return True
 
 
+def draw_shop_ui(screen, gs):
+    """Draw the shop UI."""
+    shop.draw(screen, gs)
+
+
+def draw_merchant_speech_bubble(screen, cam, gs, merchant):
+    """Draw a speech bubble above the merchant saying 'Press E to shop' or similar medieval text."""
+    if not merchant:
+        return
+    
+    # Merchants are slightly bigger (1.2x player size)
+    MERCHANT_SIZE_MULT = 1.2
+    SIZE_W = int(S.PLAYER_SIZE[0] * MERCHANT_SIZE_MULT)
+    SIZE_H = int(S.PLAYER_SIZE[1] * MERCHANT_SIZE_MULT)
+    
+    pos = merchant["pos"]
+    screen_x = int(pos.x - cam.x)
+    screen_y = int(pos.y - cam.y - SIZE_H // 2 - 40)  # Above merchant
+    
+    # Medieval-style text
+    text = "Press E to trade"
+    
+    # Load DH font if available, fallback to default
+    try:
+        dh_font_path = os.path.join(S.ASSETS_FONTS_DIR, S.DND_FONT_FILE)
+        if os.path.exists(dh_font_path):
+            font = pygame.font.Font(dh_font_path, 20)
+        else:
+            font = pygame.font.SysFont(None, 20)
+    except:
+        font = pygame.font.SysFont(None, 20)
+    
+    text_surf = font.render(text, True, (255, 255, 255))
+    text_rect = text_surf.get_rect()
+    
+    # Speech bubble background
+    padding = 12
+    bubble_w = text_rect.width + padding * 2
+    bubble_h = text_rect.height + padding * 2
+    bubble = pygame.Surface((bubble_w, bubble_h), pygame.SRCALPHA)
+    
+    # Draw bubble with rounded corners effect (using filled rect + border)
+    bubble.fill((40, 35, 30, 240))  # Dark brown/medieval color
+    pygame.draw.rect(bubble, (80, 70, 60, 255), bubble.get_rect(), 2)  # Border
+    
+    # Draw small triangle pointing down to merchant
+    triangle_points = [
+        (bubble_w // 2 - 8, bubble_h),
+        (bubble_w // 2 + 8, bubble_h),
+        (bubble_w // 2, bubble_h + 10),
+    ]
+    pygame.draw.polygon(bubble, (40, 35, 30, 240), triangle_points)
+    pygame.draw.polygon(bubble, (80, 70, 60, 255), triangle_points, 2)
+    
+    bubble_x = screen_x - bubble_w // 2
+    bubble_y = screen_y - bubble_h - 10
+    
+    screen.blit(bubble, (bubble_x, bubble_y))
+    screen.blit(text_surf, (bubble_x + padding, bubble_y + padding))
+
+
 def reset_run_state(gs):
     gs.in_encounter = False
     gs.encounter_timer = 0.0
@@ -327,6 +407,8 @@ def reset_run_state(gs):
     gs.encounter_sprite = None
     gs.rivals_on_map.clear()
     gs.vessels_on_map.clear()
+    if hasattr(gs, "merchants_on_map"):
+        gs.merchants_on_map.clear()
     gs.distance_travelled = 0.0
     gs.next_event_at = S.FIRST_EVENT_AT
 
@@ -343,6 +425,14 @@ def start_new_game(gs):
     gs.party_slots_names  = [None] * 6
     gs.party_slots        = [None] * 6
     gs.inventory = {}
+    
+    # Initialize currency (all start at 0)
+    from systems import currency as currency_sys
+    currency_sys.ensure_currency_fields(gs)
+    # Starting gold: 10 gold pieces
+    gs.gold = 10
+    gs.silver = 0
+    gs.bronze = 0
 
 
 def continue_game(gs):
@@ -416,6 +506,13 @@ if __name__ == "__main__":
     VESSELS         = loaded["vessels"]
     RARE_VESSELS    = loaded["rare_vessels"]
     MIST_FRAMES     = loaded["mist_frames"]
+    MERCHANT_FRAMES = loaded["merchant_frames"]
+    
+    # Debug: Check if merchant frames loaded
+    if MERCHANT_FRAMES:
+        print(f"✅ Loaded {len(MERCHANT_FRAMES)} merchant animation frames")
+    else:
+        print("⚠️ No merchant frames loaded - check Assets/Animations/Merchant1-5.png")
 
     # Map summoner names -> surfaces for save/load rehydration
     SUMMONER_SPRITES = {name: surf for (name, surf) in RIVAL_SUMMONERS}
@@ -652,7 +749,7 @@ while running:
         # --- Snapshots for this frame (used to suppress ESC->Pause) ---
         bag_open_at_frame_start = bag_ui.is_open()
         modal_open_at_frame_start = (
-            bag_ui.is_open() or party_manager.is_open() or ledger.is_open()
+            bag_ui.is_open() or party_manager.is_open() or ledger.is_open() or gs.shop_open or currency_display.is_open()
         )
 
         just_toggled_pm = False
@@ -677,6 +774,25 @@ while running:
                         just_toggled_pm = True
                         hud_button_click_positions.add(e.pos)
                         audio.play_click(AUDIO)
+                elif button_clicked == 'currency':
+                    if not currency_display.is_open() and not bag_ui.is_open() and not party_manager.is_open() and not ledger.is_open():
+                        currency_display.toggle()
+                        # Play Coin.mp3 sound
+                        coin_sound = AUDIO.sfx.get("Coin") or AUDIO.sfx.get("coin")
+                        if coin_sound:
+                            coin_sound.play()
+                        else:
+                            # Try to load from the path
+                            coin_path = os.path.join("Assets", "Music", "Sounds", "Coin.mp3")
+                            if os.path.exists(coin_path):
+                                try:
+                                    coin_sfx = pygame.mixer.Sound(coin_path)
+                                    coin_sfx.play()
+                                except:
+                                    pass
+                    elif currency_display.is_open():
+                        currency_display.close()
+                    hud_button_click_positions.add(e.pos)
 
         # --- Global hotkeys ---
         for e in events:
@@ -690,10 +806,30 @@ while running:
                 if not bag_ui.is_open() and not ledger.is_open():
                     party_manager.toggle()
                     just_toggled_pm = True
+            
+            # Currency display toggle (C)
+            if e.type == pygame.KEYDOWN and e.key == pygame.K_c:
+                if not currency_display.is_open() and not bag_ui.is_open() and not party_manager.is_open() and not ledger.is_open():
+                    currency_display.toggle()
+                    # Play Coin.mp3 sound
+                    coin_sound = AUDIO.sfx.get("Coin") or AUDIO.sfx.get("coin")
+                    if coin_sound:
+                        coin_sound.play()
+                    else:
+                        # Try to load from the path
+                        coin_path = os.path.join("Assets", "Music", "Sounds", "Coin.mp3")
+                        if os.path.exists(coin_path):
+                            try:
+                                coin_sfx = pygame.mixer.Sound(coin_path)
+                                coin_sfx.play()
+                            except:
+                                pass
+                elif currency_display.is_open():
+                    currency_display.close()
         
         # --- Let HUD handle clicks ONLY when no modal is open (this can open the Ledger) ---
         # Only if we didn't click a HUD button (to avoid conflicts)
-        if not hud_button_click_positions and not bag_ui.is_open() and not party_manager.is_open() and not ledger.is_open():
+        if not hud_button_click_positions and not bag_ui.is_open() and not party_manager.is_open() and not ledger.is_open() and not currency_display.is_open():
             was_ledger_open = ledger.is_open()  # should be False, safety check
             for e in events:
                 party_ui.handle_event(e, gs)
@@ -723,8 +859,25 @@ while running:
                     continue
                 if ledger.handle_event(e, gs):
                     continue
+            
+            if currency_display.is_open():
+                if currency_display.handle_event(e, gs):
+                    continue
+            
+            if gs.shop_open:
+                purchase_result = shop.handle_event(e, gs)
+                # Check if purchase was confirmed (needs laugh sound)
+                if purchase_result == "purchase_confirmed":
+                    # Play random laugh after purchase
+                    laugh_num = random.randint(1, 5)
+                    laugh_key = f"laugh{laugh_num}"
+                    laugh_sound = AUDIO.sfx.get(laugh_key)
+                    if laugh_sound:
+                        audio.play_sound(laugh_sound)
+                if purchase_result:
+                    continue
 
-        # --- Pause / music events ---
+        # --- Pause / music events / shop ---
         for event in events:
             if event.type == pygame.KEYDOWN and event.key == pygame.K_ESCAPE:
                 # If any modal was open at frame start OR is open now, don't enter Pause
@@ -733,15 +886,103 @@ while running:
                     or bag_ui.is_open()
                     or party_manager.is_open()
                     or ledger.is_open()
+                    or gs.shop_open
+                    or currency_display.is_open()
                 ):
+                    # If shop is open, close it instead
+                    if gs.shop_open:
+                        gs.shop_open = False
+                        shop.reset_scroll()
+                        # Restore overworld music
+                        audio.stop_music(fade_ms=600)
+                        gs._shop_music_playing = False
+                        gs._waiting_for_shop_music = False
+                        # Restart overworld music after fade
+                        if hasattr(gs, "_shop_previous_music_track") and gs._shop_previous_music_track:
+                            gs.last_overworld_track = gs._shop_previous_music_track
+                        # Pick next overworld track
+                        nxt = audio.pick_next_track(AUDIO, getattr(gs, "last_overworld_track", None), prefix="music")
+                        if nxt:
+                            audio.play_music(AUDIO, nxt, loop=False, fade_ms=600)
+                            gs.last_overworld_track = nxt
+                        audio.play_click(AUDIO)
+                    # If currency is open, close it instead
+                    if currency_display.is_open():
+                        currency_display.close()
+                        audio.play_click(AUDIO)
                     continue
                 audio.play_click(AUDIO)
                 mode = MODE_PAUSE
+            elif event.type == pygame.KEYDOWN:
+                # Close purchase selector with ESC
+                if event.key == pygame.K_ESCAPE:
+                    try:
+                        from systems import shop
+                        if shop._PURCHASE_SELECTOR_ACTIVE:
+                            shop._close_purchase_selector()
+                            continue
+                    except:
+                        pass
+                
+                elif event.key == pygame.K_e:
+                    # Open shop when near merchant and no other modals are open
+                    if (gs.near_merchant and not bag_ui.is_open() 
+                        and not party_manager.is_open() and not ledger.is_open()):
+                        was_open = gs.shop_open
+                        gs.shop_open = not gs.shop_open
+                        if gs.shop_open and not was_open:
+                            # Opening shop
+                            shop.reset_scroll()
+                            # Stop current overworld music
+                            audio.stop_music(fade_ms=400)
+                            # Store current music track to restore later
+                            if not hasattr(gs, "_shop_previous_music_track"):
+                                gs._shop_previous_music_track = getattr(gs, "last_overworld_track", None)
+                            # Play random laugh sound
+                            laugh_num = random.randint(1, 5)
+                            laugh_key = f"laugh{laugh_num}"
+                            laugh_sound = AUDIO.sfx.get(laugh_key)
+                            if laugh_sound:
+                                # Play laugh sound
+                                laugh_channel = audio.play_sound(laugh_sound)
+                                # Get laugh duration
+                                try:
+                                    laugh_length = laugh_sound.get_length()
+                                    # Set timer to play shop music after laugh
+                                    gs._shop_music_timer = laugh_length
+                                    gs._waiting_for_shop_music = True
+                                except:
+                                    # If can't get length, wait a bit then play
+                                    gs._shop_music_timer = 2.0  # Default 2 seconds
+                                    gs._waiting_for_shop_music = True
+                            else:
+                                # If laugh not found, play shop music immediately
+                                audio.play_music(AUDIO, "shopm1", loop=True, fade_ms=800)
+                                gs._shop_music_playing = True
+                    elif not gs.shop_open and was_open:
+                        # Closing shop - restore overworld music
+                        audio.stop_music(fade_ms=600)
+                        gs._shop_music_playing = False
+                        gs._waiting_for_shop_music = False
+                        # Restart overworld music after fade
+                        if hasattr(gs, "_shop_previous_music_track") and gs._shop_previous_music_track:
+                            gs.last_overworld_track = gs._shop_previous_music_track
+                        # Pick next overworld track
+                        nxt = audio.pick_next_track(AUDIO, getattr(gs, "last_overworld_track", None), prefix="music")
+                        if nxt:
+                            audio.play_music(AUDIO, nxt, loop=False, fade_ms=600)
+                            gs.last_overworld_track = nxt
             elif event.type == MUSIC_ENDEVENT:
-                nxt = audio.pick_next_track(AUDIO, getattr(gs, "last_overworld_track", None), prefix="music")
-                if nxt:
-                    audio.play_music(AUDIO, nxt, loop=False)
-                    gs.last_overworld_track = nxt
+                # Don't restart music if shop music is playing (it should loop)
+                if getattr(gs, "_shop_music_playing", False):
+                    # Shop music ended, restart it (should loop but just in case)
+                    audio.play_music(AUDIO, "shopm1", loop=True, fade_ms=0)
+                elif not getattr(gs, "_waiting_for_shop_music", False):
+                    # Normal overworld music loop (only if not waiting for shop music)
+                    nxt = audio.pick_next_track(AUDIO, getattr(gs, "last_overworld_track", None), prefix="music")
+                    if nxt:
+                        audio.play_music(AUDIO, nxt, loop=False)
+                        gs.last_overworld_track = nxt
 
         if not gs.overworld_music_started:
             nxt = audio.pick_next_track(AUDIO, getattr(gs, "last_overworld_track", None), prefix="music")
@@ -750,6 +991,31 @@ while running:
                 gs.last_overworld_track = nxt
             gs.overworld_music_started = True
 
+        # --- Shop music timer (wait for laugh to finish) ---
+        if getattr(gs, "_waiting_for_shop_music", False):
+            if hasattr(gs, "_shop_music_timer"):
+                gs._shop_music_timer -= dt
+                if gs._shop_music_timer <= 0:
+                    # Laugh finished, play shop music
+                    audio.play_music(AUDIO, "shopm1", loop=True, fade_ms=800)
+                    gs._shop_music_playing = True
+                    gs._waiting_for_shop_music = False
+                    delattr(gs, "_shop_music_timer")
+        
+        # --- Detect shop close and restore music ---
+        if not gs.shop_open and getattr(gs, "_shop_music_playing", False):
+            # Shop was closed, restore overworld music
+            audio.stop_music(fade_ms=600)
+            gs._shop_music_playing = False
+            gs._waiting_for_shop_music = False
+            # Restart overworld music
+            if hasattr(gs, "_shop_previous_music_track") and gs._shop_previous_music_track:
+                gs.last_overworld_track = gs._shop_previous_music_track
+            nxt = audio.pick_next_track(AUDIO, getattr(gs, "last_overworld_track", None), prefix="music")
+            if nxt:
+                audio.play_music(AUDIO, nxt, loop=False, fade_ms=600)
+                gs.last_overworld_track = nxt
+
         # --- Mist animation ---
         mist_frame = None
         if MIST_ANIM:
@@ -757,7 +1023,7 @@ while running:
             mist_frame = MIST_ANIM.current()
 
         # --- Movement & walking SFX (blocked by any modal) ---
-        any_modal_open = bag_ui.is_open() or party_manager.is_open() or ledger.is_open()
+        any_modal_open = bag_ui.is_open() or party_manager.is_open() or ledger.is_open() or gs.shop_open or currency_display.is_open()
         keys = pygame.key.get_pressed()
         walking_forward = keys[pygame.K_w] and not any_modal_open
 
@@ -822,7 +1088,8 @@ while running:
                 world.update_player(gs, dt, gs.player_half)
             actors.update_rivals(gs, dt, gs.player_half)
             actors.update_vessels(gs, dt, gs.player_half, VESSELS, RARE_VESSELS)
-            try_trigger_encounter(gs, RIVAL_SUMMONERS)
+            actors.update_merchants(gs, dt, gs.player_half)
+            try_trigger_encounter(gs, RIVAL_SUMMONERS, MERCHANT_FRAMES)
 
             cam = world.get_camera_offset(gs.player_pos, S.WIDTH, S.HEIGHT, gs.player_half)
             world.draw_repeating_road(screen, cam.x, cam.y)
@@ -830,14 +1097,19 @@ while running:
             pg.draw_props(screen, cam.x, cam.y, S.WIDTH, S.HEIGHT)
             actors.draw_vessels(screen, cam, gs, mist_frame, S.DEBUG_OVERWORLD)
             actors.draw_rivals(screen, cam, gs)
+            actors.draw_merchants(screen, cam, gs)
 
             screen.blit(
                 gs.player_image,
                 (gs.player_pos.x - cam.x - gs.player_half.x,
                 gs.player_pos.y - cam.y - gs.player_half.y)
             )
+            
+            # Draw speech bubble when near merchant (if not in shop)
+            if gs.near_merchant and not gs.shop_open:
+                draw_merchant_speech_bubble(screen, cam, gs, gs.near_merchant)
 
-        # --- Draw HUD then modals (z-order: Bag < Party Manager < Ledger) ---
+        # --- Draw HUD then modals (z-order: Bag < Party Manager < Ledger < Shop) ---
         party_ui.draw_party_hud(screen, gs)
         score_display.draw_score(screen, gs, dt)  # Score in top right (animated)
         hud_buttons.draw(screen)  # Bag & Party buttons in bottom right
@@ -847,6 +1119,10 @@ while running:
             party_manager.draw(screen, gs)
         if ledger.is_open():
             ledger.draw(screen, gs)
+        if gs.shop_open:
+            draw_shop_ui(screen, gs)
+        if currency_display.is_open():
+            currency_display.draw(screen, gs)
 
         update_and_draw_fade(screen, dt, gs)
         pygame.display.flip()

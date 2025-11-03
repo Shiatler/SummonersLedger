@@ -28,11 +28,13 @@ def set_sfx_volume(v: float, bank: "AudioBank|None" = None):
 
 _MUSIC_DIRS = [
     os.path.join("Assets", "Music"),
+    os.path.join("Assets", "Music", "Shop"),  # Shop music directory
     os.path.join("Assets", "Audio", "Music"),
     os.path.join("Assets", "audio", "music"),
 ]
 _SFX_DIRS = [
     os.path.join("Assets", "Music", "Sounds"),  # legacy layout
+    os.path.join("Assets", "Music", "Shop"),   # Shop laugh sounds
     os.path.join("Assets", "Sounds"),
     os.path.join("Assets", "Audio", "SFX"),
     os.path.join("Assets", "audio", "sfx"),

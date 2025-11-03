@@ -24,6 +24,7 @@ HOVER_GLOW_ALPHA = 48  # Alpha value for hover glow effect
 _BUTTONS = [
     {"id": "bag", "path": "Bag.png", "action": "bag"},
     {"id": "party", "path": "Party.png", "action": "party"},
+    {"id": "coinbag", "path": "CoinBag.png", "action": "currency"},
     # Add more buttons here as needed:
     # {"id": "inventory", "path": "Inventory.png", "action": "inventory"},
 ]
