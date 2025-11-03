@@ -23,13 +23,12 @@ def ability_mod(score: int) -> int:
     return (int(score) - 10) // 2
 
 def proficiency_for_level(level: int) -> int:
-    """Standard 5e progression (1–20)."""
-    lvl = max(1, min(int(level), 20))
-    if   lvl <= 4:  return 2
-    elif lvl <= 8:  return 3
-    elif lvl <= 12: return 4
-    elif lvl <= 16: return 5
-    else:           return 6
+    """Milestone-based progression: +1 at levels 15, 30, 45."""
+    lvl = max(1, int(level))
+    base_prof = 2  # Starting proficiency
+    milestones = [15, 30, 45]
+    prof_increases = sum(1 for m in milestones if lvl >= m)
+    return base_prof + prof_increases
 
 def _norm_class(name: str) -> str:
     """
@@ -150,6 +149,51 @@ def _count_milestones_reached(level: int, milestones: Iterable[int]) -> int:
     lvl = max(1, int(level))
     return sum(1 for m in milestones if lvl >= int(m))
 
+def compute_hp_milestone_only(
+    level: int,
+    con_mod: int,
+    class_hit_die: int,
+    *,
+    rng=None,
+) -> int:
+    """
+    Calculate HP using milestone-only system (matches ally vessel scaling):
+      • Level 1: max die + CON
+      • Milestones (10, 20, 30, 40, 50): 1dHitDie + CON mod (rolled, minimum +1 total)
+    """
+    import random
+    lvl = max(1, int(level))
+    con = int(con_mod)
+    d = int(class_hit_die)
+    
+    # Level 1: max die + CON
+    hp = d + con
+    
+    # Milestone bonuses only at levels 10, 20, 30, 40, 50
+    milestones = [10, 20, 30, 40, 50]
+    milestone_count = sum(1 for m in milestones if lvl >= m)
+    
+    # Roll 1dHitDie + CON for each milestone reached
+    # Use rng if it has randint, otherwise fall back to random.randint
+    if rng:
+        if hasattr(rng, "randint"):
+            rfunc = rng.randint
+        elif hasattr(rng, "random"):
+            # Fallback: use random() and scale
+            def rfunc(lo, hi):
+                return lo + int(rng.random() * (hi - lo + 1))
+        else:
+            rfunc = random.randint
+    else:
+        rfunc = random.randint
+    
+    for _ in range(milestone_count):
+        roll = rfunc(1, max(2, d))
+        gain = max(1, roll + con)
+        hp += gain
+    
+    return max(1, hp)
+
 def compute_hp(
     level: int,
     con_mod: int,
@@ -246,7 +290,11 @@ class CombatStats:
         prof = proficiency_for_level(lvl)
 
         # AC & initiative
-        ac  = ac_for_class(class_name, mods)
+        base_ac = ac_for_class(class_name, mods)
+        # AC increases by +1 at levels 25 and 50
+        ac_milestones = [25, 50]
+        ac_bonus = sum(1 for m in ac_milestones if lvl >= m)
+        ac = base_ac + ac_bonus
         init = mods["DEX"]
 
         # HP from class die + milestones

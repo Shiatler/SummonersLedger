@@ -51,6 +51,9 @@ def spawn_rival_ahead(gs, start_x, summoners):
         return
 
     name, sprite = random.choice(summoners)
+    # Generate display name for summoner (name is the filename like "MSummoner1")
+    from systems.name_generator import generate_summoner_name
+    display_name = generate_summoner_name(name)
     side = random.choice(["left", "right"])
     x = start_x + (-S.LANE_OFFSET if side == "left" else S.LANE_OFFSET)
 
@@ -66,7 +69,8 @@ def spawn_rival_ahead(gs, start_x, summoners):
         return
 
     gs.rivals_on_map.append({
-        "name": name,
+        "name": display_name,  # Store generated name
+        "filename": name,  # Store original filename for sprite lookup
         "sprite": sprite,
         "pos": Vector2(x, y),
         "side": side,
@@ -97,7 +101,9 @@ def update_rivals(gs, dt, player_half: Vector2):
         if same_lane and in_front and overlapping_vertically:
             gs.in_encounter     = True
             gs.encounter_timer  = S.ENCOUNTER_SHOW_TIME
-            gs.encounter_name   = r["name"]
+            # Store both generated name and original filename
+            gs.encounter_summoner_filename = r.get("filename", r.get("name", "MSummoner1"))  # Original filename for sprite
+            gs.encounter_name = r.get("name", "MSummoner1")  # Generated name (already generated in spawn_rival_ahead)
             gs.encounter_sprite = r["sprite"]
             gs.encounter_stats  = None  # rivals can have stats later if you want
             triggered_index     = i
@@ -186,16 +192,24 @@ def update_vessels(gs, dt, player_half: Vector2, vessels, rare_vessels):
                         except Exception:
                             pass
 
+            # Use scaled level based on player's highest party level
+            from combat.team_randomizer import scaled_enemy_level
+            enemy_level = scaled_enemy_level(gs, rng)
+            
             stats = generate_vessel_stats_from_asset(
                 asset_name=asset_name,
-                level=1,
+                level=enemy_level,
                 rng=rng,
                 notes="Rolled on encounter"
             )
 
-            gs.encounter_name   = asset_name
+            # Generate display name from token name
+            from systems.name_generator import generate_vessel_name
+            gs.encounter_name   = generate_vessel_name(asset_name) if asset_name else "Wild Vessel"
             gs.encounter_sprite = sprite
             gs.encounter_stats  = stats
+            # Store original token name for stat generation
+            gs.encounter_token_name = asset_name
             gs.in_encounter     = True
             gs.encounter_timer  = S.ENCOUNTER_SHOW_TIME
             triggered_index     = i

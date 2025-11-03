@@ -152,12 +152,11 @@ def _smooth_scale(surf: pygame.Surface | None, scale: float) -> pygame.Surface |
     return pygame.transform.smoothscale(surf, (max(1, int(w*scale)), max(1, int(h*scale))))
 
 def _pretty_name_from_token(fname: str | None) -> str:
-    if not fname: return "Ally"
-    base = os.path.splitext(os.path.basename(fname))[0]
-    for p in ("StarterToken", "MToken", "FToken", "RToken"):
-        if base.startswith(p):
-            base = base[len(p):]; break
-    return re.sub(r"\d+$", "", base) or "Ally"
+    """Get display name for a vessel (uses name generator)."""
+    if not fname:
+        return "Ally"
+    from systems.name_generator import generate_vessel_name
+    return generate_vessel_name(fname)
 
 def _hp_ratio_from_stats(stats: dict | None) -> float:
     if not isinstance(stats, dict):
@@ -299,8 +298,10 @@ def enter(gs, **_):
 
     # Sprites
     ally_img  = _load_player_summoner_big(gs)
-    enemy_img = _load_summoner_big(getattr(gs, "encounter_name", None),
-                                   getattr(gs, "encounter_sprite", None))
+    # Use original filename for sprite lookup, generated name for display
+    summoner_filename = getattr(gs, "encounter_summoner_filename", None) or getattr(gs, "encounter_name", None)
+    enemy_img = _load_summoner_big(summoner_filename,
+                                     getattr(gs, "encounter_sprite", None))
     if ally_img is not None:  ally_img  = _smooth_scale(ally_img,  ALLY_SCALE)
     if enemy_img is not None: enemy_img = _smooth_scale(enemy_img, ENEMY_SCALE)
 
@@ -344,8 +345,11 @@ def enter(gs, **_):
     active_idx = getattr(gs, "combat_active_idx", 0)
     ally_stats = party_stats[active_idx] if 0 <= active_idx < len(party_stats) else None
 
-    # Enemy name for the challenge line
-    enemy_name = getattr(gs, "encounter_name", "a Summoner") or "a Summoner"
+    # Enemy name for the challenge line (use name generator)
+    # Try to get original filename first, then fallback to encounter_name (might be old code)
+    summoner_filename = getattr(gs, "encounter_summoner_filename", None) or getattr(gs, "encounter_name", "MSummoner1")
+    from systems.name_generator import generate_summoner_name
+    enemy_name = generate_summoner_name(summoner_filename)
     st_text = f"You are challenged by {enemy_name}!"
 
     gs._summ_ui = {

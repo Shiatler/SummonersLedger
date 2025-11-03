@@ -167,14 +167,11 @@ def _load_token_icon(fname: str | None, size: int) -> pygame.Surface | None:
     return surf
 
 def _pretty_name(fname: str | None) -> str:
+    """Get display name for a vessel (uses name generator)."""
     if not fname:
         return ""
-    base = os.path.splitext(os.path.basename(fname))[0]
-    for p in ("StarterToken", "MToken", "FToken", "RToken"):
-        if base.startswith(p):
-            base = base[len(p):]
-            break
-    return re.sub(r"\d+$", "", base) or ""
+    from systems.name_generator import generate_vessel_name
+    return generate_vessel_name(fname)
 
 def _hp_tuple(stats: dict | None) -> tuple[int, int]:
     if isinstance(stats, dict):

@@ -173,13 +173,40 @@ def _enemy_class_string(gs) -> str:
     return _class_string(st)  # reuses tolerant class parser
 
 def get_available_moves_for_enemy(gs) -> List[Move]:
-    """L1 moves derived from ENEMY class (using same registry)."""
+    """Return moves for the enemy's class, filtered by enemy level."""
     norm = _normalize_class(_enemy_stats(gs))
     if not norm:
         # try by class_name string if dict didn't normalize
         s = _enemy_class_string(gs)
         norm = _CLASS_KEYS.get(s.lower(), None) if s else None
-    return list(_MOVE_REGISTRY.get(norm, []))
+    if not norm:
+        return []
+    
+    # Get enemy level
+    stats = _enemy_stats(gs)
+    level = 1
+    if isinstance(stats, dict):
+        try:
+            level = int(stats.get("level", 1))
+        except Exception:
+            level = 1
+    
+    # Filter moves by level requirement (same logic as allies)
+    all_moves = _MOVE_REGISTRY.get(norm, [])
+    available = []
+    for move in all_moves:
+        if "_l1_" in move.id:
+            available.append(move)
+        elif "_l10_" in move.id and level >= 10:
+            available.append(move)
+        elif "_l20_" in move.id and level >= 20:
+            available.append(move)
+        elif "_l40_" in move.id and level >= 40:
+            available.append(move)
+        elif "_l50_" in move.id and level >= 50:
+            available.append(move)
+    
+    return available
 
 def get_enemy_pp(gs, move_id: str) -> tuple[int, int]:
     """(remaining, max) for ENEMY on a particular move."""
@@ -464,22 +491,98 @@ _CLASS_KEYS = {
     "bard": "bard",
 }
 
-# L1 moves (your scaled set), all with max_pp=20
+# All moves (Level 1, 10, 20, 40, 50) - PP balanced system
 _MOVE_REGISTRY: Dict[str, List[Move]] = {
-    "barbarian": [Move("barb_l1_wild_swing", "Wild Swing", "Sloppy first strike.", (1, 5), "STR", True, 0, 20)],
-    "druid":     [Move("druid_l1_thorn_whip", "Thorn Whip", "Cantrip lash of vines.", (2, 3), "WIS", True, 0, 20)],
-    "rogue":     [Move("rogue_l1_quick_stab", "Quick Stab", "Hasty jab.", (1, 5), "DEX", True, 0, 20)],
-    "wizard":    [Move("wizard_l1_arcane_bolt", "Arcane Bolt", "Spark of arcane energy.", (1, 6), "INT", True, 0, 20)],
-    "cleric":    [Move("cleric_l1_sacred_flame", "Sacred Flame", "Radiant spark.", (1, 5), "WIS", True, 0, 20)],
-    "paladin":   [Move("paladin_l1_smite_training", "Smite Training", "Basic divine strike.", (1, 6), "STR", True, 0, 20)],
-    "ranger":    [Move("ranger_l1_aimed_shot", "Aimed Shot", "Careful bow shot.", (1, 5), "DEX", True, 0, 20)],
-    "warlock":   [Move("warlock_l1_eldritch_blast", "Eldritch Blast", "Signature cantrip.", (1, 6), "CHA", True, 0, 20)],
-    "monk":      [Move("monk_l1_martial_strike", "Martial Strike", "Basic unarmed strike.", (1, 5), "DEX", True, 0, 20)],
-    "sorcerer":  [Move("sorc_l1_burning_hands", "Burning Hands", "Brief cone of flame.", (2, 3), "CHA", True, 0, 20)],
-    "artificer": [Move("arti_l1_arcane_shot", "Arcane Shot", "Tinkered magic bolt.", (1, 5), "INT", True, 0, 20)],
-    "blood_hunter": [Move("bh_l1_hemorrhage_cut", "Hemorrhage Cut", "Brutal self-fueled cut.", (1, 5), "STR|DEX", True, 0, 20)],
-    "fighter": [Move("fighter_l1_weapon_strike", "Weapon Strike", "Disciplined opening attack.", (1, 5), "STR|DEX", True, 0, 20)],
-    "bard":    [Move("bard_l1_vicious_mockery", "Vicious Mockery", "Psychic jab that rattles.", (1, 4), "CHA", True, 0, 20)],
+    "barbarian": [
+        Move("barb_l1_wild_swing", "Wild Swing", "Sloppy first strike.", (1, 5), "STR", True, 0, 20),
+        Move("barb_l10_reckless_strike", "Reckless Strike", "Swing with reckless abandon; hits harder, misses often.", (1, 10), "STR", True, 0, 12),
+        Move("barb_l20_frenzied_blow", "Frenzied Blow", "A trained rhythm of rage; two brutal chops in one motion.", (2, 8), "STR", True, 0, 6),
+        Move("barb_l40_brutal_cleave", "Brutal Cleave", "Heavy strike that channels every ounce of strength.", (2, 10), "STR", True, 0, 3),
+        Move("barb_l50_world_breaker", "World Breaker", "Devastating ground slam.", (3, 12), "STR", True, 0, 1),
+    ],
+    "druid": [
+        Move("druid_l1_thorn_whip", "Thorn Whip", "Cantrip lash of vines.", (2, 3), "WIS", True, 0, 20),
+        Move("druid_l10_flame_seed", "Flame Seed", "A spark of wildfire magic from nature's fury.", (1, 8), "WIS", True, 0, 15),
+        Move("druid_l20_moonbeam", "Moonbeam", "Summon pale lunar energy to sear a single foe.", (2, 10), "WIS", True, 0, 8),
+        Move("druid_l40_call_lightning", "Call Lightning", "Command a bolt of the storm itself.", (3, 10), "WIS", True, 0, 2),
+        Move("druid_l50_storm_of_ages", "Storm of Ages", "Full fury of nature's wrath.", (5, 10), "WIS", True, 0, 1),
+    ],
+    "rogue": [
+        Move("rogue_l1_quick_stab", "Quick Stab", "Hasty jab.", (1, 5), "DEX", True, 0, 20),
+        Move("rogue_l10_sneak_strike", "Sneak Strike", "A practiced backstab from the shadows.", (2, 6), "DEX", True, 0, 10),
+        Move("rogue_l20_cunning_flurry", "Cunning Flurry", "Swift, precise blows exploiting every weakness.", (3, 6), "DEX", True, 0, 5),
+        Move("rogue_l40_assassinate", "Assassinate", "A deadly opening strike with high crit potential.", (4, 6), "DEX", True, 0, 2),
+        Move("rogue_l50_death_mark", "Death Mark", "Guaranteed critical strike.", (6, 10), "DEX", True, 0, 1),
+    ],
+    "wizard": [
+        Move("wizard_l1_arcane_bolt", "Arcane Bolt", "Spark of arcane energy.", (1, 6), "INT", True, 0, 20),
+        Move("wizard_l10_scorching_ray", "Scorching Ray", "Twin beams of focused fire.", (2, 6), "INT", True, 0, 12),
+        Move("wizard_l20_fireball", "Fireball", "Explosive burst of chaotic flame.", (6, 6), "INT", True, 0, 1),
+        Move("wizard_l40_blight", "Blight", "Drain life and vitality with dark magic.", (8, 8), "INT", True, 0, 1),
+        Move("wizard_l50_meteor_swarm", "Meteor Swarm", "Summon meteors from the heavens.", (10, 8), "INT", True, 0, 1),
+    ],
+    "cleric": [
+        Move("cleric_l1_sacred_flame", "Sacred Flame", "Radiant spark.", (1, 5), "WIS", True, 0, 20),
+        Move("cleric_l10_guiding_bolt", "Guiding Bolt", "Blast of holy energy that scorches evil.", (4, 6), "WIS", True, 0, 8),
+        Move("cleric_l20_spiritual_weapon", "Spiritual Weapon", "Summon a spectral blade for radiant punishment.", (2, 8), "WIS", True, 0, 10),
+        Move("cleric_l40_flame_strike", "Flame Strike", "Call down holy fire upon your foes.", (4, 8), "WIS", True, 0, 2),
+        Move("cleric_l50_divine_intervention", "Divine Intervention", "Channel the full power of your deity.", (6, 10), "WIS", True, 0, 1),
+    ],
+    "paladin": [
+        Move("paladin_l1_smite_training", "Smite Training", "Basic weapon strike infused with faint divine power.", (1, 8), "STR", True, 0, 20),
+        Move("paladin_l10_divine_smite", "Divine Smite", "Infuse your attack with sacred light.", (2, 8), "STR", True, 0, 10),
+        Move("paladin_l20_crusaders_wrath", "Crusader's Wrath", "Righteous strength guided by faith.", (3, 8), "STR", True, 0, 5),
+        Move("paladin_l40_holy_smite", "Holy Smite", "True divine retribution.", (4, 8), "STR", True, 0, 2),
+        Move("paladin_l50_avenging_wrath", "Avenging Wrath", "Divine judgment that cannot be denied.", (5, 10), "STR", True, 0, 1),
+    ],
+    "ranger": [
+        Move("ranger_l1_aimed_shot", "Aimed Shot", "Careful bow shot.", (1, 5), "DEX", True, 0, 20),
+        Move("ranger_l10_hunters_mark", "Hunter's Mark", "Marked prey takes focused damage.", (2, 7), "DEX", True, 0, 10),  # 1d8+1d6 approximated as 2d7
+        Move("ranger_l20_hail_of_thorns", "Hail of Thorns", "Arrows explode into piercing splinters.", (2, 10), "DEX", True, 0, 6),
+        Move("ranger_l40_lightning_arrow", "Lightning Arrow", "A charged shot that carries storm power.", (4, 8), "DEX", True, 0, 2),
+        Move("ranger_l50_heartseeker", "Heartseeker", "Always finds its mark.", (5, 10), "DEX", True, 0, 1),
+    ],
+    "warlock": [
+        Move("warlock_l1_eldritch_blast", "Eldritch Blast", "Signature cantrip of dark energy.", (1, 6), "CHA", True, 0, 20),
+        Move("warlock_l10_agonizing_blast", "Agonizing Blast", "More painful, refined version of your blast.", (2, 10), "CHA", True, 0, 12),
+        Move("warlock_l20_hunger_of_hadar", "Hunger of Hadar", "Tear a rift into the void's cold darkness.", (4, 8), "CHA", True, 0, 4),
+        Move("warlock_l40_eldritch_torrent", "Eldritch Torrent", "Continuous beam of infernal destruction.", (6, 10), "CHA", True, 0, 1),
+        Move("warlock_l50_soul_rend", "Soul Rend", "Tear at the very essence of your target.", (8, 10), "CHA", True, 0, 1),
+    ],
+    "monk": [
+        Move("monk_l1_martial_strike", "Martial Strike", "Basic unarmed strike.", (1, 5), "DEX", True, 0, 20),
+        Move("monk_l10_flurry_of_blows", "Flurry of Blows", "Two lightning-fast strikes.", (2, 6), "DEX", True, 0, 10),
+        Move("monk_l20_stunning_strike", "Stunning Strike", "Precise nerve hit that disrupts focus.", (1, 8), "DEX", True, 0, 15),
+        Move("monk_l40_quivering_palm", "Quivering Palm", "Devastating ki strike from within.", (4, 10), "DEX", True, 0, 2),
+        Move("monk_l50_perfect_strike", "Perfect Strike", "Flawless ki strike that transcends the physical.", (5, 12), "DEX", True, 0, 1),
+    ],
+    "sorcerer": [
+        Move("sorc_l1_burning_hands", "Burning Hands", "Brief cone of flame.", (2, 3), "CHA", True, 0, 20),
+        Move("sorc_l10_chromatic_orb", "Chromatic Orb", "Hurl an orb of random elemental energy (fire, ice, lightning, or acid). Pure chaos given form.", (3, 8), "CHA", True, 0, 10),
+        Move("sorc_l20_fireball", "Fireball", "The classic explosion of chaos and pride.", (8, 6), "CHA", True, 0, 1),
+        Move("sorc_l40_disintegrate", "Disintegrate", "A single ray that vaporizes its target.", (10, 6), "CHA", True, 0, 1),
+        Move("sorc_l50_reality_warp", "Reality Warp", "Bend reality itself to your will.", (12, 8), "CHA", True, 0, 1),
+    ],
+    "artificer": [
+        Move("arti_l1_arcane_shot", "Arcane Shot", "Tinkered magic bolt.", (1, 5), "INT", True, 0, 20),
+        Move("arti_l10_thunder_gauntlet", "Thunder Gauntlet", "Punch augmented by a thunderous shockwave.", (1, 8), "INT", True, 0, 15),
+        Move("arti_l20_explosive_device", "Explosive Device", "Throw a timed alchemical bomb for big impact.", (2, 10), "INT", True, 0, 8),
+        Move("arti_l40_arcane_cannon", "Arcane Cannon", "Deploy your perfected invention for a devastating burst.", (3, 10), "INT", True, 0, 2),
+        Move("arti_l50_grand_invention", "Grand Invention", "Masterpiece weapon fires at full power.", (6, 10), "INT", True, 0, 1),
+    ],
+    "blood_hunter": [
+        Move("bh_l1_hemorrhage_cut", "Hemorrhage Cut", "Brutal self-fueled cut.", (1, 5), "STR|DEX", True, 0, 20),
+        Move("bh_l10_crimson_slash", "Crimson Slash", "Empowered strike at the cost of 2 HP.", (2, 8), "STR|DEX", True, 2, 12),
+        Move("bh_l20_rite_of_the_blade", "Rite of the Blade", "Channel cursed energy through your weapon; costs 3 HP.", (3, 10), "STR|DEX", True, 3, 6),
+        Move("bh_l40_blood_nova", "Blood Nova", "Release stored life force in a devastating arc; costs 5 HP.", (4, 12), "STR|DEX", True, 5, 2),
+        Move("bh_l50_final_rite", "Final Rite", "Sacrifice 10 HP for ultimate cursed power.", (6, 12), "STR|DEX", True, 10, 1),
+    ],
+    "fighter": [
+        Move("fighter_l1_weapon_strike", "Weapon Strike", "Disciplined opening attack.", (1, 5), "STR|DEX", True, 0, 20),
+    ],
+    "bard": [
+        Move("bard_l1_vicious_mockery", "Vicious Mockery", "Psychic jab that rattles.", (1, 4), "CHA", True, 0, 20),
+    ],
 }
 
 def _normalize_class(stats: Dict[str, Any] | None) -> str | None:
@@ -536,12 +639,48 @@ def _set_resolving(v: bool):
 # --------------------- Public API ----------------------------
 
 def get_available_moves(gs) -> List[Move]:
-    """Return L1 moves for the active unit's class."""
+    """Return moves for the active unit's class, filtered by level."""
     stats = _active_stats(gs)
     norm = _normalize_class(stats)
     if not norm:
         return []
-    return list(_MOVE_REGISTRY.get(norm, []))
+    
+    # Get vessel level
+    level = 1
+    if isinstance(stats, dict):
+        try:
+            level = int(stats.get("level", 1))
+        except Exception:
+            level = 1
+    
+    # Debug: Print level for troubleshooting
+    # print(f"[moves] Ally vessel level: {level}, class: {norm}")
+    
+    # Filter moves by level requirement
+    all_moves = _MOVE_REGISTRY.get(norm, [])
+    available = []
+    for move in all_moves:
+        # Extract level requirement from move ID (e.g., "barb_l10_reckless_strike" -> 10)
+        # Level 1 moves (L1) are available at level 1+
+        # Level 10 moves (L10) require level 10+
+        # Level 20 moves (L20) require level 20+
+        # Level 40 moves (L40) require level 40+
+        # Level 50 moves (L50) require level 50+
+        if "_l1_" in move.id:
+            available.append(move)
+        elif "_l10_" in move.id and level >= 10:
+            available.append(move)
+        elif "_l20_" in move.id and level >= 20:
+            available.append(move)
+        elif "_l40_" in move.id and level >= 40:
+            available.append(move)
+        elif "_l50_" in move.id and level >= 50:
+            available.append(move)
+    
+    # Debug: Print available moves count
+    # print(f"[moves] Available moves for level {level}: {len(available)} out of {len(all_moves)}")
+    
+    return available
 
 def get_pp(gs, move_id: str) -> tuple[int, int]:
     """
@@ -651,6 +790,14 @@ def _perform_basic_attack(gs, mv: Move) -> bool:
             total_dmg = base + bonus_mod
 
         total_dmg = max(0, total_dmg)
+        
+        # Apply self HP cost if move has it (Blood Hunter moves)
+        if mv.self_hp_cost > 0:
+            a_cur, a_max = _ally_hp_tuple(gs)
+            new_a_cur = max(0, a_cur - mv.self_hp_cost)
+            _set_ally_hp(gs, new_a_cur, a_max)
+            print(f"[moves] {mv.label} → self cost {mv.self_hp_cost} HP | ally {a_cur} → {new_a_cur}")
+        
         cur, mx = _enemy_hp_tuple(gs)
         new_cur = max(0, cur - total_dmg)
         _set_enemy_hp(gs, new_cur, mx)

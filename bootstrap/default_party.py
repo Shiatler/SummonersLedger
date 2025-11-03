@@ -59,6 +59,57 @@ def add_default_on_new_game(gs, *, slot_index: int = 5, token_name: str = "FToke
         print(f"⚠️ Failed to add rare vessel {rare_vessel}: {e}")
 
     # =========================================================
+    # Random Level 30 Bootstrap Vessel (first available slot)
+    # =========================================================
+    import random
+    import os
+    import glob
+    
+    # Find first empty slot
+    bootstrap_idx = None
+    for i in range(6):
+        if not gs.party_slots_names[i]:
+            bootstrap_idx = i
+            break
+    
+    if bootstrap_idx is not None:
+        # Collect all available vessel tokens
+        vessel_dirs = [
+            os.path.join("Assets", "VesselsMale"),
+            os.path.join("Assets", "VesselsFemale"),
+        ]
+        
+        all_tokens = []
+        for vessel_dir in vessel_dirs:
+            if os.path.exists(vessel_dir):
+                # Find all *Token*.png files
+                tokens = glob.glob(os.path.join(vessel_dir, "*Token*.png"))
+                all_tokens.extend([os.path.basename(t) for t in tokens])
+        
+        if all_tokens:
+            # Pick a random token
+            random_token = random.choice(all_tokens)
+            token_name = random_token if random_token.lower().endswith(".png") else f"{random_token}.png"
+            
+            # Convert token to vessel asset name (FTokenBarbarian1 -> FVesselBarbarian1)
+            vessel_name = token_name.replace("Token", "Vessel")
+            
+            gs.party_slots_names[bootstrap_idx] = token_name
+            gs.party_slots[bootstrap_idx]       = token_name
+            if not getattr(gs, "party_tokens", None):
+                gs.party_tokens = [None] * 6
+            gs.party_tokens[bootstrap_idx]      = token_name
+            
+            try:
+                # Generate stats at level 30
+                gs.party_vessel_stats[bootstrap_idx] = generate_vessel_stats_from_asset(
+                    vessel_name, level=30, rng=rng
+                )
+                print(f"🎉 Added random level 30 bootstrap vessel: {vessel_name} (slot {bootstrap_idx + 1})")
+            except Exception as e:
+                print(f"⚠️ Failed to add bootstrap vessel {vessel_name}: {e}")
+
+    # =========================================================
     # Clear HUD caches so UI rebuilds
     # =========================================================
     for attr in ("_hud_party_icons", "_hud_party_rects", "_hud_party_cache"):

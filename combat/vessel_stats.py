@@ -50,7 +50,7 @@ def generate_vessel_stats_from_asset(
     Build a CombatStats dict for a vessel using its asset/token name.
     - Parses class from the name.
     - Rolls class-prioritized 4d6-drop-lowest abilities.
-    - Uses updated AC baselines and PHB HP progression from combat.stats.
+    - Uses updated AC baselines and milestone-only HP progression (matches ally scaling).
     """
     cls = _extract_class(asset_name) or "Fighter"
     rng = rng or Roller()  # isolated RNG for stat rolling
@@ -65,4 +65,20 @@ def generate_vessel_stats_from_asset(
         override_primary=override_primary,
         notes=notes,
     )
-    return stats.to_dict()
+    
+    # Override HP to use milestone-only system (matches ally scaling)
+    from combat.stats import compute_hp_milestone_only, hit_die_for_class, ability_mod
+    stats_dict = stats.to_dict()
+    try:
+        con_mod = ability_mod(int(abilities.get("CON", 10)))
+        hit_die = hit_die_for_class(cls)
+        milestone_hp = compute_hp_milestone_only(level, con_mod, hit_die, rng=rng)
+        stats_dict["hp"] = milestone_hp
+        # Set current_hp to max_hp if not already set
+        if "current_hp" not in stats_dict or stats_dict.get("current_hp") is None:
+            stats_dict["current_hp"] = milestone_hp
+    except Exception as e:
+        print(f"⚠️ Failed to recalculate milestone HP for {asset_name} level {level}: {e}")
+        # Keep original HP if recalculation fails
+    
+    return stats_dict

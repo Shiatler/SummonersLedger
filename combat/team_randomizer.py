@@ -44,6 +44,19 @@ def highest_party_level(gs) -> int:
     except Exception:
         return 1
 
+def scaled_enemy_level(gs, rng=None) -> int:
+    """
+    Get a scaled enemy level based on player's highest party level using tier system.
+    Can be used for wild vessel encounters.
+    """
+    if rng is None:
+        import random
+        rng = Roller(random.randrange(1 << 30))
+    
+    player_max = highest_party_level(gs)
+    bracket = _bracket_for_level(player_max)
+    return _level_for_enemy(player_max, rng, bracket)
+
 
 # ---------------- Probabilistic team size by level (1..6) ----------------
 # Keyframes you can tune any time:
@@ -110,20 +123,41 @@ def _bracket_for_level(player_lvl: int) -> str:
     return "L41+"
 
 def _level_for_enemy(player_lvl: int, rng, bracket: str) -> int:
-    """Pick an enemy level relative to the player bracket."""
-    choice = getattr(rng, "choice", _sysrandom.choice)
+    """Pick an enemy level using tier-based scaling relative to player's highest level."""
+    rfunc = getattr(rng, "random", _sysrandom.random)
     L = max(1, int(player_lvl))
-    if bracket == "L1-10":
-        choices = [-2, -1, -1, 0]
-    elif bracket == "L11-20":
-        choices = [-1, -1, 0, +1]
-    elif bracket == "L21-30":
-        choices = [-1, 0, +1]
-    elif bracket == "L31-40":
-        choices = [0, +1, +2]
-    else:
-        choices = [0, +1, +2, +3]
-    return max(1, min(MAX_LEVEL, L + int(choice(choices))))
+    
+    # Tier-based probability system:
+    # Common (65%): X-1 to X (slightly easier or same level)
+    # Uncommon (25%): X+1 to X+2 (harder)
+    # Rare (8%): X+3 to X+4 (challenging)
+    # Very Rare (1.8%): X+5 to X+6 (very challenging)
+    # Ultra Rare (0.2%): X+7+ (extreme, capped at MAX_LEVEL)
+    
+    roll = rfunc()
+    
+    if roll < 0.65:
+        # Common: X-1 to X
+        offset = -1 if rfunc() < 0.5 else 0  # 50/50 between X-1 and X
+        level_offset = offset
+    elif roll < 0.90:  # 65% + 25% = 90%
+        # Uncommon: X+1 to X+2
+        offset = 1 if rfunc() < 0.6 else 2  # 60% chance for +1, 40% for +2
+        level_offset = offset
+    elif roll < 0.98:  # 90% + 8% = 98%
+        # Rare: X+3 to X+4
+        offset = 3 if rfunc() < 0.6 else 4  # 60% chance for +3, 40% for +4
+        level_offset = offset
+    elif roll < 0.998:  # 98% + 1.8% = 99.8%
+        # Very Rare: X+5 to X+6
+        offset = 5 if rfunc() < 0.6 else 6  # 60% chance for +5, 40% for +6
+        level_offset = offset
+    else:  # 0.2% remaining
+        # Ultra Rare: X+7 or more
+        level_offset = 7 + int(rfunc() * 3)  # X+7 to X+9, but will be capped below
+    
+    final_level = max(1, min(MAX_LEVEL, L + level_offset))
+    return final_level
 
 
 # ---------------------- Utility: token scanning -------------------

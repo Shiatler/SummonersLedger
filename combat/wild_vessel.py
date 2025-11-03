@@ -34,6 +34,7 @@ from systems.asset_links import vessel_to_token
 from combat import moves
 from combat import turn_order
 from combat import enemy_ai
+from screens import party_manager
 
 # ---------------- Tunables ----------------
 FADE_SECONDS   = 0.8
@@ -171,12 +172,11 @@ def _smooth_scale(surf: pygame.Surface | None, scale: float) -> pygame.Surface |
     return pygame.transform.smoothscale(surf, (max(1, int(w*scale)), max(1, int(h*scale))))
 
 def _pretty_name_from_token(fname: str | None) -> str:
-    if not fname: return "Ally"
-    base = os.path.splitext(os.path.basename(fname))[0]
-    for p in ("StarterToken", "MToken", "FToken", "RToken"):
-        if base.startswith(p):
-            base = base[len(p):]; break
-    return re.sub(r"\d+$", "", base) or "Ally"
+    """Get display name for a vessel (uses name generator)."""
+    if not fname:
+        return "Ally"
+    from systems.name_generator import generate_vessel_name
+    return generate_vessel_name(fname)
 
 def _ally_sprite_from_token_name(fname: str | None):
     if not fname: return None
@@ -237,6 +237,57 @@ def _load_swirl_frames():
     print(f"ℹ️ VFX loader: found {len(frames)} frame(s) in {os.path.abspath(base)}")
     return frames
 
+# Global timer for heal animation
+_heal_anim_timer = 0.0
+
+def _draw_heal_animation(screen: pygame.Surface, ax: int, ay: int, ally_sprite, dt: float):
+    """Draw healing animation over the active vessel."""
+    global _heal_anim_timer
+    
+    frames = party_manager.get_heal_animation_frames()
+    if not frames:
+        return
+    
+    # Reset timer if this is the first frame of animation (check using function attribute)
+    if not hasattr(_draw_heal_animation, '_was_active'):
+        _draw_heal_animation._was_active = False
+    
+    # Check if animation just started
+    if not _draw_heal_animation._was_active:
+        _heal_anim_timer = 0.0
+        _draw_heal_animation._was_active = True
+    
+    # Update animation timer
+    _heal_anim_timer += dt
+    
+    # Calculate frame index - rapid succession (higher FPS)
+    HEAL_ANIM_FPS = 30  # frames per second for the animation
+    frame_idx = int(_heal_anim_timer * HEAL_ANIM_FPS) % len(frames)
+    frame = frames[frame_idx]
+    
+    # Get ally sprite center for positioning
+    if ally_sprite:
+        aw = ally_sprite.get_width()
+        ah = ally_sprite.get_height()
+        center_x = ax + aw // 2
+        center_y = ay + ah // 2
+    else:
+        center_x = ax + 120
+        center_y = ay + 120
+    
+    # Scale animation to match vessel size (slightly larger)
+    if ally_sprite:
+        target_size = int(max(aw, ah) * 1.2)
+    else:
+        target_size = 240
+    fw, fh = frame.get_width(), frame.get_height()
+    scale = target_size / max(1, max(fw, fh))
+    scaled_frame = pygame.transform.smoothscale(frame, 
+        (max(1, int(fw * scale)), max(1, int(fh * scale))))
+    
+    # Draw centered over vessel
+    screen.blit(scaled_frame, scaled_frame.get_rect(center=(center_x, center_y)))
+
 def _load_swap_sfx():
     return _load_sfx(TELEPORT_SFX)
 
@@ -261,55 +312,140 @@ def _add_captured_to_party(gs, vessel_png_name: str, stats_dict: dict) -> bool:
     return True
 
 # ---------------- Capture callback ----------------
-def _scroll_id_to_kind(iid: str) -> str:
-    iid = (iid or "").lower()
-    if "eternity" in iid:    return "eternity"
+def _scroll_id_to_kind(iid: str) -> str | None:
+    """
+    Map ONLY capture scroll ids to capture kinds.
+    Healing scrolls (mending/regeneration/revivity) must return None.
+    """
+    iid = (iid or "").lower().strip()
+    if "eternity"    in iid: return "eternity"
     if "subjugation" in iid: return "subjugation"
-    if "sealing" in iid:     return "sealing"
-    return "command"
+    if "sealing"     in iid: return "sealing"
+    if "command"     in iid: return "command"
+    # Healing / other → not a capture scroll
+    if any(k in iid for k in ("mending", "regeneration", "revivity", "revive", "healing")):
+        return None
+    return None
 
+# helper: normalize an item id/name to snake-case
+def _norm_item_id(item) -> str:
+    s = (str(item.get("id") or item.get("name") or "")).strip().lower()
+    s = s.replace(" ", "_")
+    return s
+
+# explicit sets
+_CAPTURE_SCROLLS = {
+    "scroll_of_command", "scroll_of_sealing", "scroll_of_subjugation", "scroll_of_eternity"
+}
+_HEAL_SCROLL_MODES = {
+    # id: mode dict for party_manager.start_use_mode
+    "scroll_of_mending":      {"kind":"heal","dice":(1,8), "add_con":True,  "revive":False},
+    "scroll_of_regeneration": {"kind":"heal","dice":(2,8), "add_con":True,  "revive":False},
+    "scroll_of_revivity":     {"kind":"heal","dice":(0,0), "add_con":False, "revive":True},
+}
+
+# ============================================================
+# combat/wild_vessel.py — compact vessel encounter scene
+# ============================================================
 def _on_use_item(gs, item) -> bool:
-    if not item: return False
-    iid = str(item.get("id", "")).lower()
-    if not iid.startswith("scroll_of_"): return False
+    """
+    Wild battle Bag callback (authoritative).
+    STRICT ID-BASED: decide only from item['id'].
+    • Healing scrolls -> open Party target mode (consumption on target click)
+    • Capture scrolls -> run capture flow
+    • Others          -> ignore
+    """
+    if not item:
+        return False
 
-    estats = getattr(gs, "encounter_stats", {}) or {}
-    level  = int(estats.get("level", getattr(gs, "zone_level", 1)))
-    max_hp = int(max(1, estats.get("hp", 10)))
-    cur_hp = int(estats.get("current_hp", max_hp))
+    def _iid(it) -> str:
+        s = str((it or {}).get("id") or (it or {}).get("name") or "").strip().lower()
+        return s.replace(" ", "_")
 
-    try:
-        ratio = float(getattr(gs, "_wild", {}).get("enemy_hp_ratio", 1.0))
-        if "current_hp" not in estats:
-            cur_hp = max(0, min(max_hp, int(round(max_hp * ratio))))
-    except Exception:
-        pass
+    iid = _iid(item)
 
-    scroll = _scroll_id_to_kind(iid)
-    ctx = CaptureContext(level=level, max_hp=max_hp, cur_hp=cur_hp,
-                         scroll=scroll, status=None, capture_bonus=0, advantage=0)
+    HEAL = {
+        "scroll_of_mending":      {"kind": "heal", "dice": (1, 8), "add_con": True,  "revive": False},
+        "scroll_of_regeneration": {"kind": "heal", "dice": (2, 8), "add_con": True,  "revive": False},
+        "scroll_of_revivity":     {"kind": "heal", "dice": (0, 0), "add_con": False, "revive": True},
+    }
+    CAPTURE_KIND = {
+        "scroll_of_command":      "command",
+        "scroll_of_sealing":      "sealing",
+        "scroll_of_subjugation":  "subjugation",
+        "scroll_of_eternity":     "eternity",
+    }
 
-    res = attempt_capture(ctx)
+    # Prevent multiple uses for the same item
+    if not getattr(gs, "_item_consumed", False):
+        if iid in HEAL:
+            mode = dict(HEAL[iid])
+            mode["consume_id"] = iid
 
-    st = getattr(gs, "_wild", None)
-    if st is not None:
-        st["pending_capture"] = res
-        st["cap_vfx_playing"] = True
-        st["cap_vfx_t"] = 0.0
-        st["cap_vfx_total"] = 0.0
-        st["cap_vfx_frame"] = 0
-        st["cap_popup_fired"] = False
+            # Process the item use
+            try:
+                from screens import party_manager
+                party_manager.start_use_mode(mode)
+            except Exception:
+                pass
+
+            # Flag the item as consumed to prevent double usage
+            gs._item_consumed = True
+
+            # Close the popup after use
+            try:
+                bag_action.close_popup()
+            except Exception:
+                pass
+            return True
+
+    # Capture → attempt capture using exact kind
+    cap_kind = CAPTURE_KIND.get(iid)
+    if cap_kind:
+        estats = getattr(gs, "encounter_stats", {}) or {}
+        level  = int(estats.get("level", getattr(gs, "zone_level", 1)))
+        max_hp = max(1, int(estats.get("hp", 10)))
+
+        # Current HP with ratio fallback (as before)
+        cur_hp = int(estats.get("current_hp", max_hp))
         try:
-            if st.get("swap_sfx"):
-                audio_sys.play_sound(st["swap_sfx"])
+            ratio = float(getattr(gs, "_wild", {}).get("enemy_hp_ratio", 1.0))
+            if "current_hp" not in estats:
+                cur_hp = max(0, min(max_hp, int(round(max_hp * ratio))))
         except Exception:
             pass
 
-    bag_action.close_popup()
-    return True
+        ctx = CaptureContext(level=level, max_hp=max_hp, cur_hp=cur_hp,
+                             scroll=cap_kind, status=None, capture_bonus=0, advantage=0)
+        res = attempt_capture(ctx)
+
+        st = getattr(gs, "_wild", None)
+        if st is not None:
+            st["pending_capture"] = res
+            st["cap_vfx_playing"] = True
+            st["cap_vfx_t"] = 0.0
+            st["cap_vfx_total"] = 0.0
+            st["cap_vfx_frame"] = 0
+            st["cap_popup_fired"] = False
+            try:
+                if st.get("swap_sfx"):
+                    audio_sys.play_sound(st["swap_sfx"])
+            except Exception:
+                pass
+
+        try:
+            bag_action.close_popup()
+        except Exception:
+            pass
+        return True
+
+    # Unknown/non-combat items → ignore
+    return False
+
 
 # ---------------- UI helpers ----------------
-def _draw_hp_bar(surface: pygame.Surface, rect: pygame.Rect, hp_ratio: float, name: str, align: str):
+def _draw_hp_bar(surface: pygame.Surface, rect: pygame.Rect, hp_ratio: float, name: str, align: str,
+                 current_hp: int = None, max_hp: int = None):
     hp_ratio = max(0.0, min(1.0, hp_ratio))
     x, y, w, h = rect
     frame, border, gold, inner = (70,45,30), (140,95,60), (185,150,60), (28,18,14)
@@ -340,6 +476,20 @@ def _draw_hp_bar(surface: pygame.Surface, rect: pygame.Rect, hp_ratio: float, na
         surface.blit(label, label.get_rect(midleft=(plate.x+12, plate.centery)))
     else:
         surface.blit(label, label.get_rect(midright=(plate.right-12, plate.centery)))
+    
+    # Draw HP text inside the green health bar, on the right side (ally only)
+    if current_hp is not None and max_hp is not None and align == "left":
+        hp_text = f"{current_hp}/{max_hp}"
+        hp_font = pygame.font.SysFont("georgia", max(14, int(h*0.22)), bold=True)
+        hp_label = hp_font.render(hp_text, True, (255, 255, 255))  # White text for visibility on green
+        # Position text on the right edge of the green fill bar
+        if fw > 0:
+            # Position on the right edge of the green fill, with small margin
+            text_x = trough.x + fw - hp_label.get_width() - 6
+            text_y = trough.centery - hp_label.get_height() // 2
+            # Only draw if there's enough space on the green bar
+            if text_x > trough.x + 4:
+                surface.blit(hp_label, (text_x, text_y))
         
 # ---------- XP strip (matches ledger style, compact) ----------
 def _xp_compute(stats: dict) -> tuple[int, int, int, float]:
@@ -448,7 +598,9 @@ def enter(gs, audio_bank=None, **_):
     ally_token_name = names[idx]
 
     ally_full  = _ally_sprite_from_token_name(ally_token_name) or pygame.Surface(S.PLAYER_SIZE, pygame.SRCALPHA)
-    enemy_full = _enemy_sprite_from_name(getattr(gs, "encounter_name", None)) or getattr(gs, "encounter_sprite", None)
+    # Use token name for sprite loading, fallback to encounter_sprite or encounter_name (for backwards compatibility)
+    token_name = getattr(gs, "encounter_token_name", None)
+    enemy_full = _enemy_sprite_from_name(token_name) if token_name else (getattr(gs, "encounter_sprite", None) or _enemy_sprite_from_name(getattr(gs, "encounter_name", None)))
     if enemy_full is None:
         enemy_full = pygame.Surface(S.PLAYER_SIZE, pygame.SRCALPHA)
         enemy_full.fill((160,40,40,220))
@@ -473,12 +625,24 @@ def enter(gs, audio_bank=None, **_):
         print(f"⚠️ Wild bg load failed: {e}")
 
     try:
-        level = getattr(gs, "zone_level", 1)
+        # Use scaled level based on player's highest party level
+        from combat.team_randomizer import scaled_enemy_level
         seed  = getattr(gs, "seed", None)
         rng   = StatRoller(seed) if seed is not None else None
+        if rng is None:
+            import random
+            rng = StatRoller(random.randrange(1 << 30))
+        
+        enemy_level = scaled_enemy_level(gs, rng)
+        # Use the stored token name for stat generation (name already generated in world/actors.py)
+        token_name = getattr(gs, "encounter_token_name", None)
+        if not token_name:
+            # Fallback: if no token name stored, this might be an old save - use a safe default
+            token_name = "MVesselFighter"
+            print("⚠️ Warning: No encounter_token_name found, using default token name")
         gs.encounter_stats = generate_vessel_stats_from_asset(
-            getattr(gs, "encounter_name", "MVesselFighter"),
-            level=level, rng=rng
+            token_name,
+            level=enemy_level, rng=rng
         )
     except Exception as e:
         print(f"⚠️ Stat generation failed: {e}")
@@ -604,6 +768,20 @@ def _show_result_screen(st: dict, title: str, subtitle: str, *,
         "lock_input": bool(lock_input),
     }
 
+def _get_dh_font(size: int, bold: bool = False) -> pygame.font.Font:
+    """Load DH font if available, fallback to system font."""
+    try:
+        font_path = os.path.join("Assets", "Fonts", "DH.otf")
+        if os.path.exists(font_path):
+            return pygame.font.Font(font_path, size)
+    except Exception:
+        pass
+    # Fallback
+    try:
+        return pygame.font.SysFont("georgia", size, bold=bold)
+    except Exception:
+        return pygame.font.Font(None, size)
+
 def _draw_result_screen(screen: pygame.Surface, st: dict, dt: float):
     res = st.get("result")
     if not res: return
@@ -622,31 +800,65 @@ def _draw_result_screen(screen: pygame.Surface, st: dict, dt: float):
         res["played"] = True
 
     sw, sh = screen.get_size()
-    dim = pygame.Surface((sw, sh), pygame.SRCALPHA); dim.fill((0, 0, 0, min(160, a)))
-    screen.blit(dim, (0, 0))
+    # No dim overlay - matches heal textbox style
+    # dim = pygame.Surface((sw, sh), pygame.SRCALPHA); dim.fill((0, 0, 0, min(160, a)))
+    # screen.blit(dim, (0, 0))
 
-    card_w, card_h = RESULT_CARD_W, RESULT_CARD_H
-    card = pygame.Surface((card_w, card_h), pygame.SRCALPHA)
-    pygame.draw.rect(card, (245, 245, 245, min(245, a)), card.get_rect(), border_radius=14)
-    pygame.draw.rect(card, (0, 0, 0, min(255, a)), card.get_rect(), 4, border_radius=14)
-    pygame.draw.rect(card, (60, 60, 60, min(255, a)), card.get_rect().inflate(-10, -10), 2, border_radius=10)
+    # Position at bottom like heal textbox
+    box_h = 120
+    margin_x = 36
+    margin_bottom = 28
+    rect = pygame.Rect(margin_x, sh - box_h - margin_bottom, sw - margin_x * 2, box_h)
 
-    big = pygame.font.SysFont("georgia", 40, bold=True)
-    mid = pygame.font.SysFont("georgia", 24, bold=False)
+    # Box styling (matches heal textbox)
+    pygame.draw.rect(screen, (245, 245, 245), rect)
+    pygame.draw.rect(screen, (0, 0, 0), rect, 4, border_radius=8)
+    inner = rect.inflate(-8, -8)
+    pygame.draw.rect(screen, (60, 60, 60), inner, 2, border_radius=6)
 
-    t_surf = big.render(res.get("title",""), True, (20, 20, 20))
-    s_surf = mid.render(res.get("subtitle",""), True, (45, 45, 45))
+    # Combine title and subtitle into one text
+    title = res.get("title", "")
+    subtitle = res.get("subtitle", "")
+    if title and subtitle:
+        text = f"{title} - {subtitle}"
+    elif title:
+        text = title
+    elif subtitle:
+        text = subtitle
+    else:
+        text = ""
 
-    card.blit(t_surf, t_surf.get_rect(center=(card_w//2, card_h//2 - 22)))
-    card.blit(s_surf, s_surf.get_rect(center=(card_w//2, card_h//2 + 24)))
+    # Text rendering (simple wrap, matches heal textbox)
+    font = _get_dh_font(28)
+    words = text.split(" ")
+    lines, cur = [], ""
+    max_w = rect.w - 40
+    for w in words:
+        test = (cur + " " + w).strip()
+        if not cur or font.size(test)[0] <= max_w:
+            cur = test
+        else:
+            lines.append(cur)
+            cur = w
+    if cur:
+        lines.append(cur)
 
+    y = rect.y + 20
+    for line in lines:
+        surf = font.render(line, False, (16, 16, 16))
+        screen.blit(surf, (rect.x + 20, y))
+        y += surf.get_height() + 6
+
+    # Blinking prompt bottom-right (matches heal textbox)
     if res.get("auto_ms", 0) <= 0 and not res.get("lock_input", False):
-        hint = pygame.font.SysFont("arial", 18, bold=False).render(
-            "Click to continue", True, (70, 70, 70)
-        )
-        card.blit(hint, hint.get_rect(midbottom=(card_w//2, card_h - 14)))
-
-    screen.blit(card, card.get_rect(center=(sw//2, int(sh*0.52))))
+        if "_result_blink_t" not in st:
+            st["_result_blink_t"] = 0.0
+        st["_result_blink_t"] += dt
+        blink_on = int(st["_result_blink_t"] * 2) % 2 == 0
+        if blink_on:
+            prompt_font = _get_dh_font(20)
+            prompt = prompt_font.render("Press SPACE or Click to continue", False, (100, 100, 100))
+            screen.blit(prompt, (rect.right - prompt.get_width() - 20, rect.bottom - prompt.get_height() - 12))
 
     auto_ms = res.get("auto_ms", 0)
     if auto_ms > 0 and (res["t"] * 1000.0) >= auto_ms:
@@ -659,10 +871,30 @@ def _resolve_capture_after_popup(gs):
     if not res: return
 
     if getattr(res, "success", False):
-        name = getattr(gs, "encounter_name", None)
-        vessel_png = f"{name}.png" if name and not str(name).lower().endswith(".png") else name
+        # Use the stored token name for capture
+        # encounter_token_name stores the original asset name (from world/actors.py) like "FVesselBarbarian1"
+        # which is already a vessel asset name (not a token name)
+        vessel_asset_name = getattr(gs, "encounter_token_name", None)
+        if not vessel_asset_name:
+            # Fallback: try to extract from encounter_name if it's still a vessel name
+            # (for backwards compatibility, but this shouldn't happen with name generator)
+            name = getattr(gs, "encounter_name", None)
+            if name and any(name.startswith(prefix) for prefix in ["FVessel", "MVessel", "RVessel", "Starter"]):
+                vessel_asset_name = name
+            else:
+                vessel_asset_name = None
+        
+        if not vessel_asset_name:
+            print("⚠️ Capture failed: No vessel asset name found")
+            _show_result_screen(st, "Capture Error!", "Could not identify vessel type.", kind="fail", exit_on_close=False)
+            return
+        
+        # Ensure .png extension (encounter_token_name should already be a vessel asset name)
+        vessel_png = vessel_asset_name if vessel_asset_name.lower().endswith(".png") else f"{vessel_asset_name}.png"
         stats = getattr(gs, "encounter_stats", None)
 
+        # _add_captured_to_party expects vessel asset names (FVesselBarbarian1.png)
+        # and will convert them to token names internally
         if vessel_png and stats and _add_captured_to_party(gs, vessel_png, stats):
             # ✅ Queue XP for capture
             st["pending_xp_award"] = (
@@ -817,6 +1049,27 @@ def handle(events, gs, **_):
     st = getattr(gs, "_wild", None)
     if st is None:
         gs._wild = {}; st = gs._wild
+    
+    # Handle heal textbox first (it's modal and works even when party manager is closed)
+    if party_manager.is_heal_textbox_active():
+        for e in events:
+            party_manager.handle_event(e, gs)  # This will handle dismissal
+            # If textbox was dismissed, stop processing events
+            if not party_manager.is_heal_textbox_active():
+                break
+        # Clear all events - textbox is modal
+        return None
+    
+    # Let Party Manager eat events (consume and remove handled ones)
+    if party_manager.is_open():
+        remaining = []
+        for e in events:
+            # party_manager.handle_event returns True if it handled the event
+            if not party_manager.handle_event(e, gs):
+                remaining.append(e)
+        events = remaining
+
+    
 
     # Exit queued? (only if no modal result is visible)
     if st.get("pending_exit") and not st.get("result"):
@@ -957,12 +1210,19 @@ def handle(events, gs, **_):
         resolving_moves = False
 
     if st.get("phase") == PHASE_PLAYER:
-        if getattr(gs, "_turn_ready", True) is False or resolving_moves:
+        # Don't advance to RESOLVING while the Party Manager heal picker is open.
+        if (getattr(gs, "_turn_ready", True) is False or resolving_moves) and not party_manager.is_open():
             _begin_resolving_phase(st)
+            # One-shot any "item consumed" flag so we don't double-advance in this tick
+            try:
+                gs._turn_consumed_by_item = False
+            except Exception:
+                pass
 
     scene_busy = (
         st.get("result") or st.get("cap_vfx_playing") or st.get("enemy_fade_active")
-        or st.get("swap_playing") or roll_ui.is_active()
+        or st.get("swap_playing") or roll_ui.is_active() or party_manager.is_open()
+        or party_manager.is_heal_textbox_active()  # Block enemy turn while heal textbox is showing
     )
 
     if st.get("phase") == PHASE_RESOLVE and not resolving_moves and not scene_busy:
@@ -975,7 +1235,8 @@ def handle(events, gs, **_):
         if (not st.get("ai_started")
             and now >= int(st.get("enemy_think_until", 0))
             and not resolving_moves
-            and not scene_busy):
+            and not scene_busy
+            and not party_manager.is_open()):  # ← extra guard (belt & suspenders)
             try:
                 enemy_ai.take_turn(gs)
             except Exception as _e:
@@ -1081,6 +1342,9 @@ def draw(screen, gs, dt, **_):
         estats = dict(estats); estats["_hp_ratio_fallback"] = st.get("enemy_hp_ratio", 1.0)
     e_cur, e_max = _parse_enemy_hp_fields(estats)
     st["enemy_hp_ratio"] = (e_cur / e_max) if e_max > 0 else 1.0
+    # Store enemy HP values for HP text display
+    st["enemy_cur_hp"] = int(e_cur)
+    st["enemy_max_hp"] = int(e_max)
 
     # Background
     if st.get("bg"): screen.blit(st["bg"], (0, 0))
@@ -1123,15 +1387,31 @@ def draw(screen, gs, dt, **_):
     enemy_label = f"{enemy_name}  lvl {enemy_lv}"
 
 
-    _draw_hp_bar(screen, ally_bar, st.get("ally_hp_ratio", 1.0), ally_label, "left")
+    # Get ally HP values for display
+    ally_cur_hp = None
+    ally_max_hp = None
+    if isinstance(active_stats, dict):
+        try:
+            ally_max_hp = max(1, int(active_stats.get("hp", 10)))
+            ally_cur_hp = max(0, min(int(active_stats.get("current_hp", ally_max_hp)), ally_max_hp))
+        except Exception:
+            pass
+    
+    _draw_hp_bar(screen, ally_bar, st.get("ally_hp_ratio", 1.0), ally_label, "left",
+                 current_hp=ally_cur_hp, max_hp=ally_max_hp)
     # XP strip under ally HP plate
     if isinstance(active_stats, dict):
         xp_h = 22  # tweak height as you like
+        # XP strip position (HP text is now on top, so no adjustment needed)
         xp_rect = pygame.Rect(ally_bar.x, ally_bar.bottom + 6, ally_bar.w, xp_h)
         _draw_xp_strip(screen, xp_rect, active_stats)
 
     if st.get("enemy_img") is not None:
-        _draw_hp_bar(screen, enemy_bar, st.get("enemy_hp_ratio", 1.0), enemy_label, "right")
+        # Get enemy HP values for display
+        enemy_cur_hp = st.get("enemy_cur_hp")
+        enemy_max_hp = st.get("enemy_max_hp")
+        _draw_hp_bar(screen, enemy_bar, st.get("enemy_hp_ratio", 1.0), enemy_label, "right",
+                     current_hp=enemy_cur_hp, max_hp=enemy_max_hp)
 
     # Enemy KO debounce & fade
     if st.get("last_enemy_hp") is None: st["last_enemy_hp"] = int(e_cur)
@@ -1202,6 +1482,16 @@ def draw(screen, gs, dt, **_):
 
     # Ally sprite
     if st.get("ally_img"): screen.blit(st["ally_img"], (ax, ay))
+    
+    # Draw heal animation over active vessel (if healing animation is active)
+    # Reset flag when animation stops (outside the draw function)
+    if not party_manager.is_heal_animation_active():
+        if hasattr(_draw_heal_animation, '_was_active'):
+            _draw_heal_animation._was_active = False
+            _heal_anim_timer = 0.0
+    
+    if party_manager.is_heal_animation_active():
+        _draw_heal_animation(screen, ax, ay, st.get("ally_img"), dt)
 
     # Ally swap VFX
     if st.get("swap_playing", False):
@@ -1309,3 +1599,7 @@ def draw(screen, gs, dt, **_):
 
     # Dice popup always on top
     roll_ui.draw_roll_popup(screen, dt)
+
+    # Draw Party Manager overlay on very top - always draw to show heal textbox if active
+    party_manager.draw(screen, gs, dt)
+
