@@ -26,10 +26,10 @@ def update_player(gs, dt, player_half):
     moving = False
     speed = getattr(gs, "player_speed", 180)
 
-    if keys[pygame.K_w] or keys[pygame.K_UP]:
+    if keys[pygame.K_w]:
         gs.player_pos.y -= speed * dt
         moving = True
-    if keys[pygame.K_s] or keys[pygame.K_DOWN]:
+    if keys[pygame.K_s]:
         gs.player_pos.y += speed * dt
         moving = True
 

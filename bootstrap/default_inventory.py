@@ -18,6 +18,10 @@ STARTING_ITEMS = [
     {"id": "scroll_of_mending",     "name": "Scroll of Mending",     "qty": 0},  # Set to 1, or remove item if it should not be part of the initial inventory
     {"id": "scroll_of_regeneration","name": "Scroll of Regeneration","qty": 2},
     {"id": "scroll_of_revivity",    "name": "Scroll of Revivity",    "qty": 1},
+    
+    # --- Rest Items ---
+    {"id": "rations",               "name": "Rations",               "qty": 1},
+    {"id": "alcohol",               "name": "Alcohol",               "qty": 1},
 ]
 
 def _snake_from_name(s: str) -> str:

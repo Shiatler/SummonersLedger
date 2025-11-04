@@ -18,6 +18,8 @@ from game_state import GameState
 from world import assets, actors, world, procgen
 from systems import save_system as saves, theme, ui, audio, party_ui
 from systems import score_display, hud_buttons, currency_display, shop
+from systems import rest_popup, bottom_right_hud, left_hud
+from systems import coords  # Coordinate conversion utilities
 from bootstrap.default_party import add_default_on_new_game   # ← add this
 from bootstrap.default_inventory import add_default_inventory  # ← NEW
 
@@ -33,6 +35,7 @@ from combat.btn import bag_action as bag_ui
 from screens import party_manager, ledger
 from screens import death_saves as death_saves_screen
 from screens import death as death_screen
+from screens import rest as rest_screen
 
 # screens
 from screens import (
@@ -125,6 +128,7 @@ MODE_SUMMONER_BATTLE = "SUMMONER_BATTLE"
 MODE_BATTLE = getattr(S, "MODE_BATTLE", "BATTLE")
 MODE_DEATH_SAVES = getattr(S, "MODE_DEATH_SAVES", "DEATH_SAVES")
 MODE_DEATH = getattr(S, "MODE_DEATH", "DEATH")
+MODE_REST = "REST"
 
 
 
@@ -265,27 +269,57 @@ def try_trigger_encounter(gs, summoners, merchant_frames):
     if gs.distance_travelled >= gs.next_event_at:
         roll = random.random()
         
-        # Merchant chance: 10% (configurable)
-        merchant_chance = 0.10
+        # Guaranteed FIRST merchant after 3 encounters (only if first merchant hasn't spawned yet)
+        force_first_merchant = not gs.first_merchant_spawned and gs.encounters_since_merchant >= 3
         
-        # Remaining 90% split using ENCOUNTER_WEIGHT_VESSEL (75% vessel, 25% summoner of the remaining)
-        remaining_chance = 1.0 - merchant_chance  # 0.90
-        vessel_chance = remaining_chance * S.ENCOUNTER_WEIGHT_VESSEL  # 0.90 * 0.75 = 0.675
-        summoner_chance = remaining_chance * (1.0 - S.ENCOUNTER_WEIGHT_VESSEL)  # 0.90 * 0.25 = 0.225
+        # Debug output
+        if force_first_merchant:
+            print(f"🔔 Force merchant spawn triggered! encounters_since_merchant: {gs.encounters_since_merchant}, first_merchant_spawned: {gs.first_merchant_spawned}")
         
-        # Total percentages: Merchant 10%, Vessel 67.5%, Summoner 22.5%
-        if merchant_frames and len(merchant_frames) > 0 and roll < merchant_chance:
-            # Spawn merchant (0.0 to 0.10)
+        if force_first_merchant and merchant_frames and len(merchant_frames) > 0:
+            # Force first merchant spawn after 3 encounters
+            print(f"✅ Forcing first merchant spawn after {gs.encounters_since_merchant} encounters")
             actors.spawn_merchant_ahead(gs, gs.start_x, merchant_frames)
-        elif roll < merchant_chance + vessel_chance:
-            # Spawn vessel (0.10 to 0.775)
-            actors.spawn_vessel_shadow_ahead(gs, gs.start_x)
-        elif summoners:
-            # Spawn summoner (0.775 to 1.0)
-            actors.spawn_rival_ahead(gs, gs.start_x, summoners)
+            gs.first_merchant_spawned = True  # Mark first merchant as spawned
+            gs.encounters_since_merchant = 0  # Reset counter (no longer needed)
+        elif force_first_merchant:
+            # Force check was true but merchant_frames is missing
+            print(f"⚠️ Force merchant check passed but merchant_frames is missing! merchant_frames: {merchant_frames}")
         else:
-            # Fallback to vessel if no summoners available
-            actors.spawn_vessel_shadow_ahead(gs, gs.start_x)
+            # Normal chance-based spawning
+            # Merchant chance: 10% (configurable)
+            merchant_chance = 0.10
+            
+            # Remaining 90% split using ENCOUNTER_WEIGHT_VESSEL (75% vessel, 25% summoner of the remaining)
+            remaining_chance = 1.0 - merchant_chance  # 0.90
+            vessel_chance = remaining_chance * S.ENCOUNTER_WEIGHT_VESSEL  # 0.90 * 0.75 = 0.675
+            summoner_chance = remaining_chance * (1.0 - S.ENCOUNTER_WEIGHT_VESSEL)  # 0.90 * 0.25 = 0.225
+            
+            # Total percentages: Merchant 10%, Vessel 67.5%, Summoner 22.5%
+            if merchant_frames and len(merchant_frames) > 0 and roll < merchant_chance:
+                # Spawn merchant (0.0 to 0.10)
+                actors.spawn_merchant_ahead(gs, gs.start_x, merchant_frames)
+                if not gs.first_merchant_spawned:
+                    gs.first_merchant_spawned = True  # Mark first merchant as spawned
+                    gs.encounters_since_merchant = 0  # Reset counter (no longer needed)
+            elif roll < merchant_chance + vessel_chance:
+                # Spawn vessel (0.10 to 0.775)
+                actors.spawn_vessel_shadow_ahead(gs, gs.start_x)
+                if not gs.first_merchant_spawned:
+                    gs.encounters_since_merchant += 1  # Only increment if first merchant not spawned yet
+                    print(f"📊 Vessel spawned. encounters_since_merchant: {gs.encounters_since_merchant}")
+            elif summoners:
+                # Spawn summoner (0.775 to 1.0)
+                actors.spawn_rival_ahead(gs, gs.start_x, summoners)
+                if not gs.first_merchant_spawned:
+                    gs.encounters_since_merchant += 1  # Only increment if first merchant not spawned yet
+                    print(f"📊 Summoner spawned. encounters_since_merchant: {gs.encounters_since_merchant}")
+            else:
+                # Fallback to vessel if no summoners available
+                actors.spawn_vessel_shadow_ahead(gs, gs.start_x)
+                if not gs.first_merchant_spawned:
+                    gs.encounters_since_merchant += 1  # Only increment if first merchant not spawned yet
+                    print(f"📊 Fallback vessel spawned. encounters_since_merchant: {gs.encounters_since_merchant}")
         
         gs.next_event_at += random.randint(S.EVENT_MIN, S.EVENT_MAX)
 
@@ -330,8 +364,6 @@ def update_encounter_popup(screen, dt, gs, mist_frame, width, height, pg_instanc
 
     if gs.encounter_sprite:
         screen.blit(gs.encounter_sprite, (px + 16, py + 48))
-
-    pygame.display.flip()
 
     if gs.encounter_timer <= 0:
         gs.in_encounter = False
@@ -474,6 +506,8 @@ def enter_mode(mode, gs, deps):
         death_saves_screen.enter(gs, **deps)    
     elif mode == MODE_DEATH:
         death_screen.enter(gs, **deps) 
+    elif mode == MODE_REST:
+        rest_screen.enter(gs, **deps)
     elif mode == S.MODE_GAME:
         # gameplay has no dedicated enter; handled inline
         pass
@@ -499,6 +533,12 @@ if __name__ == "__main__":
     screen = pygame.display.set_mode((S.WIDTH, S.HEIGHT), pygame.FULLSCREEN | pygame.SCALED)
     pygame.display.set_caption(S.APP_NAME)
     clock = pygame.time.Clock()
+    
+    # Initialize coordinate conversion system
+    coords.update_scale_factors(S.WIDTH, S.HEIGHT)
+    
+    # Create virtual surface for rendering at logical resolution
+    virtual_screen = pygame.Surface((S.LOGICAL_WIDTH, S.LOGICAL_HEIGHT))
 
     # -------- Theme & Assets ----------
     fonts = theme.load_fonts()
@@ -560,9 +600,35 @@ settings_return_to = S.MODE_MENU  # used inside settings screen; kept for parity
 assert pygame.display.get_surface() is not None, "Display not created before main loop"
 
 # ===================== Main Loop ==========================
+def blit_virtual_to_screen(virtual_screen, screen):
+    """Scale and blit the virtual screen to the actual screen."""
+    scale = coords.get_scale()
+    offset_x, offset_y = coords.get_offset()
+    
+    # Scale the virtual screen
+    scaled_width = int(S.LOGICAL_WIDTH * scale)
+    scaled_height = int(S.LOGICAL_HEIGHT * scale)
+    scaled_surface = pygame.transform.smoothscale(virtual_screen, (scaled_width, scaled_height))
+    
+    # Clear screen and blit scaled surface centered
+    screen.fill((0, 0, 0))
+    screen.blit(scaled_surface, (int(offset_x), int(offset_y)))
+
 while running:
     dt = clock.tick(60) / 1000.0
     events = pygame.event.get()
+    
+    # Convert mouse coordinates in events to logical coordinates
+    converted_events = []
+    for e in events:
+        if hasattr(e, 'pos') and e.pos is not None:
+            # Create a new event with converted coordinates
+            new_e = pygame.event.Event(e.type, e.dict)
+            new_e.pos = coords.screen_to_logical(e.pos)
+            converted_events.append(new_e)
+        else:
+            converted_events.append(e)
+    events = converted_events
 
     # ========== Mode transitions: high-level music =========
     if mode != prev_mode:
@@ -610,7 +676,8 @@ while running:
     # ===================== MENU ============================
     if mode == S.MODE_MENU:
         next_mode = menu_screen.handle(events, gs, **deps, can_continue=saves.has_save())
-        menu_screen.draw(screen, gs, **deps, can_continue=saves.has_save())
+        menu_screen.draw(virtual_screen, gs, **deps, can_continue=saves.has_save())
+        blit_virtual_to_screen(virtual_screen, screen)
         pygame.display.flip()
         if next_mode:
             mode = next_mode
@@ -618,7 +685,8 @@ while running:
     # ===================== CHARACTER SELECT ================
     elif mode == MODE_CHAR_SELECT:
         next_mode = char_select.handle(events, gs, **deps)
-        char_select.draw(screen, gs, **deps)
+        char_select.draw(virtual_screen, gs, **deps)
+        blit_virtual_to_screen(virtual_screen, screen)
         pygame.display.flip()
         if next_mode:
             mode = next_mode
@@ -626,7 +694,8 @@ while running:
     # ===================== NAME ENTRY ======================
     elif mode == MODE_NAME_ENTRY:
         next_mode = name_entry.handle(events, gs, dt, **deps)
-        name_entry.draw(screen, gs, dt, **deps)
+        name_entry.draw(virtual_screen, gs, dt, **deps)
+        blit_virtual_to_screen(virtual_screen, screen)
         pygame.display.flip()
         if next_mode:
             mode = next_mode
@@ -634,7 +703,8 @@ while running:
     # ===================== MASTER OAK ======================
     elif mode == MODE_MASTER_OAK:
         next_mode = master_oak.handle(events, gs, dt, **deps)
-        master_oak.draw(screen, gs, dt, **deps)
+        master_oak.draw(virtual_screen, gs, dt, **deps)
+        blit_virtual_to_screen(virtual_screen, screen)
         pygame.display.flip()
         if next_mode:
             if next_mode == MODE_BLACK_SCREEN:
@@ -657,7 +727,8 @@ while running:
     # ===================== BLACK SCREEN ====================
     elif mode == MODE_BLACK_SCREEN:
         next_mode = black_screen.handle(events, gs, **deps, saves=saves)
-        black_screen.draw(screen, gs, **deps)
+        black_screen.draw(virtual_screen, gs, **deps)
+        blit_virtual_to_screen(virtual_screen, screen)
         pygame.display.flip()
         if next_mode:
             try:
@@ -669,7 +740,8 @@ while running:
     # ===================== INTRO VIDEO =====================
     elif mode == MODE_INTRO_VIDEO:
         next_mode = intro_video.handle(events, gs, dt, **deps)
-        intro_video.draw(screen, gs, dt, **deps)
+        intro_video.draw(virtual_screen, gs, dt, **deps)
+        blit_virtual_to_screen(virtual_screen, screen)
         pygame.display.flip()
         if next_mode:
             if next_mode == S.MODE_GAME:
@@ -679,7 +751,8 @@ while running:
     # ===================== SETTINGS ========================
     elif mode == MODE_SETTINGS:
         next_mode = settings_screen.handle(events, gs, **deps)
-        settings_screen.draw(screen, gs, **deps)
+        settings_screen.draw(virtual_screen, gs, **deps)
+        blit_virtual_to_screen(virtual_screen, screen)
         pygame.display.flip()
         if next_mode:
             mode = next_mode
@@ -687,7 +760,8 @@ while running:
     # ===================== PAUSE ===========================
     elif mode == MODE_PAUSE:
         next_mode = pause_screen.handle(events, gs, **deps)
-        pause_screen.draw(screen, gs, **deps)
+        pause_screen.draw(virtual_screen, gs, **deps)
+        blit_virtual_to_screen(virtual_screen, screen)
         pygame.display.flip()
         if next_mode:
             mode = next_mode
@@ -695,7 +769,8 @@ while running:
     # ===================== SUMMONER BATTLE =====================
     elif mode == MODE_SUMMONER_BATTLE:
         next_mode = summoner_battle.handle(events, gs, dt, **deps)
-        summoner_battle.draw(screen, gs, dt, **deps)
+        summoner_battle.draw(virtual_screen, gs, dt, **deps)
+        blit_virtual_to_screen(virtual_screen, screen)
         pygame.display.flip()
         if next_mode:
             mode = next_mode
@@ -704,7 +779,8 @@ while running:
     # ===================== WILD VESSEL =====================
     elif mode == MODE_WILD_VESSEL:
         next_mode = wild_vessel.handle(events, gs, **deps)
-        wild_vessel.draw(screen, gs, dt, **deps)
+        wild_vessel.draw(virtual_screen, gs, dt, **deps)
+        blit_virtual_to_screen(virtual_screen, screen)
         pygame.display.flip()
         if next_mode:
             mode = next_mode  # ESC returns to overworld
@@ -712,7 +788,8 @@ while running:
     # ===================== Battle ==========================
     elif mode == MODE_BATTLE:
         next_mode = battle.handle(events, gs, dt, **deps)
-        battle.draw(screen, gs, dt, **deps)
+        battle.draw(virtual_screen, gs, dt, **deps)
+        blit_virtual_to_screen(virtual_screen, screen)
         pygame.display.flip()
         if next_mode:
             mode = next_mode
@@ -720,7 +797,8 @@ while running:
     # ===================== Death Saves ==========================
     elif mode == MODE_DEATH_SAVES:
         next_mode = death_saves_screen.handle(events, gs, **deps)
-        death_saves_screen.draw(screen, gs, dt, **deps)
+        death_saves_screen.draw(virtual_screen, gs, dt, **deps)
+        blit_virtual_to_screen(virtual_screen, screen)
         pygame.display.flip()
         if next_mode:
             mode = next_mode
@@ -729,10 +807,47 @@ while running:
     # ===================== Death ==========================   
     elif mode == MODE_DEATH:
         next_mode = death_screen.handle(events, gs, **deps)
-        death_screen.draw(screen, gs, dt, **deps)
+        death_screen.draw(virtual_screen, gs, dt, **deps)
+        blit_virtual_to_screen(virtual_screen, screen)
         pygame.display.flip()
         if next_mode:
             mode = next_mode
+
+    # ===================== Rest ==========================
+    elif mode == MODE_REST:
+        next_mode = rest_screen.handle(events, gs, dt, **deps)
+        rest_screen.draw(virtual_screen, gs, dt, **deps)
+        blit_virtual_to_screen(virtual_screen, screen)
+        pygame.display.flip()
+        if next_mode:
+            if next_mode == "GAME":
+                # Ensure campfire sound is stopped before returning to game
+                # Use the rest screen's stop function for reliability
+                try:
+                    from screens import rest as rest_module
+                    if hasattr(gs, "_rest_state"):
+                        rest_module._stop_campfire_sound(gs._rest_state)
+                except Exception as e:
+                    print(f"⚠️ Error stopping campfire sound: {e}")
+                    # Fallback: try to stop manually
+                    if hasattr(gs, "_rest_state") and gs._rest_state.get("campfire_channel"):
+                        try:
+                            gs._rest_state["campfire_channel"].stop()
+                        except:
+                            pass
+                        gs._rest_state["campfire_channel"] = None
+                
+                mode = S.MODE_GAME
+                # Restart overworld music
+                if hasattr(gs, "last_overworld_track"):
+                    nxt = audio.pick_next_track(AUDIO, gs.last_overworld_track, prefix="music")
+                else:
+                    nxt = audio.pick_next_track(AUDIO, None, prefix="music")
+                if nxt:
+                    audio.play_music(AUDIO, nxt, loop=False, fade_ms=600)
+                    gs.last_overworld_track = nxt
+            else:
+                mode = next_mode
 
 
     # ===================== GAMEPLAY ========================
@@ -748,7 +863,8 @@ while running:
             mode = MODE_DEATH_SAVES
             enter_mode(mode, gs, deps)
             # Draw once to avoid a 1-frame flash of overworld under black
-            death_saves_screen.draw(screen, gs, dt, **deps)
+            death_saves_screen.draw(virtual_screen, gs, dt, **deps)
+            blit_virtual_to_screen(virtual_screen, screen)
             pygame.display.flip()
             continue
 
@@ -757,7 +873,7 @@ while running:
         # --- Snapshots for this frame (used to suppress ESC->Pause) ---
         bag_open_at_frame_start = bag_ui.is_open()
         modal_open_at_frame_start = (
-            bag_ui.is_open() or party_manager.is_open() or ledger.is_open() or gs.shop_open or currency_display.is_open()
+            bag_ui.is_open() or party_manager.is_open() or ledger.is_open() or gs.shop_open or currency_display.is_open() or rest_popup.is_open()
         )
 
         just_toggled_pm = False
@@ -801,6 +917,11 @@ while running:
                     elif currency_display.is_open():
                         currency_display.close()
                     hud_button_click_positions.add(e.pos)
+                elif button_clicked == 'rest':
+                    if not bag_ui.is_open() and not party_manager.is_open() and not ledger.is_open() and not currency_display.is_open() and not gs.shop_open and not rest_popup.is_open():
+                        rest_popup.open_popup()
+                        hud_button_click_positions.add(e.pos)
+                        audio.play_click(AUDIO)
 
         # --- Global hotkeys ---
         for e in events:
@@ -872,6 +993,19 @@ while running:
                 if currency_display.handle_event(e, gs):
                     continue
             
+            if rest_popup.is_open():
+                rest_type = rest_popup.handle_event(e, gs)
+                if rest_type:
+                    # Transition to rest screen with selected type
+                    mode = MODE_REST
+                    # Pass rest_type to enter function directly (don't call enter_mode first)
+                    rest_screen.enter(gs, rest_type=rest_type, **deps)
+                    # Set prev_mode to prevent enter_mode from being called and overwriting rest_type
+                    prev_mode = MODE_REST
+                elif rest_type is None and e.type in (pygame.MOUSEBUTTONDOWN, pygame.KEYDOWN):
+                    # Popup was closed
+                    continue
+            
             if gs.shop_open:
                 purchase_result = shop.handle_event(e, gs)
                 # Check if purchase was confirmed (needs laugh sound)
@@ -896,6 +1030,7 @@ while running:
                     or ledger.is_open()
                     or gs.shop_open
                     or currency_display.is_open()
+                    or rest_popup.is_open()
                 ):
                     # If shop is open, close it instead
                     if gs.shop_open:
@@ -1031,9 +1166,9 @@ while running:
             mist_frame = MIST_ANIM.current()
 
         # --- Movement & walking SFX (blocked by any modal) ---
-        any_modal_open = bag_ui.is_open() or party_manager.is_open() or ledger.is_open() or gs.shop_open or currency_display.is_open()
+        any_modal_open = bag_ui.is_open() or party_manager.is_open() or ledger.is_open() or gs.shop_open or currency_display.is_open() or rest_popup.is_open()
         keys = pygame.key.get_pressed()
-        walking_forward = keys[pygame.K_w] and not any_modal_open
+        walking_forward = (keys[pygame.K_w] or keys[pygame.K_s]) and not any_modal_open
 
         if not hasattr(gs, "is_walking"):
             gs.is_walking = False
@@ -1090,7 +1225,7 @@ while running:
                 mode = MODE_SUMMONER_BATTLE
 
             else:
-                update_encounter_popup(screen, dt, gs, mist_frame, S.WIDTH, S.HEIGHT, pg)
+                update_encounter_popup(virtual_screen, dt, gs, mist_frame, S.LOGICAL_WIDTH, S.LOGICAL_HEIGHT, pg)
         else:
             if not any_modal_open:
                 world.update_player(gs, dt, gs.player_half)
@@ -1099,15 +1234,15 @@ while running:
             actors.update_merchants(gs, dt, gs.player_half)
             try_trigger_encounter(gs, RIVAL_SUMMONERS, MERCHANT_FRAMES)
 
-            cam = world.get_camera_offset(gs.player_pos, S.WIDTH, S.HEIGHT, gs.player_half)
-            world.draw_repeating_road(screen, cam.x, cam.y)
-            pg.update_needed(cam.y, S.HEIGHT)
-            pg.draw_props(screen, cam.x, cam.y, S.WIDTH, S.HEIGHT)
-            actors.draw_vessels(screen, cam, gs, mist_frame, S.DEBUG_OVERWORLD)
-            actors.draw_rivals(screen, cam, gs)
-            actors.draw_merchants(screen, cam, gs)
+            cam = world.get_camera_offset(gs.player_pos, S.LOGICAL_WIDTH, S.LOGICAL_HEIGHT, gs.player_half)
+            world.draw_repeating_road(virtual_screen, cam.x, cam.y)
+            pg.update_needed(cam.y, S.LOGICAL_HEIGHT)
+            pg.draw_props(virtual_screen, cam.x, cam.y, S.LOGICAL_WIDTH, S.LOGICAL_HEIGHT)
+            actors.draw_vessels(virtual_screen, cam, gs, mist_frame, S.DEBUG_OVERWORLD)
+            actors.draw_rivals(virtual_screen, cam, gs)
+            actors.draw_merchants(virtual_screen, cam, gs)
 
-            screen.blit(
+            virtual_screen.blit(
                 gs.player_image,
                 (gs.player_pos.x - cam.x - gs.player_half.x,
                 gs.player_pos.y - cam.y - gs.player_half.y)
@@ -1115,22 +1250,26 @@ while running:
             
             # Draw speech bubble when near merchant (if not in shop)
             if gs.near_merchant and not gs.shop_open:
-                draw_merchant_speech_bubble(screen, cam, gs, gs.near_merchant)
+                draw_merchant_speech_bubble(virtual_screen, cam, gs, gs.near_merchant)
 
-        # --- Draw HUD then modals (z-order: Bag < Party Manager < Ledger < Shop) ---
-        party_ui.draw_party_hud(screen, gs)
-        score_display.draw_score(screen, gs, dt)  # Score in top right (animated)
-        hud_buttons.draw(screen)  # Bag & Party buttons in bottom right
+        # --- Draw HUD then modals (z-order: Bag < Party Manager < Ledger < Shop < Rest Popup) ---
+        left_hud.draw(virtual_screen, gs)  # Left side HUD panel behind character token and party UI (textbox style)
+        party_ui.draw_party_hud(virtual_screen, gs)  # Character token and party slots (draws on top of left_hud)
+        score_display.draw_score(virtual_screen, gs, dt)  # Score in top right (animated)
+        bottom_right_hud.draw(virtual_screen, gs)  # Bottom right HUD panel with buttons inside (textbox style)
         if bag_ui.is_open():
-            bag_ui.draw_popup(screen, gs)
+            bag_ui.draw_popup(virtual_screen, gs)
         if party_manager.is_open():
-            party_manager.draw(screen, gs)
+            party_manager.draw(virtual_screen, gs)
         if ledger.is_open():
-            ledger.draw(screen, gs)
+            ledger.draw(virtual_screen, gs)
         if gs.shop_open:
-            draw_shop_ui(screen, gs)
+            draw_shop_ui(virtual_screen, gs)
         if currency_display.is_open():
-            currency_display.draw(screen, gs)
+            currency_display.draw(virtual_screen, gs)
+        if rest_popup.is_open():
+            rest_popup.draw(virtual_screen, gs)
 
-        update_and_draw_fade(screen, dt, gs)
+        update_and_draw_fade(virtual_screen, dt, gs)
+        blit_virtual_to_screen(virtual_screen, screen)
         pygame.display.flip()

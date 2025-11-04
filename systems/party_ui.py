@@ -61,8 +61,8 @@ def _get_font(size: int) -> pygame.font.Font:
 
 # ---------- Sizing helpers ----------
 def _compute_slot_metrics(portrait_h: int) -> tuple[int, int, int]:
-    desired = int(S.HEIGHT * 0.14)
-    slot_gap = max(6, int(S.HEIGHT * 0.010))
+    desired = int(S.LOGICAL_HEIGHT * 0.14)
+    slot_gap = max(6, int(S.LOGICAL_HEIGHT * 0.010))
     slot_size = int(desired * 0.6)
     inner_margin = max(2, int(slot_size * 0.03))
     return slot_size, slot_gap, inner_margin
@@ -184,9 +184,24 @@ def draw_party_hud(screen: pygame.Surface, gs):
     portrait_w, portrait_h = PORTRAIT_SIZE
     slot_size, slot_gap, inner_margin = _compute_slot_metrics(portrait_h)
 
-    # Anchor bottom-left for the portrait
-    px = PADDING
-    py = S.HEIGHT - portrait_h - PADDING
+    # Try to get HUD position from left_hud to center portrait within it
+    try:
+        from systems import left_hud
+        hud_rect = left_hud.get_hud_rect()
+        if hud_rect:
+            # Center portrait vertically within the HUD
+            # Portrait x stays at PADDING (which is HUD x + HUD_PADDING)
+            px = PADDING
+            # Portrait y should be centered vertically in the HUD
+            py = hud_rect.y + (hud_rect.height - portrait_h) // 2
+        else:
+            # Fallback: use original positioning
+            px = PADDING
+            py = S.LOGICAL_HEIGHT - portrait_h - PADDING
+    except:
+        # Fallback: use original positioning
+        px = PADDING
+        py = S.LOGICAL_HEIGHT - portrait_h - PADDING
 
     # --- Portrait ---
     if gs.player_token:
@@ -286,10 +301,10 @@ def draw_party_hud(screen: pygame.Surface, gs):
         )
         is_hovered = has_content and r.collidepoint(mx, my)
 
-        # Background for empty slot (kept subtle)
+        # Background for empty slot (textbox style - cream/beige)
         if token is None or not isinstance(token, pygame.Surface):
             slot_bg = pygame.Surface((r.w, r.h), pygame.SRCALPHA)
-            slot_bg.fill(EMPTY_FILL)
+            slot_bg.fill((245, 245, 245))  # Cream/beige background like textbox
             screen.blit(slot_bg, r.topleft)
         else:
             # Glow under the token if hovered
@@ -302,11 +317,12 @@ def draw_party_hud(screen: pygame.Surface, gs):
             if inner:
                 screen.blit(inner, inner.get_rect(center=r.center))
 
-        # Border (stronger when hovered)
-        if is_hovered:
-            pygame.draw.rect(screen, (220, 220, 220), r, width=2, border_radius=8)
-        else:
-            pygame.draw.rect(screen, (80, 80, 80), r, width=1, border_radius=6)
+        # Border (textbox style - black outer, dark grey inner)
+        # Outer border (black, 4px)
+        pygame.draw.rect(screen, (0, 0, 0), r, width=4, border_radius=8)
+        # Inner border (dark grey, 2px)
+        inner_border_rect = r.inflate(-8, -8)
+        pygame.draw.rect(screen, (60, 60, 60), inner_border_rect, width=2, border_radius=6)
 
     # Ledger modal overlay
     if ledger.is_open():

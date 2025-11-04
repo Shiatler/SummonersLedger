@@ -25,6 +25,7 @@ _BUTTONS = [
     {"id": "bag", "path": "Bag.png", "action": "bag"},
     {"id": "party", "path": "Party.png", "action": "party"},
     {"id": "coinbag", "path": "CoinBag.png", "action": "currency"},
+    {"id": "rest", "path": "Campfire.png", "action": "rest"},
     # Add more buttons here as needed:
     # {"id": "inventory", "path": "Inventory.png", "action": "inventory"},
 ]
@@ -34,6 +35,12 @@ _LOADED_BUTTONS: Dict[str, pygame.Surface] = {}
 _SCALED_BUTTONS: Dict[str, pygame.Surface] = {}
 _BUTTON_RECTS: Dict[str, pygame.Rect] = {}
 _GLOW_CACHE: Dict[tuple[int, int, int], pygame.Surface] = {}  # (w, h, alpha) -> glow surface
+
+# Expose button rects for other modules
+def get_button_rect(button_id: str) -> pygame.Rect | None:
+    """Get the rect for a button by ID."""
+    _load_all_buttons()
+    return _BUTTON_RECTS.get(button_id)
 
 
 # ---------- Hover Glow Helper ----------
@@ -103,9 +110,9 @@ def _calculate_grid_positions():
     total_buttons = len(valid_buttons)
     rows = (total_buttons + GRID_COLS - 1) // GRID_COLS  # Ceiling division
     
-    # Start from bottom right
-    start_x = S.WIDTH - RIGHT_PADDING
-    start_y = S.HEIGHT - BOTTOM_PADDING
+    # Start from bottom right (use logical resolution)
+    start_x = S.LOGICAL_WIDTH - RIGHT_PADDING
+    start_y = S.LOGICAL_HEIGHT - BOTTOM_PADDING
     
     # Position buttons in grid (right to left, bottom to top)
     for idx, btn_def in enumerate(valid_buttons):
@@ -148,6 +155,27 @@ def _load_all_buttons():
             _scale_button(btn_id, img)
     
     _calculate_grid_positions()
+
+def load_all_buttons():
+    """Public API to load all buttons."""
+    _load_all_buttons()
+
+# Expose for bottom_right_hud
+def get_buttons_list():
+    """Get the list of button definitions."""
+    return _BUTTONS
+
+def get_scaled_buttons():
+    """Get the dict of scaled button images."""
+    return _SCALED_BUTTONS
+
+def get_button_rects():
+    """Get the dict of button rects."""
+    return _BUTTON_RECTS
+
+def get_hover_glow(size: tuple[int, int], alpha: int = HOVER_GLOW_ALPHA):
+    """Get a hover glow surface for the given size."""
+    return _get_hover_glow(size, alpha)
 
 
 # ---------- Public API ----------
