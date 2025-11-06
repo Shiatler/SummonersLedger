@@ -1,4 +1,6 @@
-# procgen.py — simple vertical procgen for side props (trees/rocks/grass)
+# ============================================================
+#  world/procgen.py
+# ============================================================
 import os, random, pygame
 from dataclasses import dataclass, field
 from pygame.math import Vector2
@@ -142,11 +144,4 @@ class ProcGen:
                 if 0 - 64 <= sx <= screen_w + 64 and 0 - 64 <= sy <= screen_h + 64:
                     if p.sprite is not None:
                         screen.blit(p.sprite, (sx - p.sprite.get_width()//2, sy - p.sprite.get_height()//2))
-                    else:
-                        col = FALLBACK_COLORS.get(p.kind, (200, 200, 200))
-                        if p.kind == "tree":
-                            pygame.draw.polygon(screen, col, [(sx, sy-18), (sx-10, sy+14), (sx+10, sy+14)])
-                        elif p.kind == "rock":
-                            pygame.draw.circle(screen, col, (sx, sy), 10)
-                        else:
-                            pygame.draw.line(screen, col, (sx, sy), (sx, sy-10), 2)
+                    # Don't draw fallback shapes if sprite is missing (prevents green triangles)

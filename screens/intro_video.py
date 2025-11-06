@@ -262,7 +262,7 @@ def draw(screen, gs, dt, **_):
 
     if v.get("frame_surf"):
         fw, fh = v["frame_surf"].get_width(), v["frame_surf"].get_height()
-        sw, sh = S.WIDTH, S.HEIGHT
+        sw, sh = S.LOGICAL_WIDTH, S.LOGICAL_HEIGHT
         scale = min(sw / fw, sh / fh)
         tw, th = max(1, int(fw * scale)), max(1, int(fh * scale))
         scaled = pygame.transform.smoothscale(v["frame_surf"], (tw, th))

@@ -271,7 +271,12 @@ def spawn_merchant_ahead(gs, start_x, merchant_frames):
     sep = getattr(S, "OVERWORLD_MIN_SEPARATION_Y", 200)
     y = _pick_spawn_y(gs, base_y, sep)
     if y is None:
-        return
+        # If no valid spawn location found, try spawning further away (force spawn)
+        print(f"⚠️ No valid spawn location found for merchant, trying fallback position")
+        y = base_y - 500  # Spawn further away
+        # Check if even this position is too close, if so just use it anyway (force spawn)
+        if _y_too_close(y, gs, sep):
+            print(f"⚠️ Fallback position also too close, forcing spawn anyway")
     
     # Create animator for merchant (will be updated in update_merchants)
     # We'll pass frames reference and create animator in update
@@ -285,6 +290,7 @@ def spawn_merchant_ahead(gs, start_x, merchant_frames):
         "anim_time": 0.0,
         "frame_index": 0,
     })
+    print(f"✅ Merchant spawned at position ({x}, {y}) on {side} side")
 
 
 def update_merchants(gs, dt, player_half: Vector2):

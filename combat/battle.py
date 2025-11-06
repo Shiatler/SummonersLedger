@@ -680,7 +680,7 @@ def _nuke_summoner_ui(gs):
         try: delattr(gs, "_summ_ui")
         except Exception: pass
 
-def _build_initial_state(gs):
+def _build_initial_state(gs, preserved_bg=None, preserved_ally_pos=None, preserved_enemy_pos=None, preserved_active_idx=None):
     st = getattr(gs, "_battle", None)
     if st is None:
         gs._battle = st = {}
@@ -692,8 +692,11 @@ def _build_initial_state(gs):
     st["enemy_team"] = team
     st["enemy_idx"]  = 0  # current index on field
 
-    # Ally
-    gs.combat_active_idx = _battle_start_slot(gs)
+    # Ally - use preserved active_idx if available (from summoner_battle)
+    if preserved_active_idx is not None:
+        gs.combat_active_idx = preserved_active_idx
+    else:
+        gs.combat_active_idx = _battle_start_slot(gs)
     names = getattr(gs, "party_slots_names", None) or [None]*6
     ally_token = names[int(gs.combat_active_idx)] if names else None
     ally_full = _ally_sprite_from_token_name(ally_token) or pygame.Surface(S.PLAYER_SIZE, pygame.SRCALPHA)
@@ -707,13 +710,17 @@ def _build_initial_state(gs):
         enemy_full.fill((160,40,40,220))
     enemy_full = _smooth_scale(enemy_full, ENEMY_SCALE)
 
-    # Positions
-    sw, sh = S.WIDTH, S.HEIGHT
+    # Positions - always recalculate for vessels (they may be different sizes than summoners)
+    # Use logical resolution for virtual screen dimensions (not physical screen size)
+    sw, sh = S.LOGICAL_WIDTH, S.LOGICAL_HEIGHT
+    # Calculate positions based on vessel sprite sizes (not preserved summoner positions)
+    # This ensures HP bars and HUD elements are positioned correctly
     ax1 = 20 + ALLY_OFFSET[0]
     ay1 = sh - ally_full.get_height() - 20 + ALLY_OFFSET[1]
+    ally_start = (ax1, ay1)
+    
     ex1 = sw - enemy_full.get_width() - 20 + ENEMY_OFFSET[0]
     ey1 = 20 + ENEMY_OFFSET[1]
-    ally_start  = (ax1, ay1)
     enemy_start = (ex1, ey1)
 
     # Enemy stats & bind to gs.encounter_* (the engine expects these)
@@ -734,8 +741,11 @@ def _build_initial_state(gs):
     # Store the token for later reference
     st["enemy_token"] = enemy_token
 
-    # Background
-    bg_img = _load_bg_scaled(sw, sh)
+    # Background - use preserved background if available (from summoner_battle) for seamless transition
+    if preserved_bg is not None:
+        bg_img = preserved_bg
+    else:
+        bg_img = _load_bg_scaled(sw, sh)
 
     # Swirl frames / swap sfx
     swirl = _load_swirl_frames()
@@ -838,7 +848,29 @@ def enter(gs, audio_bank=None, **_):
     except Exception:
         pass
 
+    # Check if we're transitioning from summoner_battle - preserve state for seamless transition
+    summ_ui = getattr(gs, "_summ_ui", None)
+    preserve_state = summ_ui is not None
+    
     # Fresh battle state so _build_initial_state doesn't reuse old data
+    # BUT preserve background and positions if coming from summoner_battle
+    preserved_bg = None
+    preserved_ally_pos = None
+    preserved_enemy_pos = None
+    preserved_active_idx = None
+    
+    if preserve_state:
+        # Preserve background and positions from summoner_battle for seamless transition
+        preserved_bg = summ_ui.get("bg")
+        # Use the final anchor positions (where vessels should appear)
+        preserved_ally_pos = summ_ui.get("ally_anchor")
+        preserved_enemy_pos = summ_ui.get("enemy_anchor")
+        preserved_active_idx = summ_ui.get("active_idx")
+        # Store background temporarily on gs so draw() can use it immediately (prevents black screen)
+        if preserved_bg is not None:
+            gs._transition_bg = preserved_bg
+        # DON'T delete _summ_ui yet - let draw() delete it after first frame to ensure seamless transition
+    
     if hasattr(gs, "_battle"):
         try:
             delattr(gs, "_battle")
@@ -849,8 +881,12 @@ def enter(gs, audio_bank=None, **_):
     set_roll_callback(roll_ui._on_roll)
     bag_action.set_use_item_callback(_on_battle_use_item)  # allow heals, block capture
 
-    # Build scene
-    st = _build_initial_state(gs)
+    # Build scene - pass preserved state if available
+    st = _build_initial_state(gs, 
+                               preserved_bg=preserved_bg,
+                               preserved_ally_pos=preserved_ally_pos,
+                               preserved_enemy_pos=preserved_enemy_pos,
+                               preserved_active_idx=preserved_active_idx)
 
     # 👉 Alias for systems (moves/btn/resolve) that write to gs._wild
     gs._wild = st
@@ -1078,7 +1114,8 @@ def _advance_to_next_enemy(gs, st):
     st["enemy_token"] = token
 
     # Reset flags & slide-in animation for enemy
-    sw, sh = S.WIDTH, S.HEIGHT
+    # Use logical resolution for virtual screen dimensions (not physical screen size)
+    sw, sh = S.LOGICAL_WIDTH, S.LOGICAL_HEIGHT
     ex1 = sw - surf.get_width() - 20 + ENEMY_OFFSET[0]
     ey1 = 20 + ENEMY_OFFSET[1]
     enemy_start = (sw + 60, ey1)
@@ -1349,34 +1386,72 @@ def handle(events, gs, dt=None, **_):
 
 # ---------------- Draw ----------------
 def draw(screen: pygame.Surface, gs, dt: float, **_):
+    # CRITICAL: Draw background IMMEDIATELY to prevent black screen on transition
+    # Check multiple sources for background (in order of preference)
+    immediate_bg = None
+    
+    # First, try _transition_bg (stored by enter())
+    immediate_bg = getattr(gs, "_transition_bg", None)
+    
+    # If not available, try _summ_ui (might still exist if not deleted yet)
+    if immediate_bg is None:
+        summ_ui = getattr(gs, "_summ_ui", None)
+        if summ_ui is not None:
+            immediate_bg = summ_ui.get("bg")
+    
+    # If we have immediate background, draw it right away before any state checks
+    if immediate_bg is not None:
+        screen.blit(immediate_bg, (0, 0))
+    
     # --- RE-ENTRY GUARD: don't rebuild battle while ending/after result ---
     st = getattr(gs, "_battle", None)
 
     # If there's no battle blob but we're ending (or not even in battle mode),
-    # bail out so we don't call enter(gs) and accidentally spawn a fresh team.
+    # BUT if we have a transition background, still draw it before returning
     if st is None:
         if getattr(gs, "_ending_battle", False) or getattr(gs, "mode", None) != MODE_BATTLE:
+            # Still draw background if available (for smooth transitions)
+            if immediate_bg is None:
+                return
+            # Background already drawn above, just return
             return
         enter(gs); st = gs._battle
     elif not st.get("_built"):
         # Blob exists but wasn't fully built; during result/exit just skip.
         if st.get("pending_exit") or st.get("result") or st.get("suppress_enemy_draw"):
+            # Still draw background if available (for smooth transitions)
+            if immediate_bg is None:
+                return
+            # Background already drawn above, just return
             return
         enter(gs); st = gs._battle
     # ----------------------------------------------------------------------
 
     st["t"] = st.get("t", 0.0) + dt
 
-    # Background
-    sw, sh = screen.get_size()
-    bg = st.get("bg")
-    if bg is None or bg.get_width() != sw or bg.get_height() != sh:
-        bg = _load_bg_scaled(sw, sh)
-        st["bg"] = bg
-    if bg is not None:
-        screen.blit(bg, (0, 0))
+    # Background - only draw if we didn't already draw the immediate background
+    if immediate_bg is None:
+        sw, sh = screen.get_size()
+        bg = st.get("bg")
+        if bg is None or bg.get_width() != sw or bg.get_height() != sh:
+            bg = _load_bg_scaled(sw, sh)
+            st["bg"] = bg
+        if bg is not None:
+            screen.blit(bg, (0, 0))
+        else:
+            screen.fill((0, 0, 0))
     else:
-        screen.fill((0, 0, 0))
+        # Clean up transition background and _summ_ui after first use
+        try:
+            delattr(gs, "_transition_bg")
+        except Exception:
+            pass
+        # Now safe to clean up _summ_ui after we've used the background
+        if hasattr(gs, "_summ_ui"):
+            try:
+                delattr(gs, "_summ_ui")
+            except Exception:
+                pass
 
     # Ally slot tracking + swap animation setup
     active_i = _get_active_party_index(gs)
@@ -1680,4 +1755,5 @@ def draw(screen: pygame.Surface, gs, dt: float, **_):
     except Exception:
         font = pygame.font.Font(None, 18)
     label = font.render("Summoner Battle — Team Mode (WIP) — auto-summon next", True, (180, 180, 180))
-    screen.blit(label, label.get_rect(midbottom=(S.WIDTH // 2, S.HEIGHT - 8)))
+    # Use logical resolution for virtual screen dimensions
+    screen.blit(label, label.get_rect(midbottom=(S.LOGICAL_WIDTH // 2, S.LOGICAL_HEIGHT - 8)))

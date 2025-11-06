@@ -33,6 +33,8 @@ class GameState:
     # merchant interaction
     near_merchant: object | None = None  # merchant dict when player is near
     shop_open: bool = False  # whether shop UI is open
+    encounters_since_merchant: int = 0  # Counter for guaranteed FIRST merchant after 3 encounters
+    first_merchant_spawned: bool = False  # Track if first merchant has already spawned
     
     # currency (D&D style: 10 bronze = 1 silver, 10 silver = 1 gold)
     gold: int = 0

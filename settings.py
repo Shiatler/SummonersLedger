@@ -8,7 +8,22 @@ import os
 # ===================== App / Window ==========================
 APP_NAME = "Summoner's Ledger"
 
+# Logical/Virtual Resolution - All game logic uses these dimensions
+# The game will render at this resolution and scale to fit any screen
+# 
+# ⚠️ IMPORTANT FOR NEW SCREENS: Always use LOGICAL_WIDTH/HEIGHT for drawing/positioning!
+# See SCREEN_DEVELOPMENT_GUIDE.md for complete guidelines on screen development.
+# 
+# Key rules:
+# - Use S.LOGICAL_WIDTH/HEIGHT for all drawing/positioning (NOT S.WIDTH/HEIGHT)
+# - Convert mouse coordinates with: coords.screen_to_logical(pygame.mouse.get_pos())
+# - Create surfaces with: pygame.Surface((S.LOGICAL_WIDTH, S.LOGICAL_HEIGHT))
+#
+LOGICAL_WIDTH = 1920
+LOGICAL_HEIGHT = 1080
+
 # Window (will be overridden to fullscreen in main.py)
+# These are now the actual screen dimensions (set at runtime)
 WIDTH, HEIGHT = 800, 480
 FLAGS = 0
 

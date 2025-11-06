@@ -118,6 +118,6 @@ def draw_logo_centered(screen: pygame.Surface, logo: pygame.Surface, y: int, max
     sw, sh = int(lw * scale), int(lh * scale)
     logo_scaled = _smooth_scale(logo, (sw, sh))
 
-    x = (S.WIDTH - sw) // 2
+    x = (S.LOGICAL_WIDTH - sw) // 2
     screen.blit(logo_scaled, (x, y))
     return pygame.Rect(x, y, sw, sh)

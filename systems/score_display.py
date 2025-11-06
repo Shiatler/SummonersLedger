@@ -171,7 +171,7 @@ def draw_score(screen: pygame.Surface, gs, dt: float = 0.016):
     scaled_frames = _get_scaled_frames(scale_factor)
     if scaled_frames is None or len(scaled_frames) == 0:
         # Fallback: draw a simple rectangle if frames not found
-        fallback_rect = pygame.Rect(S.WIDTH - 200, 20, 180, 60)
+        fallback_rect = pygame.Rect(S.LOGICAL_WIDTH - 200, 20, 180, 60)
         pygame.draw.rect(screen, (40, 40, 40, 200), fallback_rect, border_radius=8)
         pygame.draw.rect(screen, (100, 100, 100), fallback_rect, width=2, border_radius=8)
         font = _get_dh_font(24)
@@ -191,7 +191,7 @@ def draw_score(screen: pygame.Surface, gs, dt: float = 0.016):
     scaled_h = current_frame.get_height()
     
     # Position in top right corner (partially off-screen for corner alignment)
-    bg_x = S.WIDTH - scaled_w - 2  # 2px padding from right edge (closer to corner)
+    bg_x = S.LOGICAL_WIDTH - scaled_w - 2  # 2px padding from right edge (closer to corner)
     bg_y = -int(scaled_h * 0.1)  # Negative offset to push part of it off-screen at top
     
     # Draw current frame

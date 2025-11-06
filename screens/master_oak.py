@@ -80,7 +80,7 @@ def _get_dh_font(size: int, bold: bool = False) -> pygame.font.Font:
 TEXT_SECTIONS = [
     "Ahh… there you are! So you must be {player_name}, yes?",
     "I've been expecting you.",
-    "I am Master Oak, keeper of the Ledgers and chronicler of those who dare to wield them.",
+    "I am Master Oak, Dungeon Master and god of this realm.",
     "Before you are 3 vessels.",
     "These Vessel once walked the world as heroes, long before our time.",
     "Choose carefully, Summoner.",
@@ -89,6 +89,7 @@ TEXT_SECTIONS = [
     "To rise above them, you must seek out and capture more Vessels, master their will, and prove your bond stronger than theirs.",
     "In time, perhaps your name will be etched among the greats…",
     "a Summoner whose Ledger reshaped the fate of the realm itself.",
+    "Oh.. You should have this for your journey: 5 Scrolls Of Mending, 5 Scrolls Of Command and 10 Gold Pieces, also take some rations and alcohol",
     "Good luck {player_name}.",
 ]
 
@@ -100,6 +101,7 @@ _OAK_SCALE = 1.8  # Scale factor to make him bigger and closer
 _BACKGROUND = None
 _OAK_VOICE_SFX = None
 _BOOK_SHUT_SFX = None
+_OAK_SCROLL_IMAGE = None
 
 def _load_oak_animation() -> list[pygame.Surface] | None:
     """Load Master Oak animation frames (MasterOak1.png to MasterOak4.png) and scale them."""
@@ -170,8 +172,8 @@ def _load_background() -> pygame.Surface | None:
     
     try:
         bg = pygame.image.load(path).convert()
-        # Scale to screen size
-        bg = pygame.transform.smoothscale(bg, (S.WIDTH, S.HEIGHT))
+        # Scale to logical screen size
+        bg = pygame.transform.smoothscale(bg, (S.LOGICAL_WIDTH, S.LOGICAL_HEIGHT))
         _BACKGROUND = bg
         return bg
     except Exception as e:
@@ -237,6 +239,31 @@ def _load_book_shut_sfx() -> pygame.mixer.Sound | None:
         return _BOOK_SHUT_SFX
     except Exception as e:
         print(f"⚠️ Failed to load BookShut.mp3: {e}")
+        return None
+
+def _load_oak_scroll_image() -> pygame.Surface | None:
+    """Load Master Oak scroll image (MasterOakScroll.png) and scale it to match other Oak images."""
+    global _OAK_SCROLL_IMAGE
+    if _OAK_SCROLL_IMAGE is not None:
+        return _OAK_SCROLL_IMAGE
+    
+    base_path = os.path.join("Assets", "Animations")
+    path = os.path.join(base_path, "MasterOakScroll.png")
+    
+    if not os.path.exists(path):
+        print(f"⚠️ MasterOakScroll.png not found at {path}")
+        return None
+    
+    try:
+        scroll_img = pygame.image.load(path).convert_alpha()
+        # Scale to match other Master Oak images (using _OAK_SCALE = 1.8)
+        original_size = scroll_img.get_size()
+        scaled_size = (int(original_size[0] * _OAK_SCALE), int(original_size[1] * _OAK_SCALE))
+        scroll_img = pygame.transform.smoothscale(scroll_img, scaled_size)
+        _OAK_SCROLL_IMAGE = scroll_img
+        return scroll_img
+    except Exception as e:
+        print(f"⚠️ Failed to load MasterOakScroll.png: {e}")
         return None
 
 # ---------- Textbox helpers ----------
@@ -323,6 +350,8 @@ def enter(gs, **_):
     st["shut_phase"] = False  # True when showing shut image
     st["fade_alpha"] = 0.0  # Fade-to-black alpha (0-255)
     st["fade_speed"] = 0.0  # Fade speed (alpha per second)
+    st["showing_scroll"] = False  # True when showing scroll image
+    st["items_given"] = False  # Track if items have been given
     
     # Load animation frames and idle image
     frames = _load_oak_animation()
@@ -334,10 +363,11 @@ def enter(gs, **_):
     else:
         gs._master_oak_anim = None
     
-    # Load idle image and shut image (will be used when text is fully displayed)
+    # Load idle image, shut image, and scroll image (will be used when text is fully displayed)
     _load_oak_idle()
     _load_oak_shut()
     _load_book_shut_sfx()
+    _load_oak_scroll_image()
 
 def draw(screen: pygame.Surface, gs, dt: float, **_):
     """Draw the Master Oak screen."""
@@ -361,8 +391,8 @@ def draw(screen: pygame.Surface, gs, dt: float, **_):
         if st["shut_timer"] < 0.3:
             shut_img = _load_oak_shut()
             if shut_img:
-                shut_x = (S.WIDTH - shut_img.get_width()) // 2
-                shut_y = int(S.HEIGHT * 0.15)
+                shut_x = (S.LOGICAL_WIDTH - shut_img.get_width()) // 2
+                shut_y = int(S.LOGICAL_HEIGHT * 0.15)
                 screen.blit(shut_img, (shut_x, shut_y))
         else:
             # Start fade to black after 0.3 seconds
@@ -377,13 +407,13 @@ def draw(screen: pygame.Surface, gs, dt: float, **_):
             # Draw shut image (still visible during fade)
             shut_img = _load_oak_shut()
             if shut_img:
-                shut_x = (S.WIDTH - shut_img.get_width()) // 2
-                shut_y = int(S.HEIGHT * 0.15)
+                shut_x = (S.LOGICAL_WIDTH - shut_img.get_width()) // 2
+                shut_y = int(S.LOGICAL_HEIGHT * 0.15)
                 screen.blit(shut_img, (shut_x, shut_y))
             
             # Draw fade overlay
             if st["fade_alpha"] > 0:
-                fade_overlay = pygame.Surface((S.WIDTH, S.HEIGHT), pygame.SRCALPHA)
+                fade_overlay = pygame.Surface((S.LOGICAL_WIDTH, S.LOGICAL_HEIGHT), pygame.SRCALPHA)
                 fade_overlay.fill((0, 0, 0, int(st["fade_alpha"])))
                 screen.blit(fade_overlay, (0, 0))
             
@@ -433,33 +463,61 @@ def draw(screen: pygame.Surface, gs, dt: float, **_):
         else:
             # Text fully displayed
             st["text_displayed"] = current_text
+            
+            # Check if this is the items line (index 11) and text is fully displayed
+            # If so, show scroll image and give items
+            if st["current_section"] == 11 and not st.get("showing_scroll", False) and not st.get("items_given", False):
+                # Give items to player
+                if not hasattr(gs, "inventory"):
+                    gs.inventory = {}
+                if not isinstance(gs.inventory, dict):
+                    gs.inventory = {}
+                
+                # Add scrolls of mending (5)
+                gs.inventory["scroll_of_mending"] = gs.inventory.get("scroll_of_mending", 0) + 5
+                # Add scrolls of command (5)
+                gs.inventory["scroll_of_command"] = gs.inventory.get("scroll_of_command", 0) + 5
+                # Add gold (10)
+                gs.gold = getattr(gs, "gold", 0) + 10
+                
+                st["items_given"] = True
+                st["showing_scroll"] = True
         
         # Draw Master Oak sprite
-        # Use talking animation if typing, idle image if done
-        if is_typing and hasattr(gs, "_master_oak_anim") and gs._master_oak_anim:
+        # Check if we should show scroll image (items line, text fully displayed)
+        should_show_scroll = (st["current_section"] == 11 and not is_typing and st.get("showing_scroll", False))
+        
+        if should_show_scroll:
+            # Show scroll image when items line is done typing
+            scroll_img = _load_oak_scroll_image()
+            if scroll_img:
+                scroll_x = (S.LOGICAL_WIDTH - scroll_img.get_width()) // 2
+                scroll_y = int(S.LOGICAL_HEIGHT * 0.15)  # Same position as other images
+                screen.blit(scroll_img, (scroll_x, scroll_y))
+        elif is_typing and hasattr(gs, "_master_oak_anim") and gs._master_oak_anim:
             # Show talking animation while typing
             frame = gs._master_oak_anim.current()
             if frame:
                 # Position: center horizontally, higher up on screen (more upright)
-                frame_x = (S.WIDTH - frame.get_width()) // 2
-                frame_y = int(S.HEIGHT * 0.15)  # Higher position, more upright
+                frame_x = (S.LOGICAL_WIDTH - frame.get_width()) // 2
+                frame_y = int(S.LOGICAL_HEIGHT * 0.15)  # Higher position, more upright
                 screen.blit(frame, (frame_x, frame_y))
         else:
-            # Show idle image when text is fully displayed
+            # Show idle image when text is fully displayed (unless showing scroll)
             idle_img = _load_oak_idle()
             if idle_img:
-                idle_x = (S.WIDTH - idle_img.get_width()) // 2
-                idle_y = int(S.HEIGHT * 0.15)  # Same position as animation
+                idle_x = (S.LOGICAL_WIDTH - idle_img.get_width()) // 2
+                idle_y = int(S.LOGICAL_HEIGHT * 0.15)  # Same position as animation
                 screen.blit(idle_img, (idle_x, idle_y))
             elif hasattr(gs, "_master_oak_anim") and gs._master_oak_anim:
                 # Fallback to first frame of animation if idle not found
                 frame = gs._master_oak_anim.frames[0] if gs._master_oak_anim.frames else None
                 if frame:
-                    frame_x = (S.WIDTH - frame.get_width()) // 2
-                    frame_y = int(S.HEIGHT * 0.15)
+                    frame_x = (S.LOGICAL_WIDTH - frame.get_width()) // 2
+                    frame_y = int(S.LOGICAL_HEIGHT * 0.15)
                     screen.blit(frame, (frame_x, frame_y))
         
-        # Draw textbox
+        # Draw textbox (always visible)
         _draw_textbox(screen, st["text_displayed"], dt, blink_t)
 
 def handle(events, gs, dt: float, **_):
@@ -480,8 +538,15 @@ def handle(events, gs, dt: float, **_):
                 return "BLACK_SCREEN"
             
             if event.key in (pygame.K_RETURN, pygame.K_SPACE, pygame.K_KP_ENTER):
+                # If showing scroll (items line done), continue to next section (good luck)
+                if st.get("showing_scroll", False) and st["current_section"] == 11:
+                    st["showing_scroll"] = False
+                    st["current_section"] += 1
+                    st["typing_timer"] = 0.0
+                    st["text_displayed"] = ""
+                    st["sound_played"] = False
                 # Only advance if text is fully displayed
-                if st["typing_timer"] >= 2.0:
+                elif st["typing_timer"] >= 2.0:
                     # Check if this is the last section
                     if st["current_section"] >= len(TEXT_SECTIONS) - 1:
                         # Start shut phase
@@ -500,8 +565,15 @@ def handle(events, gs, dt: float, **_):
                         st["sound_played"] = False
         
         elif event.type == pygame.MOUSEBUTTONDOWN and event.button == 1:
+            # If showing scroll (items line done), continue to next section (good luck)
+            if st.get("showing_scroll", False) and st["current_section"] == 11:
+                st["showing_scroll"] = False
+                st["current_section"] += 1
+                st["typing_timer"] = 0.0
+                st["text_displayed"] = ""
+                st["sound_played"] = False
             # Only advance if text is fully displayed
-            if st["typing_timer"] >= 2.0:
+            elif st["typing_timer"] >= 2.0:
                 # Check if this is the last section
                 if st["current_section"] >= len(TEXT_SECTIONS) - 1:
                     # Start shut phase

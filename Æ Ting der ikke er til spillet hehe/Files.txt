@@ -25,8 +25,12 @@ SummonersLedger/
 │  ├─ char_select.py
 │  ├─ name_entry.py
 │  ├─ black_screen.py
+│  ├─ death_saves.py
+│  ├─ death.py
+│  ├─ ledger.py
 │  ├─ intro_video.py
 │  ├─ settings_screen.py
+│  ├─ party_manager.py
 │  └─ pause_screen.py
 │
 ├─ combat/
@@ -61,6 +65,7 @@ SummonersLedger/
 │  ├─ save_system.py
 │  ├─ theme.py
 │  ├─ ui.py
+│  ├─ heal.py
 │  ├─ xp.py
 │  └─ asset_links.py                      # token↔vessel helpers
 │

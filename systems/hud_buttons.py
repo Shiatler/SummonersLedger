@@ -13,7 +13,7 @@ from typing import Dict, Tuple
 # ---------- Grid Configuration ----------
 BUTTON_SCALE = 0.3  # Scale factor for buttons (30% of original size)
 BUTTON_SIZE = 100  # Target size for buttons in grid (will scale images to this)
-GRID_COLS = 2  # Number of columns in grid
+GRID_COLS = 3  # Number of columns in grid (horizontal layout)
 GRID_GAP = 6  # Gap between buttons
 BOTTOM_PADDING = 12  # Padding from bottom edge
 RIGHT_PADDING = 12  # Padding from right edge
@@ -26,8 +26,10 @@ _BUTTONS = [
     {"id": "party", "path": "Party.png", "action": "party"},
     {"id": "coinbag", "path": "CoinBag.png", "action": "currency"},
     {"id": "rest", "path": "Campfire.png", "action": "rest"},
-    # Add more buttons here as needed:
-    # {"id": "inventory", "path": "Inventory.png", "action": "inventory"},
+    {"id": "book_of_bound", "path": "BookOfBound.png", "action": "book_of_bound"},
+    {"id": "archives", "path": "Archives.png", "action": "archives"},
+    # Placeholder for future button:
+    # {"id": "placeholder", "path": "Placeholder.png", "action": "placeholder"},
 ]
 
 # ---------- Cache ----------

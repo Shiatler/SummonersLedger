@@ -1,0 +1,21 @@
+Common
+1x stat to 1 vessel (max of 20)
+1d4 hp to 1 vessel (1 time roll)
++2 PP to 1 move
++5 scroll of mending
++5 scroll of command
+
+Rare
+-1d4 dmg from enemy attacks (1 time roll)
+
+Epic
+1x AC to 1 vessel
+1d10 hp to 1 vessel
+1d4 hp to all vessels
+
+Legendary
+1x AC to all vessels
+1x stat to all vessels
+1d20 hp to 1 vessel
+
+GODLIKE

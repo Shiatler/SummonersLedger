@@ -608,7 +608,8 @@ def enter(gs, audio_bank=None, **_):
     ally_full  = _smooth_scale(ally_full,  ALLY_SCALE)
     enemy_full = _smooth_scale(enemy_full, ENEMY_SCALE)
 
-    sw, sh = S.WIDTH, S.HEIGHT
+    # Use logical resolution for virtual screen dimensions (not physical screen size)
+    sw, sh = S.LOGICAL_WIDTH, S.LOGICAL_HEIGHT
     ax1 = 20 + ALLY_OFFSET[0]
     ay1 = sh - ally_full.get_height() - 20 + ALLY_OFFSET[1]
     ex1 = sw - enemy_full.get_width() - 20 + ENEMY_OFFSET[0]
@@ -895,7 +896,32 @@ def _resolve_capture_after_popup(gs):
 
         # _add_captured_to_party expects vessel asset names (FVesselBarbarian1.png)
         # and will convert them to token names internally
-        if vessel_png and stats and _add_captured_to_party(gs, vessel_png, stats):
+        if vessel_png and stats:
+            # Try to add to party first
+            if _add_captured_to_party(gs, vessel_png, stats):
+                # Successfully added to party
+                pass
+            else:
+                # Party is full - add to archives instead
+                try:
+                    from screens.archives import add_vessel_to_archives
+                    if add_vessel_to_archives(gs, vessel_png, stats):
+                        # Show message that vessel was sent to archives
+                        _show_result_screen(st, "Sent to Archives!", "Your party is full. Vessel stored in The Archives.", kind="success", auto_dismiss_ms=2000)
+                    else:
+                        _show_result_screen(st, "Storage Error!", "Could not store vessel.", kind="fail", auto_dismiss_ms=1500)
+                except Exception as e:
+                    print(f"⚠️ Failed to add vessel to archives: {e}")
+                    _show_result_screen(st, "Storage Error!", "Could not store vessel.", kind="fail", auto_dismiss_ms=1500)
+            
+            # Mark vessel as discovered in Book of the Bound (regardless of where it went)
+            try:
+                from screens.book_of_bound import mark_vessel_discovered
+                # Remove .png extension for the name
+                vessel_name = vessel_png[:-4] if vessel_png.lower().endswith(".png") else vessel_png
+                mark_vessel_discovered(gs, vessel_name)
+            except Exception as e:
+                print(f"⚠️ Failed to mark vessel as discovered: {e}")
             # Play victory music immediately when capture succeeds
             if not st.get("victory_music_played", False):
                 victory_path = os.path.join("Assets", "Music", "Sounds", "Victory.mp3")

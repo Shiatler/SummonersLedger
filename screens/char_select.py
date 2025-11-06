@@ -26,8 +26,9 @@ def draw(screen, gs, fonts=None, menu_bg=None, player_variants=None, **_):
     male_img   = pv.get("male")
     female_img = pv.get("female")
 
+    # Use logical resolution for virtual screen dimensions (not physical screen size)
     male_btn, female_btn = ui.draw_character_select(
-        screen, S.WIDTH, S.HEIGHT, fonts, S.APP_NAME,
+        screen, S.LOGICAL_WIDTH, S.LOGICAL_HEIGHT, fonts, S.APP_NAME,
         male_img, female_img,
         bg_surface=menu_bg
     )

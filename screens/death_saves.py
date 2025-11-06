@@ -16,6 +16,7 @@ import random
 import pygame
 import settings as S
 from systems import audio as audio_sys
+from systems import coords
 
 MODE_DEATH = getattr(S, "MODE_DEATH", "DEATH")
 
@@ -219,8 +220,8 @@ def handle(events, gs, **_):
         if e.type == pygame.MOUSEBUTTONDOWN and e.button == 1:
             badge = st.get("badge")
             if badge:
-                surf = pygame.display.get_surface()
-                sw, sh = surf.get_size() if surf else (S.WIDTH, S.HEIGHT)
+                # Use logical resolution for calculations
+                sw, sh = S.LOGICAL_WIDTH, S.LOGICAL_HEIGHT
                 rect = _compute_badge_rect(sw, sh, badge)
                 if rect.collidepoint(e.pos):
                     # Dice SFX (try keys; else click fallback)
@@ -271,7 +272,6 @@ def handle(events, gs, **_):
                                     except Exception as ee:
                                         print(f"[death_saves] ⚠️ overlay SFX failed: {ee}")
 
-
                     # Do not resolve to DEATH/GAME immediately; wait until overlay dismissed.
                     return None
 
@@ -295,7 +295,8 @@ def draw(screen, gs, dt, **_):
         st["blink_acc"] -= BLINK_INTERVAL
         st["blink_on"] = not st["blink_on"]
 
-    sw, sh = screen.get_size()
+    # Use logical resolution for all calculations
+    sw, sh = S.LOGICAL_WIDTH, S.LOGICAL_HEIGHT
 
     # ---- BACKDROP ----
     back = st.get("backdrop")
@@ -326,7 +327,7 @@ def draw(screen, gs, dt, **_):
 
     # ---- FAINT RED BLINK ----
     if st.get("blink_on", False):
-        red = pygame.Surface(screen.get_size(), pygame.SRCALPHA)
+        red = pygame.Surface((S.LOGICAL_WIDTH, S.LOGICAL_HEIGHT), pygame.SRCALPHA)
         red.fill((255, 0, 0, RED_ALPHA))
         screen.blit(red, (0, 0))
 
@@ -341,8 +342,8 @@ def draw(screen, gs, dt, **_):
         draw_w, draw_h = rect.size
         badge_draw = pygame.transform.smoothscale(badge, (draw_w, draw_h)) if (draw_w, draw_h) != (bw, bh) else badge
 
-        # Hover glow
-        mx, my = pygame.mouse.get_pos()
+        # Hover glow - convert mouse coordinates to logical
+        mx, my = coords.screen_to_logical(pygame.mouse.get_pos())
         if rect.collidepoint(mx, my):
             glow_pad_w = int(rect.w * 0.16)
             glow_pad_h = int(rect.h * 0.16)
@@ -376,6 +377,6 @@ def draw(screen, gs, dt, **_):
     # ---- SCREEN FADE-IN OVERLAY (on enter) ----
     if st["t"] < SCREEN_FADE_DUR:
         fade_alpha = int(255 * (1 - st["t"] / SCREEN_FADE_DUR))
-        fade = pygame.Surface(screen.get_size(), pygame.SRCALPHA)
+        fade = pygame.Surface((S.LOGICAL_WIDTH, S.LOGICAL_HEIGHT), pygame.SRCALPHA)
         fade.fill((0, 0, 0, fade_alpha))
         screen.blit(fade, (0, 0))

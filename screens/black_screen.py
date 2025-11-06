@@ -9,6 +9,7 @@ import os, random, re
 import pygame
 import settings as S
 from systems import audio as audio_sys
+from systems import coords
 
 # ---------- Absolute paths ----------
 _THIS_DIR = os.path.dirname(os.path.abspath(__file__))          # .../screens
@@ -96,7 +97,7 @@ def _find_token_path(starter_basename: str) -> str | None:
 # ---------- Visual helpers ----------
 def _draw_grass(surface, grass_img):
     if not grass_img: return
-    g_y = S.HEIGHT - grass_img.get_height() + 80
+    g_y = S.LOGICAL_HEIGHT - grass_img.get_height() + 80
     surface.blit(grass_img, (0, g_y))
 
 def _draw_glow_ellipse(surface, center_rect, color):
@@ -116,8 +117,8 @@ def _draw_spotlight_with_starter(surface, book_rect, color, starter_img):
     radius   = max(1, diameter // 2)
     cx = book_rect.centerx
     cy = book_rect.centery - int(book_rect.h * 0.12)
-    cy = max(radius + 8, min(S.HEIGHT - radius - 8, cy))
-    cx = max(radius + 8, min(S.WIDTH  - radius - 8, cx))
+    cy = max(radius + 8, min(S.LOGICAL_HEIGHT - radius - 8, cy))
+    cx = max(radius + 8, min(S.LOGICAL_WIDTH  - radius - 8, cx))
     circle_rect = pygame.Rect(cx - radius, cy - radius, diameter, diameter)
 
     spot = pygame.Surface((diameter, diameter), pygame.SRCALPHA)
@@ -176,18 +177,18 @@ def enter(gs, **_):
     rog   = _safe_load(os.path.join(_PROJECT_ROOT, "Assets", "Map", "RogueL.png"))
     grass = _safe_load(os.path.join(_PROJECT_ROOT, "Assets", "Map", "Grass_UI.png"))
 
-    target_h = max(1, int(S.HEIGHT * 0.48))
+    target_h = max(1, int(S.LOGICAL_HEIGHT * 0.48))
     barb = _rescale(_scale_to_h(barb, target_h))
     dru  = _rescale(_scale_to_h(dru,  target_h))
     rog  = _rescale(_scale_to_h(rog,  target_h))
 
     if grass:
-        ratio = S.WIDTH / max(1, grass.get_width())
+        ratio = S.LOGICAL_WIDTH / max(1, grass.get_width())
         gh = max(1, int(grass.get_height() * ratio * 0.35))
-        grass = pygame.transform.smoothscale(grass, (S.WIDTH, gh))
+        grass = pygame.transform.smoothscale(grass, (S.LOGICAL_WIDTH, gh))
 
-    cx = S.WIDTH // 2
-    cy = int(S.HEIGHT * 0.74)
+    cx = S.LOGICAL_WIDTH // 2
+    cy = int(S.LOGICAL_HEIGHT * 0.74)
     widths = [img.get_width() for img in (barb, dru, rog) if img]
     gap = int(max(widths) * 1.05) if widths else 420
 
@@ -215,7 +216,8 @@ def draw(screen, gs, **_):
     _draw_grass(screen, gs._class_select["grass"])
 
     hovered_key = None
-    mx, my = pygame.mouse.get_pos()
+    # Convert mouse coordinates to logical coordinates
+    mx, my = coords.screen_to_logical(pygame.mouse.get_pos())
     for key in gs._class_select["order"]:
         data = gs._class_select[key]
         if data["rect"].collidepoint(mx, my):
@@ -237,6 +239,7 @@ def draw(screen, gs, **_):
         gs._starter_last_rect = r1
         gs._starter_circle_rect = r2
 
+    # mx, my already converted to logical coordinates above
     if gs._starter_last_rect and gs._starter_last_rect.collidepoint(mx, my) and gs._starter_circle_rect:
         ring = pygame.Surface((gs._starter_circle_rect.w, gs._starter_circle_rect.h), pygame.SRCALPHA)
         pygame.draw.circle(
@@ -291,6 +294,15 @@ def handle(events, gs, saves=None, audio_bank=None, **_):
                                             gs.party_vessel_stats[i] = generate_vessel_stats_from_asset(starter_name)
                                         placed = True
                                         print(f"🎉 Added {token_base} to party slot {i+1}")
+                                        
+                                        # Mark starter vessel as discovered in Book of the Bound
+                                        try:
+                                            from screens.book_of_bound import mark_vessel_discovered
+                                            # starter_name is already the vessel asset name (e.g., "StarterDruid1")
+                                            mark_vessel_discovered(gs, starter_name)
+                                        except Exception as e:
+                                            print(f"⚠️ Failed to mark starter as discovered: {e}")
+                                        
                                         break
                                 if not placed:
                                     print("ℹ️ No empty party slots available.")

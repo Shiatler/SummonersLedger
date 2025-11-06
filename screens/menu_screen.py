@@ -33,10 +33,10 @@ def draw(screen, gs, fonts=None, **kwargs):
     bg = gs._menu_assets.get("bg")
     if bg:
         iw, ih = bg.get_width(), bg.get_height()
-        scale = max(S.WIDTH / iw, S.HEIGHT / ih)
+        scale = max(S.LOGICAL_WIDTH / iw, S.LOGICAL_HEIGHT / ih)
         bg_scaled = pygame.transform.smoothscale(bg, (int(iw * scale), int(ih * scale)))
-        bx = (S.WIDTH - bg_scaled.get_width()) // 2
-        by = (S.HEIGHT - bg_scaled.get_height()) // 2
+        bx = (S.LOGICAL_WIDTH - bg_scaled.get_width()) // 2
+        by = (S.LOGICAL_HEIGHT - bg_scaled.get_height()) // 2
         screen.blit(bg_scaled, (bx, by))
     else:
         screen.fill((20, 10, 10))
@@ -44,14 +44,14 @@ def draw(screen, gs, fonts=None, **kwargs):
     # characters
     def draw_char(img, side="left"):
         if not img: return
-        target_h = int(S.HEIGHT * 0.9)
+        target_h = int(S.LOGICAL_HEIGHT * 0.9)
         iw, ih = img.get_width(), img.get_height()
         scale = target_h / ih
         scaled = pygame.transform.smoothscale(img, (int(iw * scale), int(ih * scale)))
         rect = scaled.get_rect()
-        rect.bottom = S.HEIGHT - 40
+        rect.bottom = S.LOGICAL_HEIGHT - 40
         rect.left = 60 if side == "left" else rect.left
-        if side != "left": rect.right = S.WIDTH - 60
+        if side != "left": rect.right = S.LOGICAL_WIDTH - 60
         screen.blit(scaled, rect.topleft)
 
     draw_char(gs._menu_assets.get("m"), side="left")
@@ -61,24 +61,24 @@ def draw(screen, gs, fonts=None, **kwargs):
     logo = gs._menu_assets.get("logo")
     if logo:
         lw, lh = logo.get_width(), logo.get_height()
-        scale = min(S.WIDTH * 0.5 / lw, S.HEIGHT * 0.3 / lh)
+        scale = min(S.LOGICAL_WIDTH * 0.5 / lw, S.LOGICAL_HEIGHT * 0.3 / lh)
         logo_scaled = pygame.transform.smoothscale(logo, (int(lw * scale), int(lh * scale)))
-        logo_rect = logo_scaled.get_rect(center=(S.WIDTH // 2, S.HEIGHT // 2 - 220))
+        logo_rect = logo_scaled.get_rect(center=(S.LOGICAL_WIDTH // 2, S.LOGICAL_HEIGHT // 2 - 220))
         screen.blit(logo_scaled, logo_rect)
     else:
         title = fonts["title"].render(S.APP_NAME, True, (220, 40, 40))
-        screen.blit(title, title.get_rect(center=(S.WIDTH // 2, S.HEIGHT // 2 - 220)))
+        screen.blit(title, title.get_rect(center=(S.LOGICAL_WIDTH // 2, S.LOGICAL_HEIGHT // 2 - 220)))
 
     # buttons
     can_continue = kwargs.get("can_continue", False)
     btn_font = fonts["button"]
-    btn_y_start = (S.HEIGHT // 2) + 60
+    btn_y_start = (S.LOGICAL_HEIGHT // 2) + 60
     btn_spacing = 64
     gs._menu_buttons = [
-        ui.Button("New Game",      (S.WIDTH // 2, btn_y_start + 0 * btn_spacing), btn_font, enabled=True),
-        ui.Button("Continue Game", (S.WIDTH // 2, btn_y_start + 1 * btn_spacing), btn_font, enabled=can_continue),
-        ui.Button("Settings",      (S.WIDTH // 2, btn_y_start + 2 * btn_spacing), btn_font, enabled=True),
-        ui.Button("Quit",          (S.WIDTH // 2, btn_y_start + 3 * btn_spacing), btn_font, enabled=True),
+        ui.Button("New Game",      (S.LOGICAL_WIDTH // 2, btn_y_start + 0 * btn_spacing), btn_font, enabled=True),
+        ui.Button("Continue Game", (S.LOGICAL_WIDTH // 2, btn_y_start + 1 * btn_spacing), btn_font, enabled=can_continue),
+        ui.Button("Settings",      (S.LOGICAL_WIDTH // 2, btn_y_start + 2 * btn_spacing), btn_font, enabled=True),
+        ui.Button("Quit",          (S.LOGICAL_WIDTH // 2, btn_y_start + 3 * btn_spacing), btn_font, enabled=True),
     ]
     for b in gs._menu_buttons: b.draw(screen)
 

@@ -1,0 +1,122 @@
+Textbox Layout for "Challenged by Summoner"
+Textbox Layout and Styling
+
+Textbox Location: Positioned at the bottom of the screen, just above the bottom margin.
+
+Width: Takes up the full width minus left and right margins.
+
+Height: Fixed at 120px.
+
+Margins:
+
+Left margin: 36px from the left edge.
+
+Bottom margin: 28px from the bottom edge.
+
+Textbox Box Styling
+
+The box is drawn with rounded corners and a simple border:
+
+Outer Border: Black with a width of 4px.
+
+Inner Box: Dark grey with 2px border-radius, leaving room for text inside.
+
+Textbox Text Layout
+
+Text Wrapping: The text inside the box is automatically wrapped based on the available width.
+
+Font: Uses the "DH" font (if available), otherwise defaults to "Arial".
+
+Font Size: 28px.
+
+Font Color: Dark grey text ((16, 16, 16)).
+
+Text Display Behavior
+
+Revealing the Text: The text in the box is revealed after the summoners have finished sliding into position. There is a small delay before the text starts appearing.
+
+Reveal Delay: 0.15 seconds.
+
+Blinking Prompt: A prompt "Press Enter to continue" is displayed at the bottom-right corner of the textbox, which blinks at a rate of twice per second.
+
+Code Example for Textbox
+# --- Challenge textbox state ---
+"textbox_text": st_text,             # The text displayed in the textbox
+"textbox_active": False,             # Starts hidden until summon slide-in completes
+"text_revealed": False,              # Internal flag to track if text has been revealed
+"text_reveal_delay": 0.15,           # Delay before text reveals
+"text_reveal_t": 0.0,                # Timer for the reveal delay
+"blink_t": 0.0,                      # Timer for the blinking prompt
+
+Drawing the Textbox
+# --- Challenge textbox (drawn over sprites, before buttons) ---
+if st.get("textbox_active", False):
+    sw, sh = screen.get_size()
+    box_h = 120
+    margin_x = 36
+    margin_bottom = 28
+    rect = pygame.Rect(margin_x, sh - box_h - margin_bottom, sw - margin_x * 2, box_h)
+
+    # Box styling (matches rolling/ui look)
+    pygame.draw.rect(screen, (245, 245, 245), rect)  # Outer box
+    pygame.draw.rect(screen, (0, 0, 0), rect, 4, border_radius=8)  # Border
+    inner = rect.inflate(-8, -8)  # Inner box
+    pygame.draw.rect(screen, (60, 60, 60), inner, 2, border_radius=6)
+
+    # Text rendering (simple wrap)
+    font = _get_dh_font(28)
+    text = st.get("textbox_text", "")
+    words = text.split(" ")
+    lines, cur = [], ""
+    max_w = rect.w - 40
+    for w in words:
+        test = (cur + " " + w).strip()
+        if not cur or font.size(test)[0] <= max_w:
+            cur = test
+        else:
+            lines.append(cur)
+            cur = w
+    if cur:
+        lines.append(cur)
+
+    y = rect.y + 20
+    for line in lines:
+        surf = font.render(line, False, (16, 16, 16))
+        screen.blit(surf, (rect.x + 20, y))
+        y += surf.get_height() + 6
+
+    # Blinking prompt bottom-right
+    st["blink_t"] = st.get("blink_t", 0.0) + dt
+    blink_on = int(st["blink_t"] * 2) % 2 == 0
+    if blink_on:
+        prompt_font = _get_dh_font(20)
+        prompt = "Press Enter to continue"
+        psurf = prompt_font.render(prompt, False, (40, 40, 40))
+        px = rect.right - psurf.get_width() - 16
+        py = rect.bottom - psurf.get_height() - 12
+        screen.blit(psurf, (px, py))
+
+Key Points for Reuse
+
+Textbox Text: Set with st["textbox_text"], which is revealed after the summoners finish their intro animation. The text_reveal_delay controls the slight delay before it becomes visible.
+
+Text Wrapping: The function handles wrapping text automatically by checking if the line width exceeds the allowed space and moves text to the next line accordingly.
+
+Blinking Prompt: The blinking prompt is displayed at the bottom-right corner, using the st["blink_t"] timer.
+
+Drawing: The textbox is drawn with a background and a border, then the text is rendered line by line inside it.
+
+Memory Update
+
+The textbox layout for "Challenged by Summoner" works as follows:
+
+Textbox Layout: Positioned at the bottom, with a margin from the left and bottom edges (36px, 28px).
+
+Font: Uses DH font with size 28px for the challenge text. Fallback to Arial if DH font is not available.
+
+Text: The challenge text is revealed after the summoners slide into place, with a small delay (0.15s).
+
+Prompt: A blinking prompt "Press Enter to continue" appears at the bottom-right of the textbox after the text is revealed.
+
+
+The font is is DH in C:\Users\Frederik\Desktop\SummonersLedger\Assets\Fonts

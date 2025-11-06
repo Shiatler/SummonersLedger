@@ -36,6 +36,7 @@ from screens import party_manager, ledger
 from screens import death_saves as death_saves_screen
 from screens import death as death_screen
 from screens import rest as rest_screen
+from screens import book_of_bound, archives
 
 # screens
 from screens import (
@@ -129,6 +130,8 @@ MODE_BATTLE = getattr(S, "MODE_BATTLE", "BATTLE")
 MODE_DEATH_SAVES = getattr(S, "MODE_DEATH_SAVES", "DEATH_SAVES")
 MODE_DEATH = getattr(S, "MODE_DEATH", "DEATH")
 MODE_REST = "REST"
+MODE_BOOK_OF_BOUND = "BOOK_OF_BOUND"
+MODE_ARCHIVES = "ARCHIVES"
 
 
 
@@ -508,6 +511,17 @@ def enter_mode(mode, gs, deps):
         death_screen.enter(gs, **deps) 
     elif mode == MODE_REST:
         rest_screen.enter(gs, **deps)
+    elif mode == MODE_BOOK_OF_BOUND:
+        # Note: enter() may already be called when mode is set (in button handler)
+        # to capture previous screen for fade transition
+        # Only call enter() here if not already called
+        if not hasattr(gs, '_book_of_bound_entered'):
+            book_of_bound.enter(gs, **deps)
+            gs._book_of_bound_entered = True
+    elif mode == MODE_ARCHIVES:
+        if not hasattr(gs, '_archives_entered'):
+            archives.enter(gs, **deps)
+            gs._archives_entered = True
     elif mode == S.MODE_GAME:
         # gameplay has no dedicated enter; handled inline
         pass
@@ -529,13 +543,82 @@ if __name__ == "__main__":
     pygame.mixer.music.set_endevent(MUSIC_ENDEVENT)
 
     info = pygame.display.Info()
-    S.WIDTH, S.HEIGHT = info.current_w, info.current_h
-    screen = pygame.display.set_mode((S.WIDTH, S.HEIGHT), pygame.FULLSCREEN | pygame.SCALED)
+    
+    # CRITICAL: Cache desktop resolution at startup (before any set_mode calls)
+    # This is the ONLY reliable way to get the true desktop resolution
+    # After set_mode with SCALED flag, Info().current_w/h can return wrong values
+    # On Windows, try to get the actual desktop resolution using ctypes as a fallback
+    global _cached_desktop_resolution
+    
+    # Try to get desktop resolution - if it looks suspiciously small, try Windows API
+    desktop_w, desktop_h = info.current_w, info.current_h
+    
+    # If the resolution looks like it might be a window size (not a typical desktop size),
+    # try to get the real desktop resolution using Windows API
+    if desktop_w < 1280 or desktop_h < 720:
+        try:
+            import ctypes
+            user32 = ctypes.windll.user32
+            desktop_w = user32.GetSystemMetrics(0)  # SM_CXSCREEN
+            desktop_h = user32.GetSystemMetrics(1)  # SM_CYSCREEN
+            print(f"🔍 Got desktop resolution via Windows API: {desktop_w}x{desktop_h}")
+        except:
+            print(f"⚠️ Could not get desktop resolution via Windows API, using Info(): {desktop_w}x{desktop_h}")
+    
+    _cached_desktop_resolution = (desktop_w, desktop_h)
+    print(f"🔍 Cached desktop resolution at startup: {desktop_w}x{desktop_h}")
+    
+    # Minimum resolution check - use windowed mode if screen is too small
+    MIN_WIDTH = 1280
+    MIN_HEIGHT = 720
+    
+    screen_width = info.current_w
+    screen_height = info.current_h
+    
+    # Determine if we should use fullscreen or windowed mode
+    use_fullscreen = screen_width >= MIN_WIDTH and screen_height >= MIN_HEIGHT
+    
+    if use_fullscreen:
+        # Fullscreen mode for screens that meet minimum requirements
+        screen = pygame.display.set_mode((screen_width, screen_height), pygame.FULLSCREEN | pygame.SCALED)
+    else:
+        # Windowed mode for smaller screens - scale window to fit
+        # Calculate window size that maintains aspect ratio while fitting on screen
+        scale = min(screen_width / S.LOGICAL_WIDTH, screen_height / S.LOGICAL_HEIGHT)
+        window_width = int(S.LOGICAL_WIDTH * scale * 0.9)  # 90% of screen to leave some margin
+        window_height = int(S.LOGICAL_HEIGHT * scale * 0.9)
+        # Ensure minimum window size
+        window_width = max(window_width, 960)
+        window_height = max(window_height, 540)
+        # Use SCALED flag for automatic scaling
+        # Note: RESIZABLE flag is incompatible with SCALED in some Pygame versions
+        # Window dragging should work by default without RESIZABLE flag
+        screen = pygame.display.set_mode((window_width, window_height), pygame.SCALED)
+        print(f"⚠️ Screen too small ({screen_width}x{screen_height}) - using windowed mode ({window_width}x{window_height})")
+    
     pygame.display.set_caption(S.APP_NAME)
+    
+    # Get the ACTUAL physical size for coordinate calculations
+    # CRITICAL: With SCALED flag, screen.get_size() might return logical resolution for fullscreen
+    # For fullscreen, use cached desktop resolution (true physical size)
+    # For windowed, use screen.get_size() (actual window size)
+    if use_fullscreen:
+        # Fullscreen: Use cached desktop resolution (true physical screen size)
+        actual_width, actual_height = desktop_w, desktop_h
+    else:
+        # Windowed: Use actual window size from get_size()
+        actual_width, actual_height = screen.get_size()
+    
+    S.WIDTH, S.HEIGHT = actual_width, actual_height
+    
     clock = pygame.time.Clock()
     
-    # Initialize coordinate conversion system
-    coords.update_scale_factors(S.WIDTH, S.HEIGHT)
+    # Initialize coordinate conversion system with ACTUAL physical dimensions
+    # For fullscreen, force scale to 1.0 if screen is >= 1920x1080
+    if use_fullscreen and actual_width >= S.LOGICAL_WIDTH and actual_height >= S.LOGICAL_HEIGHT:
+        coords.update_scale_factors(actual_width, actual_height, force_scale=1.0)
+    else:
+        coords.update_scale_factors(actual_width, actual_height)
     
     # Create virtual surface for rendering at logical resolution
     virtual_screen = pygame.Surface((S.LOGICAL_WIDTH, S.LOGICAL_HEIGHT))
@@ -585,6 +668,11 @@ if __name__ == "__main__":
         gs.party_slots_names = [None] * 6
 
     start_new_game(gs)
+    
+    # Initialize Book of the Bound discovered vessels (persistent across games)
+    # This should NOT be reset by start_new_game - it persists across all games
+    if not hasattr(gs, "book_of_bound_discovered"):
+        gs.book_of_bound_discovered = set()
 
     # ensure slot stats list exists (JSON-serializable dicts per slot)
     if not getattr(gs, "party_vessel_stats", None):
@@ -595,28 +683,285 @@ mode = S.MODE_MENU
 prev_mode = None
 running = True
 settings_return_to = S.MODE_MENU  # used inside settings screen; kept for parity
+is_fullscreen = use_fullscreen  # Track fullscreen state for toggle
+display_mode = "fullscreen" if use_fullscreen else "windowed"  # Track display mode: "fullscreen", "windowed", "borderless"
+# Cache the desktop resolution when entering fullscreen (Info().current_w/h can be unreliable with SCALED flag)
+_cached_desktop_resolution = None
 
 # Safety: make sure a display surface exists before we enter the loop
 assert pygame.display.get_surface() is not None, "Display not created before main loop"
 
+# ===================== Display Mode Functions ==========================
+def change_display_mode(mode_name: str, screen_ref) -> pygame.Surface:
+    """
+    Change the display mode. Returns the new screen surface.
+    Modes: "fullscreen", "windowed", "borderless"
+    """
+    global display_mode, is_fullscreen
+    
+    print(f"🔄 change_display_mode called with mode: '{mode_name}'")
+    print(f"   OLD display_mode was: '{display_mode}'")
+    display_mode = mode_name
+    print(f"   NEW display_mode is: '{display_mode}'")
+    
+    # Get current desktop resolution for reference
+    # CRITICAL: Always use the cached desktop resolution from startup
+    # Info().current_w/h is unreliable after set_mode with SCALED flag
+    global _cached_desktop_resolution
+    
+    if _cached_desktop_resolution is None:
+        # Fallback: should never happen, but just in case
+        info = pygame.display.Info()
+        desktop_w, desktop_h = info.current_w, info.current_h
+        _cached_desktop_resolution = (desktop_w, desktop_h)
+    else:
+        # Use cached value from startup (most reliable)
+        desktop_w, desktop_h = _cached_desktop_resolution
+    
+    if mode_name == "fullscreen":
+        is_fullscreen = True
+        # CRITICAL: For fullscreen, we need the ACTUAL physical screen size, not logical
+        # The SCALED flag will handle scaling, but we need to know the real screen size for coordinate calculations
+        # Use desktop resolution for fullscreen - this is the actual physical screen size
+        new_screen = pygame.display.set_mode((desktop_w, desktop_h), pygame.FULLSCREEN | pygame.SCALED)
+        # The actual surface size after SCALED might be different, but the physical screen is desktop_w x desktop_h
+        actual_physical_width, actual_physical_height = desktop_w, desktop_h
+    elif mode_name == "borderless":
+        is_fullscreen = True
+        # Same as fullscreen - use desktop resolution
+        # CACHE IT: Info().current_w/h can return wrong values after set_mode with SCALED flag
+        _cached_desktop_resolution = (desktop_w, desktop_h)
+        new_screen = pygame.display.set_mode((desktop_w, desktop_h), pygame.NOFRAME | pygame.SCALED)
+        actual_physical_width, actual_physical_height = desktop_w, desktop_h
+    else:  # windowed
+        is_fullscreen = False
+        # Calculate windowed size based on desktop, but make it smaller
+        scale = min(desktop_w / S.LOGICAL_WIDTH, desktop_h / S.LOGICAL_HEIGHT)
+        window_width = int(S.LOGICAL_WIDTH * scale * 0.9)
+        window_height = int(S.LOGICAL_HEIGHT * scale * 0.9)
+        window_width = max(window_width, 960)
+        window_height = max(window_height, 540)
+        # Use SCALED flag for automatic scaling
+        # Note: RESIZABLE flag is incompatible with SCALED in some Pygame versions
+        # Window dragging should work by default without RESIZABLE flag
+        new_screen = pygame.display.set_mode((window_width, window_height), pygame.SCALED)
+        # For windowed, the actual window size is what we requested
+        actual_physical_width, actual_physical_height = window_width, window_height
+    
+    # CRITICAL: When using SCALED flag, pygame's get_size() returns the SURFACE size,
+    # which might be the logical resolution (1920x1080) or the requested size,
+    # NOT necessarily the actual physical screen/window size.
+    # 
+    # For coordinate calculations, we need the PHYSICAL screen size (what the user sees),
+    # not the surface size. The SCALED flag handles the scaling internally.
+    
+    # Get surface size (what pygame thinks the surface is)
+    surface_size = new_screen.get_size()
+    
+    # For coordinate system, we MUST use the actual physical screen/window size
+    # This is what we requested (desktop_w/desktop_h for fullscreen, window size for windowed)
+    # The SCALED flag will scale the surface to fit the physical size automatically
+    actual_width, actual_height = actual_physical_width, actual_physical_height
+    
+    # Debug: Check if surface size differs from physical size
+    if surface_size != (actual_width, actual_height):
+        print(f"⚠️ SCALED flag detected: Surface size={surface_size}, Physical size={actual_width}x{actual_height}")
+        print(f"   Using physical size for coordinate calculations")
+    
+    # Update global screen dimensions with PHYSICAL size (not surface size)
+    S.WIDTH, S.HEIGHT = actual_width, actual_height
+    
+    # Update coordinate system with ACTUAL surface dimensions
+    # This ensures all coordinate conversions work correctly after mode change
+    # For fullscreen, force scale to 1.0 (user requested)
+    if mode_name == "fullscreen" or mode_name == "borderless":
+        coords.update_scale_factors(actual_width, actual_height, force_scale=1.0)
+    else:
+        coords.update_scale_factors(actual_width, actual_height)
+    
+    # Debug output to verify
+    scale = coords.get_scale()
+    offset_x, offset_y = coords.get_offset()
+    print(f"🔧 Display mode changed to {mode_name}:")
+    print(f"   Screen size = {actual_width}x{actual_height}")
+    print(f"   Scale = {scale:.3f}")
+    print(f"   Offset = ({offset_x:.1f}, {offset_y:.1f})")
+    print(f"   Scaled virtual size = {int(S.LOGICAL_WIDTH * scale)}x{int(S.LOGICAL_HEIGHT * scale)}")
+    
+    return new_screen
+
+def get_display_mode() -> str:
+    """Get current display mode."""
+    return display_mode
+
 # ===================== Main Loop ==========================
+# Track last screen size for debugging
+_last_blit_size = None
+
 def blit_virtual_to_screen(virtual_screen, screen):
     """Scale and blit the virtual screen to the actual screen."""
+    global _last_blit_size, display_mode
+    
+    # CRITICAL: When using SCALED flag, pygame's get_size() returns the SURFACE size,
+    # which might be the logical resolution (1920x1080), NOT the physical screen size.
+    # For coordinate calculations and scaling, we MUST use the PHYSICAL screen size.
+    
+    # Get the current surface
+    current_surface = pygame.display.get_surface()
+    if current_surface is None:
+        current_surface = screen
+    
+    # Get surface size (might be logical resolution due to SCALED flag)
+    surface_size = current_surface.get_size()
+    
+    # Get physical screen size from display info
+    info = pygame.display.Info()
+    physical_width, physical_height = info.current_w, info.current_h
+    
+    # CRITICAL FIX: Determine correct screen size
+    # With SCALED flag:
+    # - Fullscreen: surface.get_size() = logical (1920x1080), physical = desktop resolution  
+    # - Windowed: surface.get_size() = actual window size (e.g., 1728x972)
+    
+    # CRITICAL DETECTION: Determine if we're in fullscreen
+    # Method 1: Check display_mode variable (set by change_display_mode)
+    # Method 2: Check if surface size equals logical AND physical is larger (SCALED fullscreen behavior)
+    
+    surface_is_logical = (surface_size == (S.LOGICAL_WIDTH, S.LOGICAL_HEIGHT))
+    physical_is_larger = (physical_width > surface_size[0] + 50 or physical_height > surface_size[1] + 50)
+    
+    # SIMPLE FIX: If display_mode says fullscreen, ALWAYS use physical screen size
+    # No complex detection - just trust the display_mode variable
+    if display_mode == "fullscreen" or display_mode == "borderless":
+        # Fullscreen: ALWAYS use physical screen size (desktop resolution)
+        # CRITICAL: Make absolutely sure we're using physical size
+        if physical_width < S.LOGICAL_WIDTH or physical_height < S.LOGICAL_HEIGHT:
+            print(f"⚠️ Physical screen {physical_width}x{physical_height} < logical {S.LOGICAL_WIDTH}x{S.LOGICAL_HEIGHT}")
+            print(f"   This is unusual - physical screen should be >= 1920x1080")
+        screen_width, screen_height = physical_width, physical_height
+        is_fullscreen = True
+        if _last_blit_size != (screen_width, screen_height):
+            print(f"✅ Fullscreen: Using physical size {screen_width}x{screen_height}")
+    else:
+        # Windowed: CRITICAL - Use S.WIDTH/HEIGHT which are set correctly in change_display_mode
+        # Don't trust surface_size - with SCALED flag it might be wrong
+        # S.WIDTH/HEIGHT are guaranteed to be the actual window size
+        screen_width, screen_height = S.WIDTH, S.HEIGHT
+        is_fullscreen = False
+        # Double-check: If S.WIDTH/HEIGHT seem wrong (e.g., match logical resolution), use surface_size as fallback
+        if screen_width == S.LOGICAL_WIDTH and screen_height == S.LOGICAL_HEIGHT:
+            # This shouldn't happen, but if it does, use surface_size
+            print(f"⚠️ S.WIDTH/HEIGHT match logical resolution in windowed mode, using surface_size as fallback")
+            screen_width, screen_height = surface_size
+            S.WIDTH, S.HEIGHT = screen_width, screen_height
+    
+    # Debug: Print if size changed (only once per size change)
+    if _last_blit_size != (screen_width, screen_height):
+        print(f"📐 ===== SCREEN SIZE UPDATE =====")
+        print(f"   display_mode variable: '{display_mode}'")
+        print(f"   Fullscreen detected: {is_fullscreen}")
+        print(f"   Surface size (from get_size()): {surface_size}")
+        print(f"   Physical size (from Info): {physical_width}x{physical_height}")
+        print(f"   Using size for calculations: {screen_width}x{screen_height}")
+        print(f"   S.WIDTH/HEIGHT: {S.WIDTH}x{S.HEIGHT}")
+        _last_blit_size = (screen_width, screen_height)
+    
+    # Recalculate scale factors based on ACTUAL screen size (critical for mode changes)
+    # This ensures coordinate system is always in sync with actual screen
+    # For fullscreen, force scale to 1.0 (user requested) ONLY if screen is >= 1920x1080
+    if is_fullscreen:
+        # CRITICAL: For fullscreen, we MUST use physical screen size, not surface size
+        # Use cached desktop resolution (Info().current_w/h can be unreliable with SCALED flag)
+        global _cached_desktop_resolution
+        if _cached_desktop_resolution:
+            cached_w, cached_h = _cached_desktop_resolution
+            screen_width, screen_height = cached_w, cached_h
+            S.WIDTH, S.HEIGHT = screen_width, screen_height
+        else:
+            # Fallback: use Info() if cache not available
+            fresh_info = pygame.display.Info()
+            screen_width, screen_height = fresh_info.current_w, fresh_info.current_h
+            S.WIDTH, S.HEIGHT = screen_width, screen_height
+        
+        # Debug: Log what we're using
+        if hasattr(blit_virtual_to_screen, '_last_fullscreen_size'):
+            if blit_virtual_to_screen._last_fullscreen_size != (screen_width, screen_height):
+                print(f"🔍 Fullscreen: Fresh physical size = {screen_width}x{screen_height}")
+                print(f"   Old physical size was = {physical_width}x{physical_height}")
+                print(f"   Surface size = {surface_size}")
+                blit_virtual_to_screen._last_fullscreen_size = (screen_width, screen_height)
+        else:
+            blit_virtual_to_screen._last_fullscreen_size = (screen_width, screen_height)
+            print(f"🔍 Fullscreen: Using fresh physical size {screen_width}x{screen_height}")
+        
+        # CRITICAL: For fullscreen with scale 1.0, screen MUST be >= 1920x1080
+        # If screen is smaller, we can't use scale 1.0 (content would be cut off)
+        if screen_width >= S.LOGICAL_WIDTH and screen_height >= S.LOGICAL_HEIGHT:
+            # Screen is large enough - use scale 1.0
+            coords.update_scale_factors(screen_width, screen_height, force_scale=1.0)
+        else:
+            # Screen is too small - calculate scale normally (shouldn't happen in fullscreen)
+            print(f"⚠️ Fullscreen but screen {screen_width}x{screen_height} < logical {S.LOGICAL_WIDTH}x{S.LOGICAL_HEIGHT}")
+            print(f"   Calculating scale instead of forcing 1.0")
+            coords.update_scale_factors(screen_width, screen_height)
+    else:
+        coords.update_scale_factors(screen_width, screen_height)
+    
+    # Get scale and offset from coordinate system
     scale = coords.get_scale()
     offset_x, offset_y = coords.get_offset()
     
-    # Scale the virtual screen
+    # Scale the virtual screen to fit the actual screen
     scaled_width = int(S.LOGICAL_WIDTH * scale)
     scaled_height = int(S.LOGICAL_HEIGHT * scale)
+    
+    # Ensure we don't get zero or negative sizes
+    scaled_width = max(1, scaled_width)
+    scaled_height = max(1, scaled_height)
+    
     scaled_surface = pygame.transform.smoothscale(virtual_screen, (scaled_width, scaled_height))
     
-    # Clear screen and blit scaled surface centered
-    screen.fill((0, 0, 0))
-    screen.blit(scaled_surface, (int(offset_x), int(offset_y)))
+    # Clear the CURRENT surface and blit scaled surface centered
+    # Always use current_surface, not the stale 'screen' parameter
+    current_surface.fill((0, 0, 0))
+    current_surface.blit(scaled_surface, (int(offset_x), int(offset_y)))
 
 while running:
     dt = clock.tick(60) / 1000.0
     events = pygame.event.get()
+    
+    # Clear virtual screen at the start of each frame to prevent content bleeding between modes
+    virtual_screen.fill((0, 0, 0))
+    
+    # Handle fullscreen toggle (Alt+Enter) - remove from events list after processing
+    events_to_remove = []
+    for i, e in enumerate(events):
+        if e.type == pygame.KEYDOWN:
+            if e.key == pygame.K_RETURN and (e.mod & pygame.KMOD_ALT):
+                # Toggle fullscreen/windowed
+                current = display_mode
+                if current == "fullscreen":
+                    screen = change_display_mode("windowed", screen)
+                elif current == "borderless":
+                    screen = change_display_mode("windowed", screen)
+                else:  # windowed
+                    screen = change_display_mode("fullscreen", screen)
+                events_to_remove.append(i)
+    
+    # Remove fullscreen toggle events from events list
+    events = [e for i, e in enumerate(events) if i not in events_to_remove]
+    
+    # Handle window resize events (only in windowed mode)
+    for e in events:
+        if e.type == pygame.VIDEORESIZE:
+            # Window was resized - update dimensions
+            if display_mode == "windowed":
+                new_width, new_height = e.size
+                print(f"🔄 Window resized to {new_width}x{new_height}")
+                S.WIDTH, S.HEIGHT = new_width, new_height
+                coords.update_scale_factors(new_width, new_height)
+                # Force screen refresh by updating the global screen reference
+                screen = pygame.display.get_surface()
     
     # Convert mouse coordinates in events to logical coordinates
     converted_events = []
@@ -660,11 +1005,66 @@ while running:
         prev_mode = mode
 
     # Build a shared deps dict each frame (for screens that need these)
+    def change_display_mode_callback(mode_name: str):
+        """Callback for settings screen to change display mode."""
+        global screen, prev_mode, display_mode
+        
+        # Change display mode - this creates a new surface and sets S.WIDTH/HEIGHT correctly
+        new_screen = change_display_mode(mode_name, screen)
+        
+        # CRITICAL: Always get the actual current display surface from pygame
+        current_surface = pygame.display.get_surface()
+        if current_surface is not None:
+            screen = current_surface
+        
+        # CRITICAL: For fullscreen, we MUST use physical screen size, not surface size
+        # change_display_mode() should have set S.WIDTH/HEIGHT correctly, but verify
+        info = pygame.display.Info()
+        physical_w, physical_h = info.current_w, info.current_h
+        
+        if mode_name == "fullscreen" or mode_name == "borderless":
+            # For fullscreen: Use physical screen size (desktop resolution)
+            actual_w, actual_h = physical_w, physical_h
+            print(f"✅ Fullscreen mode: Using physical size {actual_w}x{actual_h}")
+        else:
+            # For windowed: Use what change_display_mode set (should be window size)
+            actual_w, actual_h = S.WIDTH, S.HEIGHT
+            print(f"✅ Windowed mode: Using size {actual_w}x{actual_h}")
+        
+        # Update S.WIDTH/HEIGHT to ensure they're correct
+        S.WIDTH, S.HEIGHT = actual_w, actual_h
+        
+        # Update coordinate system with correct size
+        # For fullscreen, force scale to 1.0 (user requested)
+        if mode_name == "fullscreen" or mode_name == "borderless":
+            coords.update_scale_factors(actual_w, actual_h, force_scale=1.0)
+        else:
+            coords.update_scale_factors(actual_w, actual_h)
+        print(f"   Final scale: {coords.get_scale():.3f}, Offset: {coords.get_offset()}")
+        
+        # Force a refresh of the current screen by triggering its enter() function
+        # This ensures all screens that cache positions/sizes refresh with new dimensions
+        if mode:  # Only if we're in a mode
+            current_deps = dict(
+                fonts=fonts,
+                menu_bg=menu_bg,
+                audio_bank=AUDIO,
+                player_variants=PLAYER_VARIANTS,
+            )
+            # Temporarily set prev_mode to None to force enter() to run
+            saved_prev = prev_mode
+            prev_mode = None
+            enter_mode(mode, gs, current_deps)
+            prev_mode = saved_prev
+        return screen
+    
     deps = dict(
         fonts=fonts,
         menu_bg=menu_bg,
         audio_bank=AUDIO,
         player_variants=PLAYER_VARIANTS,
+        change_display_mode=change_display_mode_callback,
+        get_display_mode=get_display_mode,
     )
 
     # ========== Universal window close ==========
@@ -849,6 +1249,47 @@ while running:
             else:
                 mode = next_mode
 
+    # ===================== Book of the Bound ==========================
+    elif mode == MODE_BOOK_OF_BOUND:
+        next_mode = book_of_bound.handle(events, gs, dt, **deps)
+        book_of_bound.draw(virtual_screen, gs, dt, **deps)
+        blit_virtual_to_screen(virtual_screen, screen)
+        pygame.display.flip()
+        if next_mode:
+            # Clear the entered flag when exiting
+            if hasattr(gs, '_book_of_bound_entered'):
+                delattr(gs, '_book_of_bound_entered')
+            mode = next_mode
+    elif mode == MODE_ARCHIVES:
+        # Handle party manager events if it's open (for vessel picker)
+        try:
+            from screens import party_manager
+            if party_manager.is_open():
+                for e in events:
+                    party_manager.handle_event(e, gs)
+        except Exception:
+            pass
+        
+        next_mode = archives.handle(gs, events, dt, **deps)
+        archives.draw(virtual_screen, gs, dt)
+        
+        # Draw party manager on top if open
+        try:
+            from screens import party_manager
+            if party_manager.is_open():
+                party_manager.draw(virtual_screen, gs, dt)
+        except Exception:
+            pass
+        
+        blit_virtual_to_screen(virtual_screen, screen)
+        pygame.display.flip()
+        if next_mode:
+            # Clear the entered flag when exiting
+            if hasattr(gs, '_archives_entered'):
+                delattr(gs, '_archives_entered')
+            mode = next_mode
+            continue  # Skip to next iteration to process mode change
+
 
     # ===================== GAMEPLAY ========================
     elif mode == S.MODE_GAME:
@@ -886,7 +1327,9 @@ while running:
         # --- Handle HUD button clicks FIRST (before other UI) ---
         for e in events:
             if e.type == pygame.MOUSEBUTTONDOWN and e.button == 1:
-                button_clicked = hud_buttons.handle_click(e.pos)
+                # Convert click position to logical coordinates (button rects are in logical coords)
+                logical_pos = coords.screen_to_logical(e.pos)
+                button_clicked = hud_buttons.handle_click(logical_pos)
                 if button_clicked == 'bag':
                     bag_ui.toggle_popup()
                     just_toggled_bag = True
@@ -922,6 +1365,23 @@ while running:
                         rest_popup.open_popup()
                         hud_button_click_positions.add(e.pos)
                         audio.play_click(AUDIO)
+                elif button_clicked == 'book_of_bound':
+                    # Switch to Book of the Bound screen
+                    # Capture current screen for fade transition
+                    previous_screen = virtual_screen.copy()
+                    mode = MODE_BOOK_OF_BOUND
+                    # Pass previous screen to enter() for fade transition
+                    book_of_bound.enter(gs, previous_screen_surface=previous_screen, **deps)
+                    gs._book_of_bound_entered = True
+                    hud_button_click_positions.add(e.pos)
+                    audio.play_click(AUDIO)
+                elif button_clicked == 'archives':
+                    # Switch to Archives screen
+                    mode = MODE_ARCHIVES
+                    archives.enter(gs, **deps)
+                    gs._archives_entered = True
+                    hud_button_click_positions.add(e.pos)
+                    audio.play_click(AUDIO)
 
         # --- Global hotkeys ---
         for e in events:

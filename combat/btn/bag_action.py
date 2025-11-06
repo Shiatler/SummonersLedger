@@ -8,6 +8,7 @@ import pygame
 from ._btn_layout import rect_at, load_scaled
 from ._btn_draw import draw_icon_button
 from systems import audio as audio_sys
+from systems import item_categories
 import re
 from screens import party_manager
 
@@ -52,6 +53,9 @@ def draw_button(screen: pygame.Surface):
 _OPEN = False
 _PANEL_RECT = None  # image rect
 _LAST_DRAW_TICKS = 0
+_CURRENT_CATEGORY_INDEX = 0  # 0 = healing, 1 = catching, 2 = food
+_LEFT_ARROW_RECT = None
+_RIGHT_ARROW_RECT = None
 
 _BAG_IMG = None
 _BAG_IMG_PATH = os.path.join("Assets", "Map", "boh.png")
@@ -237,6 +241,27 @@ def _get_icon_surface(path: str | None, size: int) -> pygame.Surface | None:
 
 # ---------------- Inventory plumbing ----------------
 _FONT_CACHE = {}
+_DH_FONT_CACHE = {}
+
+def _dh_font(px: int) -> pygame.font.Font:
+    """Load DH font with caching from Assets/Fonts/DH.otf."""
+    px = max(12, int(px))
+    if px not in _DH_FONT_CACHE:
+        try:
+            from settings import S
+            font_path = os.path.join(S.ASSETS_FONTS_DIR, S.DND_FONT_FILE)
+            if not os.path.exists(font_path):
+                font_path = os.path.join(S.ASSETS_FONTS_DIR, "DH.otf")
+            if not os.path.exists(font_path):
+                font_path = os.path.join("Assets", "Fonts", "DH.otf")
+            
+            if os.path.exists(font_path):
+                _DH_FONT_CACHE[px] = pygame.font.Font(font_path, px)
+            else:
+                _DH_FONT_CACHE[px] = pygame.font.SysFont("georgia", px)
+        except Exception as e:
+            _DH_FONT_CACHE[px] = pygame.font.SysFont("georgia", px)
+    return _DH_FONT_CACHE[px]
 
 def _font(px: int, bold=False) -> pygame.font.Font:
     key = (px, bold)
@@ -447,12 +472,13 @@ def _scaled_bag(sw: int, sh: int) -> pygame.Surface | None:
 def is_open() -> bool: return _OPEN
 
 def open_popup():
-    global _OPEN, _FADE_T0, _SCROLL_Y
+    global _OPEN, _FADE_T0, _SCROLL_Y, _CURRENT_CATEGORY_INDEX
     if _OPEN:  # already open? don't replay SFX
         return
     _OPEN = True
     _FADE_T0 = pygame.time.get_ticks()
     _SCROLL_Y = 0
+    _CURRENT_CATEGORY_INDEX = 0  # Reset to first category
     _play_boh(fade_ms=int(_FADE_DUR * 1000))
 
 def close_popup():
@@ -482,16 +508,43 @@ def handle_event(e, gs, screen=None) -> bool:
         if screen is None:
             return False
     
-    global _SCROLL_Y, _PANEL_RECT
+    global _SCROLL_Y, _PANEL_RECT, _CURRENT_CATEGORY_INDEX
 
     if not _OPEN:
         return False
 
-    if e.type == pygame.KEYDOWN and e.key == pygame.K_ESCAPE:
-        close_popup()
-        return True
+    if e.type == pygame.KEYDOWN:
+        if e.key == pygame.K_ESCAPE:
+            close_popup()
+            return True
+        # Arrow key navigation
+        elif e.key == pygame.K_LEFT:
+            _CURRENT_CATEGORY_INDEX = (_CURRENT_CATEGORY_INDEX - 1) % len(item_categories.CATEGORIES)
+            _SCROLL_Y = 0
+            audio_sys.play_click(audio_sys.get_global_bank())
+            return True
+        elif e.key == pygame.K_RIGHT:
+            _CURRENT_CATEGORY_INDEX = (_CURRENT_CATEGORY_INDEX + 1) % len(item_categories.CATEGORIES)
+            _SCROLL_Y = 0
+            audio_sys.play_click(audio_sys.get_global_bank())
+            return True
 
     if e.type == pygame.MOUSEBUTTONDOWN and e.button == 1:
+        # Check navigation arrows first (cycling enabled)
+        if _LEFT_ARROW_RECT and _LEFT_ARROW_RECT.collidepoint(e.pos):
+            # Cycle backwards (wrap around)
+            _CURRENT_CATEGORY_INDEX = (_CURRENT_CATEGORY_INDEX - 1) % len(item_categories.CATEGORIES)
+            _SCROLL_Y = 0  # Reset scroll when changing category
+            audio_sys.play_click(audio_sys.get_global_bank())
+            return True
+        
+        if _RIGHT_ARROW_RECT and _RIGHT_ARROW_RECT.collidepoint(e.pos):
+            # Cycle forwards (wrap around)
+            _CURRENT_CATEGORY_INDEX = (_CURRENT_CATEGORY_INDEX + 1) % len(item_categories.CATEGORIES)
+            _SCROLL_Y = 0  # Reset scroll when changing category
+            audio_sys.play_click(audio_sys.get_global_bank())
+            return True
+        
         if _PANEL_RECT is None or not _PANEL_RECT.collidepoint(e.pos):
             close_popup()
             return True
@@ -560,7 +613,8 @@ def handle_event(e, gs, screen=None) -> bool:
         _draw_inventory_on_popup(screen, _PANEL_RECT, 1, gs)
         
         # Check if mouse is over the viewport area
-        mouse_pos = pygame.mouse.get_pos()
+        from systems import coords
+        mouse_pos = coords.screen_to_logical(pygame.mouse.get_pos())
         if _VIEWPORT_RECT and _VIEWPORT_RECT.collidepoint(mouse_pos):
             # Calculate max scroll based on content height
             if _TOTAL_CONTENT_H > 0 and _VIEWPORT_RECT.h > 0:
@@ -601,8 +655,12 @@ def _draw_inventory_on_popup(screen: pygame.Surface, popup_rect: pygame.Rect, fa
     box.clamp_ip(vis)
     _VIEWPORT_RECT = box
 
-    items = _get_items(gs)
-    _LAST_ITEMS = items[:]  # full list of all items
+    # Get all items and filter by current category
+    all_items = _get_items(gs)
+    current_category = item_categories.CATEGORIES[_CURRENT_CATEGORY_INDEX]
+    items = item_categories.filter_items_by_category(all_items, current_category)
+    
+    _LAST_ITEMS = items[:]  # full list of filtered items
     _ITEM_RECTS = []  # only visible item rects
     _ITEM_INDEXES = []  # maps _ITEM_RECTS index to _LAST_ITEMS index
 
@@ -626,9 +684,11 @@ def _draw_inventory_on_popup(screen: pygame.Surface, popup_rect: pygame.Rect, fa
     has_scrollbar = max_scroll > 0
     sb_w = max(6, int(vw * 0.012)) if has_scrollbar else 0
 
-    # local mouse for hover
-    mx, my = pygame.mouse.get_pos()
+    # local mouse for hover - convert to logical coordinates
+    from systems import coords
+    mx, my = coords.screen_to_logical(pygame.mouse.get_pos())
     local_mouse = (mx - vx, my - vy)
+    screen_mouse = (mx, my)  # For arrow collision detection
 
     y = -_SCROLL_Y
     if not items:
@@ -698,6 +758,36 @@ def _draw_inventory_on_popup(screen: pygame.Surface, popup_rect: pygame.Rect, fa
             sb_y = int((_SCROLL_Y / max_scroll) * (vh - sb_h))
             pygame.draw.rect(layer, (0, 0, 0, 60), (sb_x, 0, sb_w, vh), border_radius=4)
             pygame.draw.rect(layer, (220, 210, 180, 160), (sb_x, sb_y, sb_w, sb_h), border_radius=4)
+    
+    # Draw navigation arrows at bottom (cycling enabled)
+    global _LEFT_ARROW_RECT, _RIGHT_ARROW_RECT
+    arrow_size = 40
+    arrow_y = vh - 30
+    arrow_tip_size = 12
+    arrow_color = ink
+    arrow_hover_color = (255, 255, 255)
+    
+    # Left arrow (triangle pointing left)
+    left_arrow_x = 30
+    _LEFT_ARROW_RECT = pygame.Rect(vx + left_arrow_x - arrow_size // 2, vy + arrow_y - arrow_size // 2, arrow_size, arrow_size)
+    arrow_points = [
+        (left_arrow_x, arrow_y),
+        (left_arrow_x + arrow_tip_size, arrow_y - arrow_tip_size),
+        (left_arrow_x + arrow_tip_size, arrow_y + arrow_tip_size),
+    ]
+    draw_color = arrow_hover_color if _LEFT_ARROW_RECT.collidepoint(screen_mouse) else arrow_color
+    pygame.draw.polygon(layer, draw_color, arrow_points)
+    
+    # Right arrow (triangle pointing right)
+    right_arrow_x = vw - 30
+    _RIGHT_ARROW_RECT = pygame.Rect(vx + right_arrow_x - arrow_size // 2, vy + arrow_y - arrow_size // 2, arrow_size, arrow_size)
+    arrow_points = [
+        (right_arrow_x, arrow_y),
+        (right_arrow_x - arrow_tip_size, arrow_y - arrow_tip_size),
+        (right_arrow_x - arrow_tip_size, arrow_y + arrow_tip_size),
+    ]
+    draw_color = arrow_hover_color if _RIGHT_ARROW_RECT.collidepoint(screen_mouse) else arrow_color
+    pygame.draw.polygon(layer, draw_color, arrow_points)
 
     layer.set_alpha(int(255 * fade_alpha))
     screen.blit(layer, (vx, vy))

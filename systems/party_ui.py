@@ -7,6 +7,7 @@ import pygame
 import settings as S
 from screens import ledger
 from systems.asset_links import vessel_to_token, find_image
+from systems import coords
 
 # ---------- Layout ----------
 PADDING         = 16
@@ -33,16 +34,18 @@ _SLOT_GLOW_CACHE: dict[tuple[int, int, int, int], pygame.Surface] = {}  # (w,h,a
 # ---------- Click hitboxes ----------
 _slot_rects: list[pygame.Rect] = []    # populated per draw; 6 rects (2x3 grid)
 
-def _get_hover_glow_slot(size: tuple[int, int], alpha: int = 36, radius: int = 6) -> pygame.Surface:
+def _get_hover_glow_slot(size: tuple[int, int], alpha: int = 60, radius: int = 8) -> pygame.Surface:
     """
     Rounded-rect soft glow for slot hover; cached to avoid per-frame allocs.
+    Creates a filled white rectangle with transparency for hover effect.
     """
     key = (size[0], size[1], alpha, radius)
-    s = _SLot_GLOW = _SLOT_GLOW_CACHE.get(key)
-    if _SLot_GLOW is not None:
-        return _SLot_GLOW
+    cached = _SLOT_GLOW_CACHE.get(key)
+    if cached is not None:
+        return cached
     surf = pygame.Surface(size, pygame.SRCALPHA)
-    pygame.draw.rect(surf, (255, 255, 255, alpha), surf.get_rect(), border_radius=radius)
+    # Fill with white and alpha for glow effect (same approach as hud_buttons)
+    surf.fill((255, 255, 255, alpha))
     _SLOT_GLOW_CACHE[key] = surf
     return surf
 
@@ -248,7 +251,9 @@ def draw_party_hud(screen: pygame.Surface, gs):
     total_grid_h = rows * slot_size + (rows - 1) * slot_gap
     grid_top = py + (portrait_h - total_grid_h) // 2
 
-    mx, my = pygame.mouse.get_pos()
+    # Convert mouse position from screen coordinates to logical coordinates
+    screen_mx, screen_my = pygame.mouse.get_pos()
+    mx, my = coords.screen_to_logical((screen_mx, screen_my))
 
     for i, token in enumerate(gs.party_slots):
         row = i // cols
@@ -307,15 +312,15 @@ def draw_party_hud(screen: pygame.Surface, gs):
             slot_bg.fill((245, 245, 245))  # Cream/beige background like textbox
             screen.blit(slot_bg, r.topleft)
         else:
-            # Glow under the token if hovered
-            if is_hovered:
-                glow = _get_hover_glow_slot((r.w, r.h), alpha=42, radius=8)
-                screen.blit(glow, r.topleft)
-
             # filled: normalized token centered in the slot
             inner = _normalize_token_for_slot(token, slot_size, inner_margin)
             if inner:
                 screen.blit(inner, inner.get_rect(center=r.center))
+            
+            # Glow on top of the token if hovered (draw after token so it's visible)
+            if is_hovered:
+                glow = _get_hover_glow_slot((r.w, r.h), alpha=60, radius=8)
+                screen.blit(glow, r.topleft)
 
         # Border (textbox style - black outer, dark grey inner)
         # Outer border (black, 4px)

@@ -49,7 +49,16 @@ class Button:
         self.rect.center = center
 
     def draw(self, surf):
-        mx, my  = pygame.mouse.get_pos()
+        # Get mouse position - convert to logical coordinates if drawing to virtual screen
+        # Check if we're drawing to a virtual screen (1920x1080) vs physical screen
+        screen_mx, screen_my = pygame.mouse.get_pos()
+        # Try to convert to logical coordinates (will work if coords module is available)
+        try:
+            from systems import coords
+            mx, my = coords.screen_to_logical((screen_mx, screen_my))
+        except (ImportError, AttributeError):
+            # Fallback to screen coordinates if conversion fails
+            mx, my = screen_mx, screen_my
         hovered = self.rect.collidepoint(mx, my) and self.enabled
 
         # Background & border

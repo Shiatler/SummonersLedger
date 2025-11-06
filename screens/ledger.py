@@ -222,7 +222,7 @@ def _get_popup_bg() -> pygame.Surface | None:
     if not img:
         return None
     iw, ih = img.get_size()
-    max_w, max_h = int(S.WIDTH * 0.88), int(S.HEIGHT * 0.88)
+    max_w, max_h = int(S.LOGICAL_WIDTH * 0.88), int(S.LOGICAL_HEIGHT * 0.88)
     scale = min(max_w / iw, max_h / ih, 1.0)
     nw, nh = max(1, int(iw * scale)), max(1, int(ih * scale))
     _popup_bg = pygame.transform.smoothscale(img, (nw, nh))
@@ -240,7 +240,7 @@ def _get_bg_pages() -> tuple[pygame.Surface | None, pygame.Surface | None]:
         return None, None
 
     iw, ih = img1.get_size()
-    max_w, max_h = int(S.WIDTH * 0.88), int(S.HEIGHT * 0.88)
+    max_w, max_h = int(S.LOGICAL_WIDTH * 0.88), int(S.LOGICAL_HEIGHT * 0.88)
     scale = min(max_w / iw, max_h / ih, 1.0)
     nw, nh = max(1, int(iw * scale)), max(1, int(ih * scale))
     _bg1 = pygame.transform.smoothscale(img1, (nw, nh))
@@ -558,7 +558,7 @@ def draw(screen: pygame.Surface, gs):
 
     # Dim overlay
     overlay_alpha = int(_OVERLAY_MAX_A * prog)
-    overlay = pygame.Surface((S.WIDTH, S.HEIGHT), pygame.SRCALPHA)
+    overlay = pygame.Surface((S.LOGICAL_WIDTH, S.LOGICAL_HEIGHT), pygame.SRCALPHA)
     overlay.fill((0, 0, 0, overlay_alpha))
     screen.blit(overlay, (0, 0))
 
@@ -572,9 +572,9 @@ def draw(screen: pygame.Surface, gs):
 
     # If we don't even have the base book image, fall back to simple box
     if base_bg is None:
-        pw, ph = int(S.WIDTH * 0.55), int(S.HEIGHT * 0.55)
-        px = (S.WIDTH - pw) // 2
-        py_target = (S.HEIGHT - ph) // 2
+        pw, ph = int(S.LOGICAL_WIDTH * 0.55), int(S.LOGICAL_HEIGHT * 0.55)
+        px = (S.LOGICAL_WIDTH - pw) // 2
+        py_target = (S.LOGICAL_HEIGHT - ph) // 2
         py = py_target + int((1.0 - prog) * _SLIDE_PIXELS)
         pygame.draw.rect(screen, (20, 20, 20), (px, py, pw, ph), border_radius=14)
         pygame.draw.rect(screen, (220, 200, 130), (px, py, pw, ph), 4, border_radius=14)
@@ -587,8 +587,8 @@ def draw(screen: pygame.Surface, gs):
 
     # Position & scale (same fly-in/out behavior as before) based on base image
     bw, bh = base_bg.get_size()
-    bx = (S.WIDTH - bw) // 2
-    by_target = (S.HEIGHT - bh) // 2
+    bx = (S.LOGICAL_WIDTH - bw) // 2
+    by_target = (S.LOGICAL_HEIGHT - bh) // 2
     slide_y = int((1.0 - prog) * _SLIDE_PIXELS)
     scale = _SCALE_MIN + (1.0 - _SCALE_MIN) * prog
 
@@ -600,8 +600,8 @@ def draw(screen: pygame.Surface, gs):
     else:
         sbw, sbh = max(1, int(bw * scale)), max(1, int(bh * scale))
         sb_base = pygame.transform.smoothscale(base_bg, (sbw, sbh))
-        sbx = (S.WIDTH - sbw) // 2
-        sby = (S.HEIGHT - sbh) // 2 + slide_y
+        sbx = (S.LOGICAL_WIDTH - sbw) // 2
+        sby = (S.LOGICAL_HEIGHT - sbh) // 2 + slide_y
         screen.blit(sb_base, (sbx, sby))
 
     book_rect = pygame.Rect(sbx, sby, sbw, sbh)

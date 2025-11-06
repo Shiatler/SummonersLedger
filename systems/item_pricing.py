@@ -26,13 +26,18 @@ BASE_PRICES = {
     "scroll_of_revivity": 1569,         # Revive + 2d8 - 15 GP, 6 SP, 9 BP (requires 5+ wins)
     "scroll_of_subjugation": 1234,     # DC -4 - 12 GP, 3 SP, 4 BP (requires 4+ wins)
     
+    # Consumables - Healing items
+    "rations": 75,                      # Full heal - 0 GP, 7 SP, 5 BP (stays at 75 until level 5, then 10% per level)
+    "alcohol": 38,                      # Half heal - 0 GP, 3 SP, 8 BP (half of rations, rounded up)
+    
     # Tier: Legendary (NOT purchasable)
     # "scroll_of_eternity": None  # Auto-capture - legendary, not for sale
 }
 
-# Level scaling multiplier
-# Price grows by this % per level above 1
-PRICE_SCALING_PER_LEVEL = 0.20  # 20% increase per level (level 10 = +180%, level 20 = +380%)
+# Level scaling multipliers
+# Different items scale at different rates
+PRICE_SCALING_PER_LEVEL = 0.20  # 20% increase per level for scrolls (level 10 = +180%, level 20 = +380%)
+RATION_SCALING_PER_LEVEL = 0.10  # 10% increase per level for rations/alcohol (slower scaling)
 
 
 # --------------------- Pricing Functions ---------------------
@@ -42,7 +47,7 @@ def get_item_price(item_id: str, player_level: int) -> Optional[Tuple[int, int, 
     Get the price of an item in (gold, silver, bronze) format.
     
     Args:
-        item_id: Item identifier (e.g., "scroll_of_mending")
+        item_id: Item identifier (e.g., "scroll_of_mending", "rations", "alcohol")
         player_level: Player's highest party level
     
     Returns:
@@ -55,9 +60,45 @@ def get_item_price(item_id: str, player_level: int) -> Optional[Tuple[int, int, 
     if base_price_bronze is None:
         return None
     
+    # Special case: rations - stays at 75 until level 5, then 10% per level from level 5
+    if item_id == "rations":
+        if player_level <= 5:
+            rations_bronze = 75
+        else:
+            # From level 5, scale: 75 * (1.0 + (level - 5) * 0.10)
+            scaling_levels = player_level - 5
+            level_multiplier = 1.0 + scaling_levels * RATION_SCALING_PER_LEVEL
+            rations_bronze = int(75 * level_multiplier)
+        gold = rations_bronze // 100
+        remainder = rations_bronze % 100
+        silver = remainder // 10
+        bronze = remainder % 10
+        return (gold, silver, bronze)
+    
+    # Special case: alcohol is always half the price of rations
+    if item_id == "alcohol":
+        # Calculate rations price first
+        if player_level <= 5:
+            rations_bronze = 75
+        else:
+            scaling_levels = player_level - 5
+            level_multiplier = 1.0 + scaling_levels * RATION_SCALING_PER_LEVEL
+            rations_bronze = int(75 * level_multiplier)
+        # Half price, rounded up
+        alcohol_bronze = (rations_bronze + 1) // 2
+        gold = alcohol_bronze // 100
+        remainder = alcohol_bronze % 100
+        silver = remainder // 10
+        bronze = remainder % 10
+        return (gold, silver, bronze)
+    
+    # Determine scaling rate based on item type (for scrolls)
+    # Scrolls use standard scaling (20% per level)
+    scaling_rate = PRICE_SCALING_PER_LEVEL
+    
     # Calculate scaled price
-    # Level 1: 1.0x, Level 2: 1.15x, Level 10: 2.35x, Level 20: 3.85x
-    level_multiplier = 1.0 + (player_level - 1) * PRICE_SCALING_PER_LEVEL
+    # For scrolls: Level 1: 1.0x, Level 2: 1.2x, Level 10: 2.8x, Level 20: 4.8x
+    level_multiplier = 1.0 + (player_level - 1) * scaling_rate
     scaled_price_bronze = int(base_price_bronze * level_multiplier)
     
     # Convert to denominations

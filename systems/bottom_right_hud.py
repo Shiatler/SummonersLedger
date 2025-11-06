@@ -55,13 +55,13 @@ HUD_MARGIN_BOTTOM = 12  # Distance from bottom edge
 
 # Button grid configuration (should match hud_buttons.py)
 BUTTON_SIZE = 100  # Target size for buttons in grid
-GRID_COLS = 2  # Number of columns in grid
+GRID_COLS = 3  # Number of columns in grid (horizontal layout)
 GRID_GAP = 6  # Gap between buttons
 
 # Calculate HUD size based on button grid
-# We need space for 2 columns of buttons plus padding
+# We need space for 3 columns of buttons plus padding
 HUD_WIDTH = (GRID_COLS * BUTTON_SIZE) + ((GRID_COLS - 1) * GRID_GAP) + (HUD_PADDING * 2)
-# Height: enough for 2 rows of buttons (4 buttons total, 2 rows)
+# Height: enough for 2 rows of buttons (6 buttons total, 2 rows)
 HUD_HEIGHT = (2 * BUTTON_SIZE) + (1 * GRID_GAP) + (HUD_PADDING * 2)
 
 # ---------- HUD State ----------
@@ -117,7 +117,13 @@ def draw(screen: pygame.Surface, gs):
     # Use the public API to load buttons
     hud_buttons.load_all_buttons()
     
-    mx, my = pygame.mouse.get_pos()  # For hover detection
+    # Convert mouse coordinates to logical for hover detection
+    screen_mx, screen_my = pygame.mouse.get_pos()
+    try:
+        from systems import coords
+        mx, my = coords.screen_to_logical((screen_mx, screen_my))
+    except:
+        mx, my = screen_mx, screen_my
     
     for idx, btn_def in enumerate(hud_buttons.get_buttons_list()):
         btn_id = btn_def["id"]

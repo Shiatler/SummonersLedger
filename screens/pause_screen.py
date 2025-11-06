@@ -12,7 +12,7 @@ def enter(gs, **_):
 
 def draw(screen, gs, fonts=None, audio_bank=None, **_):
     # Dim the current frame
-    dim = pygame.Surface((S.WIDTH, S.HEIGHT), pygame.SRCALPHA)
+    dim = pygame.Surface((S.LOGICAL_WIDTH, S.LOGICAL_HEIGHT), pygame.SRCALPHA)
     dim.fill((0, 0, 0, 160))
     screen.blit(dim, (0, 0))
 
@@ -20,16 +20,16 @@ def draw(screen, gs, fonts=None, audio_bank=None, **_):
     title_font = fonts["title"] if fonts else pygame.font.SysFont(None, 64)
     btn_font   = fonts["button"] if fonts else pygame.font.SysFont(None, 36)
     title = title_font.render("Paused", True, (230, 210, 200))
-    screen.blit(title, title.get_rect(center=(S.WIDTH // 2, S.HEIGHT // 2 - 200)))
+    screen.blit(title, title.get_rect(center=(S.LOGICAL_WIDTH // 2, S.LOGICAL_HEIGHT // 2 - 200)))
 
     # Buttons (cached on gs)
-    y0 = S.HEIGHT // 2 - 60
+    y0 = S.LOGICAL_HEIGHT // 2 - 60
     if getattr(gs, "_pause_buttons", None) is None:
         gs._pause_buttons = [
-            ui.Button("Resume",       (S.WIDTH // 2, y0 + 0),   btn_font),
-            ui.Button("Save Game",    (S.WIDTH // 2, y0 + 60),  btn_font),
-            ui.Button("Settings",     (S.WIDTH // 2, y0 + 120), btn_font),
-            ui.Button("Quit to Menu", (S.WIDTH // 2, y0 + 180), btn_font),
+            ui.Button("Resume",       (S.LOGICAL_WIDTH // 2, y0 + 0),   btn_font),
+            ui.Button("Save Game",    (S.LOGICAL_WIDTH // 2, y0 + 60),  btn_font),
+            ui.Button("Settings",     (S.LOGICAL_WIDTH // 2, y0 + 120), btn_font),
+            ui.Button("Quit to Menu", (S.LOGICAL_WIDTH // 2, y0 + 180), btn_font),
         ]
 
     for b in gs._pause_buttons:

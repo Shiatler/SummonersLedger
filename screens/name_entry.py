@@ -11,9 +11,9 @@ def enter(gs, **_):
 
 def draw(screen, gs, dt, fonts=None, menu_bg=None, **_):
     if menu_bg:
-        bg = pygame.transform.scale(menu_bg, (S.WIDTH, S.HEIGHT))
+        bg = pygame.transform.scale(menu_bg, (S.LOGICAL_WIDTH, S.LOGICAL_HEIGHT))
         screen.blit(bg, (0, 0))
-        overlay = pygame.Surface((S.WIDTH, S.HEIGHT), pygame.SRCALPHA)
+        overlay = pygame.Surface((S.LOGICAL_WIDTH, S.LOGICAL_HEIGHT), pygame.SRCALPHA)
         overlay.fill((0, 0, 0, 180))
         screen.blit(overlay, (0, 0))
     else:
@@ -22,10 +22,10 @@ def draw(screen, gs, dt, fonts=None, menu_bg=None, **_):
     title_font = fonts["title"]
     font_normal = fonts["normal"]
     title = title_font.render("Enter Your Name", True, (220, 200, 200))
-    screen.blit(title, title.get_rect(center=(S.WIDTH // 2, S.HEIGHT // 4)))
+    screen.blit(title, title.get_rect(center=(S.LOGICAL_WIDTH // 2, S.LOGICAL_HEIGHT // 4)))
 
     box_w, box_h = 720, 80
-    box_rect = pygame.Rect((S.WIDTH - box_w) // 2, (S.HEIGHT // 2) - 40, box_w, box_h)
+    box_rect = pygame.Rect((S.LOGICAL_WIDTH - box_w) // 2, (S.LOGICAL_HEIGHT // 2) - 40, box_w, box_h)
     pygame.draw.rect(screen, (40, 30, 30), box_rect, border_radius=12)
     pygame.draw.rect(screen, (200, 60, 60), box_rect, 3, border_radius=12)
 
@@ -35,7 +35,7 @@ def draw(screen, gs, dt, fonts=None, menu_bg=None, **_):
     screen.blit(txt, txt.get_rect(center=box_rect.center))
 
     hint = font_normal.render("Press ENTER to confirm or ESC to cancel", True, (200, 160, 160))
-    screen.blit(hint, hint.get_rect(center=(S.WIDTH // 2, S.HEIGHT // 2 + 120)))
+    screen.blit(hint, hint.get_rect(center=(S.LOGICAL_WIDTH // 2, S.LOGICAL_HEIGHT // 2 + 120)))
 
 def handle(events, gs, dt, **_):
     st = gs._name_state

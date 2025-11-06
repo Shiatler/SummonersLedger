@@ -339,7 +339,8 @@ def draw_popup(screen: pygame.Surface, gs):
 
     # --- Rows — invisible buttons; only content on parchment ---
     y = inner.y
-    mx, my = pygame.mouse.get_pos()
+    from systems import coords
+    mx, my = coords.screen_to_logical(pygame.mouse.get_pos())
 
     for i in range(6):
         # move the whole row to the right
@@ -459,8 +460,8 @@ def draw_popup(screen: pygame.Surface, gs):
         _CONFIRM_RECTS["yes"] = yes_rect
         _CONFIRM_RECTS["no"]  = no_rect
 
-        # Get mouse pos for hover highlight
-        mx, my = pygame.mouse.get_pos()
+        # Get mouse pos for hover highlight (already converted to logical above)
+        # mx, my already converted to logical coordinates above
 
         def _button(rect, label, hover=False):
             # base

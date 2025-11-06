@@ -14,6 +14,7 @@ import re
 from typing import Optional, Dict, List
 
 from systems import item_pricing
+from systems import item_categories
 from combat.team_randomizer import highest_party_level
 
 # Import items system
@@ -27,6 +28,9 @@ _ITEM_RECTS = []
 _HOVERED_ITEM_INDEX = None
 _SCROLL_Y = 0
 _LAST_ITEMS = []
+_CURRENT_CATEGORY_INDEX = 0  # 0 = healing, 1 = catching, 2 = food
+_LEFT_ARROW_RECT = None
+_RIGHT_ARROW_RECT = None
 
 # Purchase quantity selector state
 _PURCHASE_SELECTOR_ACTIVE = False
@@ -106,7 +110,15 @@ def _title_from_id(item_id: str) -> str:
 
 def _icon_for(item_id: str) -> Optional[str]:
     """Get icon path for an item (same logic as bag_action)."""
-    fname = "_".join(part.capitalize() for part in item_id.split("_")) + ".png"
+    # Handle special cases for items that don't follow the pattern
+    special_names = {
+        "rations": "Rations.png",
+        "alcohol": "Alcohol.png",
+    }
+    if item_id in special_names:
+        fname = special_names[item_id]
+    else:
+        fname = "_".join(part.capitalize() for part in item_id.split("_")) + ".png"
     path = os.path.join("Assets", "Items", fname)
     return path if os.path.exists(path) else None
 
@@ -189,6 +201,8 @@ _MEDIEVAL_DESCRIPTIONS = {
     "scroll_of_command": "A basic scroll of binding. Attempts to command weaker vessels to submit, most effective when the target is already weakened.",
     "scroll_of_sealing": "An enhanced scroll of binding. Wields refined sigils that strengthen the binding ritual, making capture more likely.",
     "scroll_of_subjugation": "A powerful scroll of domination. Employs potent runes that force obedience, greatly improving the chance of successful capture.",
+    "rations": "A bundle of preserved food and provisions. When used at a fireplace, restores all party members to full health through a long rest.",
+    "alcohol": "A flask of strong spirits. When used at a fireplace, provides a short rest that restores half of each party member's health.",
 }
 
 def get_medieval_description(item_id: str) -> str:
@@ -208,7 +222,7 @@ def get_medieval_description(item_id: str) -> str:
 
 def draw(screen: pygame.Surface, gs) -> None:
     """Draw the shop UI."""
-    global _ITEM_RECTS, _HOVERED_ITEM_INDEX, _LAST_ITEMS
+    global _ITEM_RECTS, _HOVERED_ITEM_INDEX, _LAST_ITEMS, _SCROLL_Y, _CURRENT_CATEGORY_INDEX, _LEFT_ARROW_RECT, _RIGHT_ARROW_RECT
     
     width, height = screen.get_size()
     
@@ -252,15 +266,29 @@ def draw(screen: pygame.Surface, gs) -> None:
     title_rect = title.get_rect(center=(panel_w // 2, 40))
     panel.blit(title, title_rect)
     
-    # Get purchasable items
-    items = _get_shop_items()
+    # Get current category
+    current_category = item_categories.CATEGORIES[_CURRENT_CATEGORY_INDEX]
+    category_name = item_categories.get_category_name(current_category)
+    
+    # Category label
+    category_label = name_font.render(category_name, True, (60, 60, 60))
+    category_rect = category_label.get_rect(center=(panel_w // 2, 70))
+    panel.blit(category_label, category_rect)
+    
+    # Get purchasable items and filter by current category
+    all_items = _get_shop_items()
+    items = item_categories.filter_items_by_category(all_items, current_category)
     _LAST_ITEMS = items
+    
+    # Reset scroll when category changes
+    if not items:
+        _SCROLL_Y = 0
     
     # Viewport for scrollable item list
     viewport_x = 50
-    viewport_y = 80
+    viewport_y = 100  # Moved down to make room for category label
     viewport_w = panel_w - 100
-    viewport_h = panel_h - 160
+    viewport_h = panel_h - 180  # Adjusted for category label
     viewport_rect = pygame.Rect(viewport_x, viewport_y, viewport_w, viewport_h)
     
     # Get player level for pricing
@@ -395,8 +423,38 @@ def draw(screen: pygame.Surface, gs) -> None:
     
     # Close hint (dark text like textbox)
     hint = price_font.render("Press ESC to close | Click item to purchase", True, (60, 60, 60))
-    hint_rect = hint.get_rect(center=(panel_w // 2, panel_h - 30))
+    hint_rect = hint.get_rect(center=(panel_w // 2, panel_h - 50))
     panel.blit(hint, hint_rect)
+    
+    # Draw navigation arrows (cycling enabled)
+    global _LEFT_ARROW_RECT, _RIGHT_ARROW_RECT
+    arrow_size = 48
+    arrow_y = panel_h - 45
+    arrow_tip_size = 16
+    arrow_color = (60, 60, 60)
+    arrow_hover_color = (100, 100, 100)
+    
+    # Left arrow (triangle pointing left)
+    left_arrow_x = 30
+    _LEFT_ARROW_RECT = pygame.Rect(left_arrow_x - arrow_size // 2, arrow_y - arrow_size // 2, arrow_size, arrow_size)
+    arrow_points = [
+        (left_arrow_x, arrow_y),
+        (left_arrow_x + arrow_tip_size, arrow_y - arrow_tip_size),
+        (left_arrow_x + arrow_tip_size, arrow_y + arrow_tip_size),
+    ]
+    draw_color = arrow_hover_color if _LEFT_ARROW_RECT.collidepoint(panel_mx, panel_my) else arrow_color
+    pygame.draw.polygon(panel, draw_color, arrow_points)
+    
+    # Right arrow (triangle pointing right)
+    right_arrow_x = panel_w - 30
+    _RIGHT_ARROW_RECT = pygame.Rect(right_arrow_x - arrow_size // 2, arrow_y - arrow_size // 2, arrow_size, arrow_size)
+    arrow_points = [
+        (right_arrow_x, arrow_y),
+        (right_arrow_x - arrow_tip_size, arrow_y - arrow_tip_size),
+        (right_arrow_x - arrow_tip_size, arrow_y + arrow_tip_size),
+    ]
+    draw_color = arrow_hover_color if _RIGHT_ARROW_RECT.collidepoint(panel_mx, panel_my) else arrow_color
+    pygame.draw.polygon(panel, draw_color, arrow_points)
     
     # Blit panel to screen
     screen.blit(panel, (panel_x, panel_y))
@@ -529,8 +587,9 @@ def _draw_purchase_selector(screen: pygame.Surface, gs, panel_x: int, panel_y: i
 
 def reset_scroll():
     """Reset scroll position (call when shop opens/closes)."""
-    global _SCROLL_Y
+    global _SCROLL_Y, _CURRENT_CATEGORY_INDEX
     _SCROLL_Y = 0
+    _CURRENT_CATEGORY_INDEX = 0  # Reset to first category (healing)
 
 def _can_afford(item_id: str, player_level: int, player_gold: int, player_silver: int, player_bronze: int) -> bool:
     """Check if player can afford an item."""
@@ -538,22 +597,67 @@ def _can_afford(item_id: str, player_level: int, player_gold: int, player_silver
 
 def handle_event(event, gs) -> bool:
     """Handle shop events. Returns True if event was handled."""
-    global _SCROLL_Y, _PURCHASE_QUANTITY, _PURCHASE_MAX_QUANTITY
+    global _SCROLL_Y, _PURCHASE_QUANTITY, _PURCHASE_MAX_QUANTITY, _CURRENT_CATEGORY_INDEX
     
     if not gs.shop_open:
         return False
     
+    # Keyboard navigation
+    if event.type == pygame.KEYDOWN:
+        if event.key == pygame.K_LEFT:
+            _CURRENT_CATEGORY_INDEX = (_CURRENT_CATEGORY_INDEX - 1) % len(item_categories.CATEGORIES)
+            _SCROLL_Y = 0
+            try:
+                from systems import audio as audio_sys
+                audio_sys.play_click(audio_sys.get_global_bank())
+            except:
+                pass
+            return True
+        elif event.key == pygame.K_RIGHT:
+            _CURRENT_CATEGORY_INDEX = (_CURRENT_CATEGORY_INDEX + 1) % len(item_categories.CATEGORIES)
+            _SCROLL_Y = 0
+            try:
+                from systems import audio as audio_sys
+                audio_sys.play_click(audio_sys.get_global_bank())
+            except:
+                pass
+            return True
+    
     if event.type == pygame.MOUSEBUTTONDOWN:
         if event.button == 1:  # Left click
-            # Check if clicked on an item
-            width, height = pygame.display.get_surface().get_size()
+            # Check if clicked on an item (use logical resolution)
+            import settings as S
+            width, height = S.LOGICAL_WIDTH, S.LOGICAL_HEIGHT
             panel_w, panel_h = 800, 600
             panel_x = (width - panel_w) // 2
             panel_y = (height - panel_h) // 2
             
-            mx, my = event.pos
+            mx, my = event.pos  # Already converted to logical coordinates in main.py
             panel_mx = mx - panel_x
             panel_my = my - panel_y
+            
+            # Check navigation arrows first (cycling enabled)
+            if _LEFT_ARROW_RECT and _LEFT_ARROW_RECT.collidepoint(panel_mx, panel_my):
+                # Cycle backwards (wrap around)
+                _CURRENT_CATEGORY_INDEX = (_CURRENT_CATEGORY_INDEX - 1) % len(item_categories.CATEGORIES)
+                _SCROLL_Y = 0  # Reset scroll when changing category
+                try:
+                    from systems import audio as audio_sys
+                    audio_sys.play_click(audio_sys.get_global_bank())
+                except:
+                    pass
+                return True
+            
+            if _RIGHT_ARROW_RECT and _RIGHT_ARROW_RECT.collidepoint(panel_mx, panel_my):
+                # Cycle forwards (wrap around)
+                _CURRENT_CATEGORY_INDEX = (_CURRENT_CATEGORY_INDEX + 1) % len(item_categories.CATEGORIES)
+                _SCROLL_Y = 0  # Reset scroll when changing category
+                try:
+                    from systems import audio as audio_sys
+                    audio_sys.play_click(audio_sys.get_global_bank())
+                except:
+                    pass
+                return True
             
             # Check if clicking on purchase selector UI
             if _PURCHASE_SELECTOR_ACTIVE:

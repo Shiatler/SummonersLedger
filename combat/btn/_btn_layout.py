@@ -13,7 +13,7 @@ _IMG_CACHE: dict[tuple[str, tuple[int, int]], pygame.Surface] = {}
 
 def rect_at(col: int, row: int, btn_size=BTN_SIZE, pad=PAD) -> pygame.Rect:
     """2x2 grid: (0,0)=battle, (1,0)=bag, (0,1)=party, (1,1)=run (bottom-right)."""
-    sw, sh = S.WIDTH, S.HEIGHT
+    sw, sh = S.LOGICAL_WIDTH, S.LOGICAL_HEIGHT
     base_x = sw - (btn_size[0] * 2 + pad * 3)
     base_y = sh - (btn_size[1] * 2 + pad * 2)
     x = base_x + col * (btn_size[0] + pad)

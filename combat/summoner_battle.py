@@ -95,7 +95,8 @@ def _load_swirl_animation() -> list[pygame.Surface]:
     base_dir = os.path.join("Assets", "Animations")
 
     # Keep VFX reasonable; huge alpha surfaces are expensive.
-    target_h = int(S.HEIGHT * 0.65)  # tune if needed (0.5–0.8 works well)
+    # Use logical height for virtual screen dimensions
+    target_h = int(S.LOGICAL_HEIGHT * 0.65)  # tune if needed (0.5–0.8 works well)
 
     for i in range(1, 43):
         fname = f"fx_4_ver1_{i:02}.png"
@@ -281,7 +282,8 @@ def enter(gs, **_):
     except Exception: pass
 
     setattr(gs, "mode", "SUMMONER_BATTLE")
-    sw, sh = S.WIDTH, S.HEIGHT
+    # Use logical resolution for virtual screen dimensions (not physical screen size)
+    sw, sh = S.LOGICAL_WIDTH, S.LOGICAL_HEIGHT
 
     # Music
     try:
@@ -474,20 +476,29 @@ def handle(events, gs, dt=None, **_):
 
 
 def draw(screen: pygame.Surface, gs, dt, **_):
-    # If we already switched modes this frame, do nothing.
-    if getattr(gs, "mode", None) != "SUMMONER_BATTLE":
-        return
-
-    # If the summoner intro UI was cleared during handoff, do nothing.
+    # CRITICAL: Draw background even after mode change for seamless transition
+    # This prevents black screen when transitioning to battle
     st = getattr(gs, "_summ_ui", None)
+    current_mode = getattr(gs, "mode", None)
+    
+    # If mode changed but we still have state, draw background one more time
+    transitioning = (current_mode == MODE_BATTLE and st is not None)
+    
+    if not transitioning and current_mode != "SUMMONER_BATTLE":
+        return
+    
     if st is None:
         return
 
-    # Background
+    # Always draw background (even during transition) to prevent black screen
     if st.get("bg"):
         screen.blit(st["bg"], (0, 0))
     else:
         screen.fill((0, 0, 0))
+    
+    # If we're transitioning, only draw background and return (don't draw sprites/UI)
+    if transitioning:
+        return
 
     # Ease function
     ease = lambda t: 1.0 - (1.0 - t) ** 3
@@ -564,8 +575,8 @@ def draw(screen: pygame.Surface, gs, dt, **_):
             fx = frames[idx]
 
             # Centers captured at enter() so the swirl plays exactly where summoners stood
-            axc, ayc = st.get("ally_swirl_center", (S.WIDTH//3, S.HEIGHT//2))
-            exc, eyc = st.get("enemy_swirl_center", (S.WIDTH*2//3, S.HEIGHT//2))
+            axc, ayc = st.get("ally_swirl_center", (S.LOGICAL_WIDTH//3, S.LOGICAL_HEIGHT//2))
+            exc, eyc = st.get("enemy_swirl_center", (S.LOGICAL_WIDTH*2//3, S.LOGICAL_HEIGHT//2))
 
             # Apply tunable nudges
             ally_center  = (axc + SWIRL_ALLY_OFFSET[0],  ayc + SWIRL_ALLY_OFFSET[1])

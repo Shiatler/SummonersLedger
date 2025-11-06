@@ -178,6 +178,12 @@ def save_game(gs, *, force: bool = False):
         "gold": int(getattr(gs, "gold", 0)),
         "silver": int(getattr(gs, "silver", 0)),
         "bronze": int(getattr(gs, "bronze", 0)),
+        
+        # 📚 Book of the Bound - discovered vessels (persistent across games)
+        "book_of_bound_discovered": list(getattr(gs, "book_of_bound_discovered", set())),
+        
+        # Archives (storage for vessels when party is full)
+        "archives": getattr(gs, "archives", []),
     }
 
     # --- dedupe identical snapshots ---
@@ -231,6 +237,19 @@ def load_game(gs, summoner_sprites: dict[str, object] | None = None):
         gs.gold = int(data.get("gold", 0))
         gs.silver = int(data.get("silver", 0))
         gs.bronze = int(data.get("bronze", 0))
+        
+        # 📚 Book of the Bound - discovered vessels (persistent across games)
+        discovered = data.get("book_of_bound_discovered", [])
+        if not isinstance(discovered, list):
+            discovered = []
+        # Convert to set for efficient lookup
+        gs.book_of_bound_discovered = set(discovered)
+        
+        # 📦 Archives - stored vessels (when party is full)
+        archives_data = data.get("archives", [])
+        if not isinstance(archives_data, list):
+            archives_data = []
+        gs.archives = archives_data
 
         # ----- Party tokens: rebuild surfaces from filenames -----
         names = data.get("party_slots_names", [None] * 6)

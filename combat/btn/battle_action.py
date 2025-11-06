@@ -254,8 +254,9 @@ def draw_popup(screen: pygame.Surface, gs):
     else:
         _SELECTED = 0
 
-    # Hover
-    mx, my = pygame.mouse.get_pos()
+    # Hover - convert to logical coordinates
+    from systems import coords
+    mx, my = coords.screen_to_logical(pygame.mouse.get_pos())
     hover_idx = -1
     for i, r in enumerate(rects):
         if r.collidepoint(mx, my):
