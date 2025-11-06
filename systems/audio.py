@@ -269,5 +269,14 @@ def get_global_bank():
     """Return a global AudioBank (loads once if missing)."""
     global _GLOBAL_BANK
     if _GLOBAL_BANK is None:
+        # Check if bank was already loaded in main.py (stored in settings)
+        try:
+            import settings as S
+            if hasattr(S, 'AUDIO_BANK') and S.AUDIO_BANK is not None:
+                _GLOBAL_BANK = S.AUDIO_BANK
+                return _GLOBAL_BANK
+        except Exception:
+            pass
+        # Fallback: load it ourselves if not available
         _GLOBAL_BANK = load_all()
     return _GLOBAL_BANK

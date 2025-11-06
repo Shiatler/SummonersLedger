@@ -14,6 +14,14 @@ from systems import audio as audio_sys
 from systems.heal import heal_to_full, heal_to_half
 from combat.btn.bag_action import _decrement_inventory as decrement_inventory
 
+# Pre-load global bank at module level to avoid first-time lag
+_AUDIO_BANK_CACHE = None
+def _get_cached_bank():
+    global _AUDIO_BANK_CACHE
+    if _AUDIO_BANK_CACHE is None:
+        _AUDIO_BANK_CACHE = audio_sys.get_global_bank()
+    return _AUDIO_BANK_CACHE
+
 # ---------- Font helpers ----------
 _DH_FONT_PATH = None
 
@@ -280,6 +288,13 @@ def _stop_campfire_sound(st):
 # ---------- Screen lifecycle ----------
 def enter(gs, rest_type="long", **_):
     """Initialize the rest screen state. rest_type should be 'long' or 'short'."""
+    # Pre-load audio bank synchronously to avoid lag when playing sounds
+    # This ensures it's loaded before first sound plays
+    try:
+        _get_cached_bank()
+    except Exception:
+        pass
+    
     if not hasattr(gs, "_rest_state"):
         gs._rest_state = {}
     
@@ -430,7 +445,7 @@ def handle(events, gs, dt: float, **_):
                     sfx = _load_longrest_sfx()
                     if sfx:
                         st["longrest_channel"] = sfx.play()
-                    audio_sys.play_click(audio_sys.get_global_bank())
+                    audio_sys.play_click(_get_cached_bank())
             
             elif event.type == pygame.MOUSEBUTTONDOWN and event.button == 1:
                 # Start fade out (fade starts during resting phase, then transitions to black)

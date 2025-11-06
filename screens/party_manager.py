@@ -167,8 +167,16 @@ def _roll_d(sides: int) -> int:
 # Optional: tie into your audio system if present
 try:
     from systems import audio as audio_sys
+    # Pre-load global bank eagerly at module import to avoid first-time lag
+    _AUDIO_BANK_CACHE = None
+    def _get_cached_bank():
+        global _AUDIO_BANK_CACHE
+        if _AUDIO_BANK_CACHE is None:
+            _AUDIO_BANK_CACHE = audio_sys.get_global_bank()
+        return _AUDIO_BANK_CACHE
 except Exception:  # graceful fallback
     audio_sys = None
+    _get_cached_bank = None
 
 # ---------------- Modal open/close ----------------
 _OPEN = False
@@ -187,7 +195,10 @@ def open():
         return
     _OPEN = True
     _FADE_START_MS = pygame.time.get_ticks()
-    _play_open()
+    # Sound will be played in draw() after first frame to avoid blocking
+    # Reset any stale state
+    global _SELECTED
+    _SELECTED = None
 
 def open_picker(on_pick):
     """Open Party Manager in 'picker' mode; left click returns index via callback."""
@@ -199,11 +210,18 @@ def close():
     global _OPEN, _FADE_START_MS, _SELECTED, _ON_PICK
     if not _OPEN:
         return
+    # Check if we're in picker mode before clearing
+    was_picker_mode = (_ON_PICK is not None)
     _OPEN = False
     _FADE_START_MS = None
     _SELECTED = None
     _ON_PICK = None
-    _play_open()
+    # Skip sound when closing picker mode to avoid lag
+    if not was_picker_mode:  # Only play sound if not in picker mode
+        try:
+            _play_open()
+        except Exception:
+            pass
 
 
 def toggle():
@@ -249,6 +267,9 @@ def _scroll_rect(sw: int, sh: int) -> pygame.Rect:
 
 # ---------------- Data helpers ----------------
 _ICON_CACHE: dict[tuple[str, int], pygame.Surface | None] = {}
+_FONT_CACHE: dict[tuple[int, bool], pygame.font.Font] = {}
+_DIM_SURFACE: pygame.Surface | None = None
+_DIM_SIZE: tuple[int, int] | None = None
 
 def _load_token_icon(fname: str | None, size: int) -> pygame.Surface | None:
     if not fname:
@@ -396,17 +417,26 @@ def start_use_mode(mode: dict):
 # ---------------- Audio helpers ----------------
 def _play_click():
     try:
-        if audio_sys:
-            audio_sys.play_click(audio_sys.get_global_bank())
+        if audio_sys and _get_cached_bank:
+            bank = _get_cached_bank()
+            if bank:
+                audio_sys.play_click(bank)
     except Exception:
         pass
 
 def _play_open():
+    """Play open sound effect - optimized to avoid blocking."""
     try:
-        if audio_sys:
-            audio_sys.play_sfx(audio_sys.get_global_bank(), "scrollopen")
+        if audio_sys and _get_cached_bank:
+            bank = _get_cached_bank()
+            if bank:
+                # Play sound asynchronously without blocking
+                audio_sys.play_sfx(bank, "scrollopen")
     except Exception:
-        _play_click()
+        try:
+            _play_click()
+        except Exception:
+            pass  # Silently fail if sound can't play
 
 # ---------------- Interaction state ----------------
 _ITEM_RECTS: list[pygame.Rect] = []
@@ -684,6 +714,16 @@ def handle_event(e, gs) -> bool:
                         close()
                         return True
 
+                    # --- If we're in picker mode, call the callback and close ---
+                    if _ON_PICK is not None:
+                        try:
+                            _ON_PICK(real_idx)
+                        except Exception as e:
+                            print(f"⚠️ Picker callback error: {e}")
+                        close()
+                        _play_click()
+                        return True
+                    
                     # --- Default behavior: select or swap rows ---
                     if _SELECTED is None:
                         _SELECTED = real_idx
@@ -707,9 +747,23 @@ def handle_event(e, gs) -> bool:
 
 # ---------------- Drawing ----------------
 def draw(screen: pygame.Surface, gs, dt: float = 0.016):
-    global _ITEM_RECTS, _ITEM_INDEXES, _PANEL_RECT
+    global _ITEM_RECTS, _ITEM_INDEXES, _PANEL_RECT, _FADE_START_MS
     # Draw heal textbox even if party manager is closed (it's modal)
     _draw_heal_textbox(screen, dt)
+    
+    # Handle deferred sound playing (only if open and sound hasn't played yet)
+    # Skip sound for picker mode to reduce lag
+    if _OPEN and _FADE_START_MS is not None and _ON_PICK is None:
+        elapsed = pygame.time.get_ticks() - _FADE_START_MS
+        if elapsed > 16:  # Play sound after first frame (~16ms at 60fps)
+            try:
+                _play_open()
+            except Exception:
+                pass
+            _FADE_START_MS = None  # Mark as played
+    elif _OPEN and _FADE_START_MS is not None and _ON_PICK is not None:
+        # Picker mode - skip sound to avoid lag
+        _FADE_START_MS = None
     
     if not _OPEN:
         return
@@ -720,9 +774,13 @@ def draw(screen: pygame.Surface, gs, dt: float = 0.016):
     sw, sh = screen.get_size()
     layer = pygame.Surface((sw, sh), pygame.SRCALPHA)
 
-    dim = pygame.Surface((sw, sh), pygame.SRCALPHA)
-    dim.fill((0, 0, 0, 140))
-    layer.blit(dim, (0, 0))
+    # Cache dim surface to avoid recreating every frame
+    global _DIM_SURFACE, _DIM_SIZE
+    if _DIM_SURFACE is None or _DIM_SIZE != (sw, sh):
+        _DIM_SURFACE = pygame.Surface((sw, sh), pygame.SRCALPHA)
+        _DIM_SURFACE.fill((0, 0, 0, 140))
+        _DIM_SIZE = (sw, sh)
+    layer.blit(_DIM_SURFACE, (0, 0))
 
     sr = _scroll_rect(sw, sh)
     _PANEL_RECT = sr
@@ -746,8 +804,19 @@ def draw(screen: pygame.Surface, gs, dt: float = 0.016):
     icon  = max(48, int(row_h * 0.90))
     x_shift = int(inner.w * 0.08)
 
-    name_f  = pygame.font.SysFont("georgia", max(18, int(sr.h * 0.035)), bold=True)
-    small_f = pygame.font.SysFont("georgia", max(14, int(sr.h * 0.028)))
+    # Cache fonts to avoid recreating every frame
+    name_size = max(18, int(sr.h * 0.035))
+    small_size = max(14, int(sr.h * 0.028))
+    name_key = (name_size, True)
+    small_key = (small_size, False)
+    
+    if name_key not in _FONT_CACHE:
+        _FONT_CACHE[name_key] = pygame.font.SysFont("georgia", name_size, bold=True)
+    if small_key not in _FONT_CACHE:
+        _FONT_CACHE[small_key] = pygame.font.SysFont("georgia", small_size)
+    
+    name_f = _FONT_CACHE[name_key]
+    small_f = _FONT_CACHE[small_key]
     ink      = (48, 34, 22)
     hp_back  = (62, 28, 24)
     hp_fill  = (40, 160, 84)
