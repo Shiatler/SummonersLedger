@@ -4,8 +4,8 @@
   "next_event_at": 120.0,
   "player_gender": "male",
   "party_slots_names": [
-    "FTokenCleric3.png",
-    "StarterTokenBarbarian5.png",
+    "MTokenMonk2.png",
+    "StarterTokenBarbarian3.png",
     null,
     null,
     "RTokenRanger1.png",
@@ -13,60 +13,60 @@
   ],
   "party_vessel_stats": [
     {
-      "name": "FVesselCleric3.png",
-      "class_name": "Cleric",
+      "name": "MVesselMonk2.png",
+      "class_name": "Monk",
       "level": 1,
       "abilities": {
-        "STR": 14,
+        "STR": 12,
         "DEX": 14,
-        "CON": 15,
-        "INT": 10,
-        "WIS": 17,
-        "CHA": 7
+        "CON": 13,
+        "INT": 7,
+        "WIS": 14,
+        "CHA": 5
       },
       "mods": {
-        "STR": 2,
+        "STR": 1,
         "DEX": 2,
-        "CON": 2,
-        "INT": 0,
-        "WIS": 3,
-        "CHA": -2
+        "CON": 1,
+        "INT": -2,
+        "WIS": 2,
+        "CHA": -3
       },
       "prof": 2,
-      "ac": 14,
-      "hp": 10,
+      "ac": 16,
+      "hp": 9,
       "initiative": 2,
-      "attack_stat": "WIS",
-      "attack_bonus": 5,
+      "attack_stat": "DEX",
+      "attack_bonus": 4,
       "notes": "Generated from asset name",
-      "current_hp": 10
+      "current_hp": 9
     },
     {
-      "name": "StarterBarbarian5",
+      "name": "StarterBarbarian3",
       "class_name": "Barbarian",
       "level": 1,
       "abilities": {
-        "STR": 16,
+        "STR": 18,
         "DEX": 13,
         "CON": 14,
-        "INT": 11,
+        "INT": 10,
         "WIS": 8,
-        "CHA": 7
+        "CHA": 8
       },
       "mods": {
-        "STR": 3,
+        "STR": 4,
         "DEX": 1,
         "CON": 2,
         "INT": 0,
         "WIS": -1,
-        "CHA": -2
+        "CHA": -1
       },
       "prof": 2,
       "ac": 15,
       "hp": 14,
       "initiative": 1,
       "attack_stat": "STR",
-      "attack_bonus": 5,
+      "attack_bonus": 6,
       "notes": "Generated from asset name",
       "current_hp": 14
     },
@@ -77,56 +77,56 @@
       "class_name": "Ranger",
       "level": 1,
       "abilities": {
-        "STR": 10,
-        "DEX": 15,
-        "CON": 11,
-        "INT": 10,
-        "WIS": 13,
-        "CHA": 8
+        "STR": 14,
+        "DEX": 17,
+        "CON": 15,
+        "INT": 13,
+        "WIS": 16,
+        "CHA": 13
       },
       "mods": {
-        "STR": 0,
-        "DEX": 2,
-        "CON": 0,
-        "INT": 0,
-        "WIS": 1,
-        "CHA": -1
+        "STR": 2,
+        "DEX": 3,
+        "CON": 2,
+        "INT": 1,
+        "WIS": 3,
+        "CHA": 1
       },
       "prof": 2,
-      "ac": 15,
-      "hp": 10,
-      "initiative": 2,
+      "ac": 16,
+      "hp": 12,
+      "initiative": 3,
       "attack_stat": "DEX",
-      "attack_bonus": 4,
+      "attack_bonus": 5,
       "notes": "Generated from asset name",
-      "current_hp": 10
+      "current_hp": 12
     },
     {
       "name": "FTokenBarbarian1.png",
       "class_name": "FTokenBarbarian",
       "level": 1,
       "abilities": {
-        "STR": 13,
-        "DEX": 12,
-        "CON": 12,
-        "INT": 11,
-        "WIS": 9,
-        "CHA": 8
+        "STR": 15,
+        "DEX": 14,
+        "CON": 13,
+        "INT": 13,
+        "WIS": 11,
+        "CHA": 9
       },
       "mods": {
-        "STR": 1,
-        "DEX": 1,
+        "STR": 2,
+        "DEX": 2,
         "CON": 1,
-        "INT": 0,
-        "WIS": -1,
+        "INT": 1,
+        "WIS": 0,
         "CHA": -1
       },
       "prof": 2,
-      "ac": 12,
+      "ac": 13,
       "hp": 9,
-      "initiative": 1,
+      "initiative": 2,
       "attack_stat": "STR",
-      "attack_bonus": 3,
+      "attack_bonus": 4,
       "notes": "Generated from asset name",
       "current_hp": 9
     }
@@ -149,7 +149,24 @@
   "silver": 0,
   "bronze": 0,
   "book_of_bound_discovered": [
-    "StarterBarbarian5"
+    "StarterBarbarian3"
   ],
-  "archives": []
+  "archives": [],
+  "active_buffs": [
+    {
+      "tier": "Rare",
+      "id": 3,
+      "name": "Rare3",
+      "image_path": "Assets\\Blessings\\Rare3.png"
+    }
+  ],
+  "buffs_history": [
+    {
+      "tier": "Rare",
+      "id": 3,
+      "name": "Rare3",
+      "image_path": "Assets\\Blessings\\Rare3.png"
+    }
+  ],
+  "first_overworld_blessing_given": true
 }
