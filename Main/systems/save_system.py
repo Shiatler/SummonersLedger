@@ -184,6 +184,11 @@ def save_game(gs, *, force: bool = False):
         
         # Archives (storage for vessels when party is full)
         "archives": getattr(gs, "archives", []),
+        
+        # Buffs system
+        "active_buffs": getattr(gs, "active_buffs", []),
+        "buffs_history": getattr(gs, "buffs_history", []),
+        "first_overworld_blessing_given": getattr(gs, "first_overworld_blessing_given", False),
     }
 
     # --- dedupe identical snapshots ---
@@ -250,6 +255,20 @@ def load_game(gs, summoner_sprites: dict[str, object] | None = None):
         if not isinstance(archives_data, list):
             archives_data = []
         gs.archives = archives_data
+        
+        # ✨ Buffs system
+        active_buffs = data.get("active_buffs", [])
+        if not isinstance(active_buffs, list):
+            active_buffs = []
+        gs.active_buffs = active_buffs
+        
+        buffs_history = data.get("buffs_history", [])
+        if not isinstance(buffs_history, list):
+            buffs_history = []
+        gs.buffs_history = buffs_history
+        
+        # First overworld blessing flag
+        gs.first_overworld_blessing_given = bool(data.get("first_overworld_blessing_given", False))
 
         # ----- Party tokens: rebuild surfaces from filenames -----
         names = data.get("party_slots_names", [None] * 6)

@@ -912,11 +912,27 @@ def _exit_battle(gs):
     trigger_animation = False
     start_score = 0
     target_score = 0
+    was_summoner_battle = False
     
     if st and st.get("_trigger_score_animation", False):
         trigger_animation = True
         start_score = st.get("_score_animation_start", 0)
         target_score = st.get("_score_animation_target", 0)
+        was_summoner_battle = True
+    
+    # Check for buff selection trigger (100% for testing, normally 10%)
+    if was_summoner_battle:
+        # 100% chance for testing (change to 0.1 for 10% later)
+        trigger_buff = True  # random.random() < 1.0  # 100% for testing
+        if trigger_buff:
+            # Set flag to start buff popup in overworld
+            gs.pending_buff_selection = True
+            # Store score animation data but don't start it yet (will start after buff selection)
+            if trigger_animation:
+                gs.pending_score_animation = True
+                gs.pending_score_start = start_score
+                gs.pending_score_target = target_score
+                trigger_animation = False  # Don't start animation now
     
     try:
         pygame.mixer.music.fadeout(300)
@@ -968,7 +984,8 @@ def _exit_battle(gs):
         delattr(gs, "_ending_battle")
     
     # Trigger score animation if this was a summoner battle victory
-    if trigger_animation:
+    # BUT only if buff selection is NOT pending (otherwise it will start after buff selection)
+    if trigger_animation and not getattr(gs, "pending_buff_selection", False):
         from systems import score_display
         score_display.start_score_animation(gs, start_score, target_score)
 

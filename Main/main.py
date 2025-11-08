@@ -18,7 +18,7 @@ from game_state import GameState
 from world import assets, actors, world, procgen
 from systems import save_system as saves, theme, ui, audio, party_ui
 from systems import score_display, hud_buttons, currency_display, shop
-from systems import rest_popup, bottom_right_hud, left_hud
+from systems import rest_popup, bottom_right_hud, left_hud, buff_popup
 from systems import coords  # Coordinate conversion utilities
 from bootstrap.default_party import add_default_on_new_game   # ← add this
 from bootstrap.default_inventory import add_default_inventory  # ← NEW
@@ -469,6 +469,9 @@ def start_new_game(gs):
     gs.gold = 10
     gs.silver = 0
     gs.bronze = 0
+    
+    # Reset first overworld blessing flag for new run
+    gs.first_overworld_blessing_given = False
 
 
 def continue_game(gs):
@@ -1293,6 +1296,21 @@ while running:
 
     # ===================== GAMEPLAY ========================
     elif mode == S.MODE_GAME:
+        # ===== First overworld blessing check =====
+        # Check if we should give a blessing when first entering overworld this run
+        # Only check if buff popup is not already active and no blessing is pending
+        if (not getattr(gs, "first_overworld_blessing_given", False) 
+            and not buff_popup.is_active() 
+            and not getattr(gs, "pending_buff_selection", False)):
+            # 100% chance for testing (change to 0.1 for 10% later)
+            import random
+            trigger_buff = True  # random.random() < 1.0  # 100% for testing
+            if trigger_buff:
+                # Set flag to start buff popup in overworld
+                gs.pending_buff_selection = True
+                gs.first_overworld_blessing_given = True
+                print(f"🎁 First overworld blessing triggered!")
+        
         # ===== Death gate: only when we actually have a party and none are alive =====
         stats = getattr(gs, "party_vessel_stats", None) or []
         has_any_member = any(isinstance(st, dict) for st in stats)
@@ -1425,12 +1443,32 @@ while running:
             if not was_ledger_open and ledger.is_open():
                 just_opened_ledger = True
 
-        # --- Route events to modals (priority: Bag → Party Manager → Ledger) ---
+        # --- Check for pending buff selection and start popup ---
+        if getattr(gs, "pending_buff_selection", False) and not buff_popup.is_active():
+            gs.pending_buff_selection = False
+            # Store AUDIO reference in gs for music restart
+            if not hasattr(gs, "_audio_bank"):
+                gs._audio_bank = AUDIO
+            buff_popup.start_buff_selection(gs)
+        
+        # --- Update buff popup animation ---
+        if buff_popup.is_active():
+            buff_popup.update(dt, gs)
+        
+        # --- Route events to modals (priority: Buff Popup → Bag → Party Manager → Ledger) ---
         for e in events:
             # Skip mouse clicks that were HUD button clicks (prevent immediate close)
             if e.type == pygame.MOUSEBUTTONDOWN and e.button == 1:
                 if e.pos in hud_button_click_positions:
                     continue  # Skip this event, already handled by HUD button
+            
+            # Buff popup has highest priority (blocks all other input)
+            if buff_popup.is_active():
+                if buff_popup.handle_event(e, gs):
+                    continue
+                # Block all other input while buff popup is active
+                continue
+            
             # Ignore the exact key that toggled a modal this frame to avoid double-handling
             if bag_ui.is_open():
                 if not (just_toggled_bag and e.type == pygame.KEYDOWN and e.key == pygame.K_i):
@@ -1485,6 +1523,7 @@ while running:
                 # If any modal was open at frame start OR is open now, don't enter Pause
                 if (
                     modal_open_at_frame_start
+                    or buff_popup.is_active()
                     or bag_ui.is_open()
                     or party_manager.is_open()
                     or ledger.is_open()
@@ -1580,14 +1619,14 @@ while running:
                 if getattr(gs, "_shop_music_playing", False):
                     # Shop music ended, restart it (should loop but just in case)
                     audio.play_music(AUDIO, "shopm1", loop=True, fade_ms=0)
-                elif not getattr(gs, "_waiting_for_shop_music", False):
-                    # Normal overworld music loop (only if not waiting for shop music)
+                elif not getattr(gs, "_waiting_for_shop_music", False) and not buff_popup.is_active():
+                    # Normal overworld music loop (only if not waiting for shop music and buff popup is not active)
                     nxt = audio.pick_next_track(AUDIO, getattr(gs, "last_overworld_track", None), prefix="music")
                     if nxt:
                         audio.play_music(AUDIO, nxt, loop=False)
                         gs.last_overworld_track = nxt
 
-        if not gs.overworld_music_started:
+        if not gs.overworld_music_started and not buff_popup.is_active():
             nxt = audio.pick_next_track(AUDIO, getattr(gs, "last_overworld_track", None), prefix="music")
             if nxt:
                 audio.play_music(AUDIO, nxt, loop=False)
@@ -1626,7 +1665,7 @@ while running:
             mist_frame = MIST_ANIM.current()
 
         # --- Movement & walking SFX (blocked by any modal) ---
-        any_modal_open = bag_ui.is_open() or party_manager.is_open() or ledger.is_open() or gs.shop_open or currency_display.is_open() or rest_popup.is_open()
+        any_modal_open = buff_popup.is_active() or bag_ui.is_open() or party_manager.is_open() or ledger.is_open() or gs.shop_open or currency_display.is_open() or rest_popup.is_open()
         keys = pygame.key.get_pressed()
         walking_forward = (keys[pygame.K_w] or keys[pygame.K_s]) and not any_modal_open
 
@@ -1729,6 +1768,8 @@ while running:
             currency_display.draw(virtual_screen, gs)
         if rest_popup.is_open():
             rest_popup.draw(virtual_screen, gs)
+        if buff_popup.is_active():
+            buff_popup.draw(virtual_screen, dt)
 
         update_and_draw_fade(virtual_screen, dt, gs)
         blit_virtual_to_screen(virtual_screen, screen)

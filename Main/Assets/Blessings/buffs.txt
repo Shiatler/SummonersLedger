@@ -1,0 +1,44 @@
+Common
+1x stat to 1 vessel (max of 20) - Minor echo - Common1
+1d4 hp to 1 vessel (1 time roll) - Blood Vial - Common2
++2 PP to 1 move - Swift strike - Common3
++5 scroll of mending - Healer’s Satchel - Common4
++5 scroll of command - Binder’s Supply - Common5
++1d6 XP to 1 Vessel - Memory Shard - Common6
++2 Scrolls of Sealing - Binding pouch - Common7
++2 Scrolls of Healing - Healing pouch - Common8
++1 permanent damage to attacks for 1 Vessel - Sharpened knife - Common9
+
+Rare
+-1d2 dmg from enemy attacks (1 time roll) - Ward of Resistance - Rare1
++5 Scrolls of Subjugation - Pactbinder’s Bundle - Rare2
++1 to all stat rolls for the next Vessel you capture - Echo Infusion - Rare3
++5 pp to 1 move - Focused Spirit - Rare4
++2 random stats to 1 random Vessel - Unstable Echo - Rare5
+
+Epic
+1x AC to 1 vessel Sigil of Protection - Epic1
+1d10 hp to 1 vessel Elixir of Endurance - Epic2
+1d4 hp to all vessels Shared Vitality - Epic3
++10 pp to 1 move Arcane Overflow - Epic4
+ 
+Legendary
+1x AC to all vessels - Ward of the Eternal Guard - Legendary1
+1x stat to all vessels - Grand Resonance - Legendary2
+1d20 hp to 1 vessel - Vital Convergence - Legendary3
++1 AC and +1d10 HP to 1 vessel - Guardian’s Boon - Legendary4
++1d4 healing each round (regeneration aura) - Blessing of Restoration - Legendary5
+1x Scroll of eternity - Scroll of eternity
+
+DEMON PACT
+Damage reduction 1d6 for entire party (permanent roll) - Hell-Forged Hide - DemonPact1
+First death each battle restores Vessel to 50% HP once per run - Infernal Rebirth - DemonPact2
++1d20 HP to all Vessels - Demonheart Surge - DemonPact3
++1 additional Vessel slot in your active party - Pact of the Legion - DemonPact4
+
+Curses
++1 to one stat of choice / –1 to another stat of choice - Scream of Terror - Curse1
++2 to one stat of choice / –1 to another random stat - Haunting of Flesh - Curse2
++1 to all rolls / -1d8 HP for every vessel - Bleeding Moon - Curse3
++1 random stat / -1 stat of choice - The Hollow’s Embrace - Curse4
++2 to one stat / –1d12 HP permanently - Dirge of the Dead - Curse5

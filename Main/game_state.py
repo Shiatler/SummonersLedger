@@ -55,3 +55,8 @@ class GameState:
     # party / HUD
     player_token: object | None = None           # small face portrait (pygame.Surface)
     party_slots: list = field(default_factory=lambda: [None] * 6)  # 6 slots for vessel tokens
+    
+    # buffs system
+    active_buffs: list = field(default_factory=list)  # List of active buffs
+    buffs_history: list = field(default_factory=list)  # Track all buffs received
+    first_overworld_blessing_given: bool = False  # Track if first overworld blessing was given this run
