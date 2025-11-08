@@ -1769,7 +1769,7 @@ while running:
         if rest_popup.is_open():
             rest_popup.draw(virtual_screen, gs)
         if buff_popup.is_active():
-            buff_popup.draw(virtual_screen, dt)
+            buff_popup.draw(virtual_screen, dt, gs)
 
         update_and_draw_fade(virtual_screen, dt, gs)
         blit_virtual_to_screen(virtual_screen, screen)

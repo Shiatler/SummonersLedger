@@ -101,14 +101,24 @@ def _first_filled_slot_index(gs) -> int:
     return 0
 
 def _battle_start_slot(gs) -> int:
-    """Prefer slot 0; if it’s empty, fall back to first filled slot."""
+    """Respect party_active_idx if set; otherwise prefer slot 0; if it's empty, fall back to first filled slot."""
     names = getattr(gs, "party_slots_names", None) or [None]*6
+    
+    # First, check if party_active_idx is set and valid
+    active_idx = getattr(gs, "party_active_idx", None)
+    if active_idx is not None and isinstance(active_idx, int):
+        if 0 <= active_idx < len(names) and names[active_idx]:
+            return active_idx
+    
+    # Fall back to slot 0 if it has a vessel
     if names and names[0]:
         return 0
+    
+    # Finally, fall back to first filled slot
     return _first_filled_slot_index(gs)
 
 def _ensure_active_slot(gs):
-    # Always force combat to start with slot #1 (index 0) if available
+    # Set combat active slot (respects party_active_idx, falls back to slot 0 or first filled)
     if not hasattr(gs, "combat_active_idx"):
         gs.combat_active_idx = _battle_start_slot(gs)
 
@@ -133,6 +143,7 @@ def _dismiss_result(st: dict, *, allow_exit: bool = True):
     if not res:
         return
     exit_on_close = bool(res.get("exit_on_close")) if allow_exit else False
+    title = res.get("title", "Unknown")
     st["result"] = None
     if exit_on_close:
         st["pending_exit"] = True
@@ -143,11 +154,32 @@ def _auto_dismiss_result_if_ready(st: dict):
     res = st.get("result")
     if not res:
         return
-    if res.get("auto_ms", 0) > 0 and res.get("auto_ready", False):
+    auto_ms = res.get("auto_ms", 0)
+    
+    # CRITICAL PROTECTION: Never auto-dismiss Echo Infusion or manual-dismiss screens
+    is_echo_infusion = res.get("is_echo_infusion", False)
+    must_manual_dismiss = res.get("_must_manual_dismiss", False)
+    if is_echo_infusion or must_manual_dismiss:
+        # Force it to stay as manual-dismiss screen - ABSOLUTELY NEVER auto-dismiss
+        res["auto_ms"] = 0
+        res["auto_ready"] = False
+        # Double-check: even if auto_ready was somehow set, force it back
+        if res.get("auto_ready", False):
+            res["auto_ready"] = False
+        return  # NEVER auto-dismiss these screens - return immediately
+    
+    # CRITICAL: Only auto-dismiss if auto_ms > 0 AND auto_ready is True
+    # If auto_ms == 0 (or any falsy value), NEVER auto-dismiss - requires manual dismissal
+    if auto_ms > 0 and res.get("auto_ready", False):
         exit_on_close = bool(res.get("exit_on_close"))
+        title = res.get("title", "Unknown")
         st["result"] = None
+        print(f"🔔 Auto-dismissing result screen: {title} (auto_ms={auto_ms})")
         if exit_on_close:
             st["pending_exit"] = True
+    elif auto_ms == 0:
+        # Explicitly ensure auto_ready is False for manual-dismiss screens
+        res["auto_ready"] = False
 
 # ---------------- SFX helpers ----------------
 def _load_sfx(path: str):
@@ -596,6 +628,11 @@ def enter(gs, audio_bank=None, **_):
     names = getattr(gs, "party_slots_names", None) or [None]*6
     idx = min(max(0, int(gs.combat_active_idx)), len(names)-1)
     ally_token_name = names[idx]
+    
+    # Reset Infernal Rebirth battle flag for new battle (but keep run flag)
+    st = getattr(gs, "_wild", {})
+    if st:
+        st["infernal_rebirth_used_this_battle"] = False
 
     ally_full  = _ally_sprite_from_token_name(ally_token_name) or pygame.Surface(S.PLAYER_SIZE, pygame.SRCALPHA)
     # Use token name for sprite loading, fallback to encounter_sprite or encounter_name (for backwards compatibility)
@@ -689,6 +726,7 @@ def enter(gs, audio_bank=None, **_):
         "swirl_frames": _load_swirl_frames(),
         "swap_playing": False,
         "swap_t": 0.0,
+        "dead_vessel_slot": None,  # Track which vessel died for Infernal Rebirth
         "swap_total": 0.0,
         "swap_frame": 0,
         "ally_img_next": None,
@@ -712,6 +750,7 @@ def enter(gs, audio_bank=None, **_):
         "enemy_fade_dur": ENEMY_FADE_SEC,
         "caught_sfx": _load_sfx(CAUGHT_SFX),
         "pending_result_payload": None,
+        "pending_echo_infusion_message": None,
         "enemy_defeated": False,
 
         "last_enemy_hp": int(cur_hp),
@@ -768,6 +807,10 @@ def _show_result_screen(st: dict, title: str, subtitle: str, *,
         "auto_ready": False,
         "lock_input": bool(lock_input),
     }
+    # If auto_dismiss_ms is 0, ensure auto_ready stays False to prevent any auto-dismissal
+    if auto_dismiss_ms == 0:
+        st["result"]["auto_ready"] = False
+        st["result"]["auto_ms"] = 0
 
 def _get_dh_font(size: int, bold: bool = False) -> pygame.font.Font:
     """Load DH font if available, fallback to system font."""
@@ -862,8 +905,24 @@ def _draw_result_screen(screen: pygame.Surface, st: dict, dt: float):
             screen.blit(prompt, (rect.right - prompt.get_width() - 20, rect.bottom - prompt.get_height() - 12))
 
     auto_ms = res.get("auto_ms", 0)
-    if auto_ms > 0 and (res["t"] * 1000.0) >= auto_ms:
-        res["auto_ready"] = True
+    
+    # CRITICAL PROTECTION: Check for Echo Infusion or manual-dismiss screens FIRST
+    is_echo_infusion = res.get("is_echo_infusion", False)
+    must_manual_dismiss = res.get("_must_manual_dismiss", False)
+    if is_echo_infusion or must_manual_dismiss:
+        # ABSOLUTELY NEVER set auto_ready for these screens - they must be manually dismissed
+        res["auto_ms"] = 0
+        res["auto_ready"] = False
+    else:
+        # CRITICAL: Only set auto_ready to True if auto_ms > 0 AND time has elapsed
+        # If auto_ms is 0, this is a manual-dismiss screen and auto_ready MUST stay False
+        if auto_ms > 0 and (res["t"] * 1000.0) >= auto_ms:
+            res["auto_ready"] = True
+        else:
+            # For manual-dismiss screens (auto_ms == 0), ensure auto_ready is ALWAYS False
+            # This prevents any accidental auto-dismissal
+            if auto_ms == 0:
+                res["auto_ready"] = False
 
 def _resolve_capture_after_popup(gs):
     st = getattr(gs, "_wild", None)
@@ -897,17 +956,54 @@ def _resolve_capture_after_popup(gs):
         # _add_captured_to_party expects vessel asset names (FVesselBarbarian1.png)
         # and will convert them to token names internally
         if vessel_png and stats:
+            # Apply next capture stat bonus if active (before adding to party)
+            next_capture_bonus_applied = False
+            modified_stats = []
+            if hasattr(gs, "next_capture_stat_bonus") and gs.next_capture_stat_bonus > 0:
+                try:
+                    from systems import buff_applicator
+                    success, modified_stats = buff_applicator.apply_next_capture_stat_bonus(gs, stats)
+                    if success:
+                        next_capture_bonus_applied = True
+                        print(f"✨ Applied next capture stat bonus to captured vessel")
+                except Exception as e:
+                    print(f"⚠️ Failed to apply next capture stat bonus: {e}")
+            
             # Try to add to party first
+            vessel_idx = None
             if _add_captured_to_party(gs, vessel_png, stats):
-                # Successfully added to party
-                pass
+                # Successfully added to party - find the vessel index
+                for i in range(6):
+                    if getattr(gs, "party_slots_names", None) and i < len(gs.party_slots_names):
+                        if gs.party_slots_names[i] and vessel_to_token(vessel_png) == gs.party_slots_names[i]:
+                            vessel_idx = i
+                            break
+                
+                # Store Echo Infusion message to show after "Vessel Caught!" message
+                if next_capture_bonus_applied and modified_stats:
+                    from systems.name_generator import generate_vessel_name
+                    vessel_name = generate_vessel_name(vessel_png)
+                    stats_text = ", ".join([f"{stat} +1" for stat in modified_stats])
+                    message = f"{vessel_name} gained +1 to all stats: {stats_text}\n\nThe blessing is gone."
+                    # Store to show after capture message
+                    st["pending_echo_infusion_message"] = ("Echo Infusion!", message)
             else:
                 # Party is full - add to archives instead
                 try:
                     from screens.archives import add_vessel_to_archives
                     if add_vessel_to_archives(gs, vessel_png, stats):
-                        # Show message that vessel was sent to archives
-                        _show_result_screen(st, "Sent to Archives!", "Your party is full. Vessel stored in The Archives.", kind="success", auto_dismiss_ms=2000)
+                        # Show archive message first, then Echo Infusion message after
+                        if next_capture_bonus_applied and modified_stats:
+                            from systems.name_generator import generate_vessel_name
+                            vessel_name = generate_vessel_name(vessel_png)
+                            stats_text = ", ".join([f"{stat} +1" for stat in modified_stats])
+                            message = f"{vessel_name} gained +1 to all stats: {stats_text}\n\nThe blessing is gone.\n\n(Vessel sent to Archives - party full)"
+                            # Show archive message first (requires click), then Echo Infusion after
+                            _show_result_screen(st, "Sent to Archives!", "Your party is full. Vessel stored in The Archives.", kind="success", auto_dismiss_ms=0)
+                            # Store Echo Infusion to show after archive message is dismissed
+                            st["pending_echo_infusion_message"] = ("Echo Infusion!", message)
+                        else:
+                            _show_result_screen(st, "Sent to Archives!", "Your party is full. Vessel stored in The Archives.", kind="success", auto_dismiss_ms=2000)
                     else:
                         _show_result_screen(st, "Storage Error!", "Could not store vessel.", kind="fail", auto_dismiss_ms=1500)
                 except Exception as e:
@@ -938,13 +1034,15 @@ def _resolve_capture_after_popup(gs):
                 else:
                     print(f"⚠️ Victory music not found at: {victory_path}")
             
-            # ✅ Queue XP for capture
-            st["pending_xp_award"] = (
-                "capture",
-                getattr(gs, "encounter_name", "Enemy"),
-                dict(getattr(gs, "encounter_stats", {}) or {}),
-                _get_active_party_index(gs),
-            )
+            # ✅ Queue XP for capture (only if not already queued)
+            # Note: XP award will be set again after enemy fade completes, so we defer it
+            # to avoid setting it twice
+            # st["pending_xp_award"] = (
+            #     "capture",
+            #     getattr(gs, "encounter_name", "Enemy"),
+            #     dict(getattr(gs, "encounter_stats", {}) or {}),
+            #     _get_active_party_index(gs),
+            # )
             st["enemy_fade_active"] = True
             st["enemy_fade_t"] = 0.0
             st["pending_result_payload"] = ("success", "Vessel Caught!", f"Bound with roll {res.total} vs DC {res.dc}")
@@ -991,10 +1089,14 @@ def _trigger_forced_switch_if_needed(gs, st):
     if 0 <= idx < len(stats) and isinstance(stats[idx], dict):
         cur = int(stats[idx].get("current_hp", stats[idx].get("hp", 0)))
         maxhp = int(stats[idx].get("hp", 0))
-    # KO?
+    
+    # Store which vessel died so we can revive it after the swap
     if cur <= 0 and not st.get("force_switch", False) and not st.get("swap_playing", False):
+        print(f"[_trigger_forced_switch_if_needed] Vessel {idx} KO'd (HP={cur}), storing dead vessel slot and triggering forced switch...")
+        # Store the dead vessel slot so we can revive it after swap
+        st["dead_vessel_slot"] = idx
         if not _has_living_party(gs):
-            _show_result_screen(st, "All vessels are down!", "You can’t continue.", kind="fail", exit_on_close=True)
+            _show_result_screen(st, "All vessels are down!", "You can't continue.", kind="fail", exit_on_close=True)
             st["pending_exit"] = True
             return
         st["force_switch"] = True
@@ -1007,6 +1109,142 @@ def _trigger_forced_switch_if_needed(gs, st):
             party_action.open_popup()
         except Exception: pass
 
+def _try_revive_dead_vessel_with_infernal_rebirth(gs, st, vessel_slot: int):
+    """
+    Try to revive a dead vessel using Infernal Rebirth (DemonPact2).
+    Called after a vessel swap completes.
+    Uses the same logic as scroll_of_revivity - directly restores HP to 50% max.
+    """
+    # Check if DemonPact2 is in active buffs
+    active_buffs = getattr(gs, "active_buffs", [])
+    print(f"[_try_revive_dead_vessel_with_infernal_rebirth] Checking active_buffs: count={len(active_buffs)}")
+    print(f"[_try_revive_dead_vessel_with_infernal_rebirth] Active buffs: {[b.get('id') if isinstance(b, dict) else str(b)[:50] for b in active_buffs]}")
+    
+    has_demonpact2 = False
+    for buff in active_buffs:
+        if isinstance(buff, dict):
+            buff_id = buff.get("id")
+            buff_tier = buff.get("tier", "")
+            buff_name = buff.get("name", "")
+            print(f"[_try_revive_dead_vessel_with_infernal_rebirth] Checking buff: id={buff_id}, name={buff_name}, tier={buff_tier}")
+            # Check both "DemonPact2" (full name) and 2/"2" (just the ID) with tier "DemonPact"
+            # The ID is stored as an integer (2) or string ("2"), not "DemonPact2"
+            # Also check the name field which should be "DemonPact2"
+            if (buff_id == "DemonPact2" or buff_name == "DemonPact2" or 
+                (buff_tier == "DemonPact" and (buff_id == 2 or buff_id == "2"))):
+                has_demonpact2 = True
+                print(f"[_try_revive_dead_vessel_with_infernal_rebirth] ✅ Found DemonPact2!")
+                break
+        else:
+            print(f"[_try_revive_dead_vessel_with_infernal_rebirth] Non-dict buff: {type(buff)} = {str(buff)[:50]}")
+    
+    if not has_demonpact2:
+        print(f"[_try_revive_dead_vessel_with_infernal_rebirth] ❌ DemonPact2 not found in active_buffs")
+        return
+    
+    # Check if it's been used this battle (resets each battle)
+    # NOTE: infernal_rebirth_used_this_run is ONLY for preventing the card from appearing again,
+    # NOT for preventing the revival effect. The revival can happen once per battle.
+    st_wild = getattr(gs, "_wild", {})
+    st_battle = getattr(gs, "_battle", {})
+    if st_wild.get("infernal_rebirth_used_this_battle", False) or st_battle.get("infernal_rebirth_used_this_battle", False):
+        print(f"[_try_revive_dead_vessel_with_infernal_rebirth] Already used this battle")
+        return
+    
+    stats_list = getattr(gs, "party_vessel_stats", None) or [None]*6
+    if vessel_slot < 0 or vessel_slot >= len(stats_list):
+        return
+    
+    vessel_stats = stats_list[vessel_slot]
+    if not isinstance(vessel_stats, dict):
+        return
+    
+    current_hp = int(vessel_stats.get("current_hp", 0))
+    max_hp = int(vessel_stats.get("hp", 0))
+    
+    # Only revive if vessel is actually dead (HP = 0)
+    if current_hp > 0 or max_hp <= 0:
+        print(f"[_try_revive_dead_vessel_with_infernal_rebirth] Vessel {vessel_slot} not dead (HP: {current_hp}/{max_hp})")
+        return
+    
+    print(f"[_try_revive_dead_vessel_with_infernal_rebirth] ✅ Triggering Infernal Rebirth for vessel {vessel_slot} (HP: {current_hp}/{max_hp})")
+    
+    # Restore to 50% max HP (same logic as _check_infernal_rebirth)
+    restored_hp = max(1, max_hp // 2)  # At least 1 HP
+    vessel_stats["current_hp"] = restored_hp
+    stats_list[vessel_slot] = vessel_stats
+    gs.party_vessel_stats = stats_list
+    
+    # Update on-screen HP ratio for wild_vessel
+    if st_wild:
+        # Only update if this vessel is currently active (to avoid updating wrong vessel's HP bar)
+        active_idx = _get_active_party_index(gs)
+        if vessel_slot == active_idx:
+            st_wild["ally_hp_ratio"] = (restored_hp / max_hp) if max_hp > 0 else 0.0
+            gs._wild = st_wild
+    
+    # Update on-screen HP ratio for battle
+    if st_battle:
+        active_idx = _get_active_party_index(gs)
+        if vessel_slot == active_idx:
+            st_battle["ally_hp_ratio"] = (restored_hp / max_hp) if max_hp > 0 else 0.0
+            gs._battle = st_battle
+    
+    # Mark as used for this battle (resets when entering a new battle)
+    # NOTE: We do NOT set infernal_rebirth_used_this_run here because that flag
+    # is only for preventing the card from appearing again, not for preventing the revival.
+    # The revival can happen once per battle, and the battle flag resets each battle.
+    if st_wild:
+        st_wild["infernal_rebirth_used_this_battle"] = True
+        gs._wild = st_wild
+    if st_battle:
+        st_battle["infernal_rebirth_used_this_battle"] = True
+        gs._battle = st_battle
+    
+    # Play sound effect
+    try:
+        import os
+        import pygame
+        sound_path = os.path.join("Assets", "Blessings", "InfernalRebirth.mp3")
+        if os.path.exists(sound_path):
+            if not pygame.mixer.get_init():
+                pygame.mixer.init()
+            try:
+                sound = pygame.mixer.Sound(sound_path)
+                sound.play()
+                print(f"🔊 Played Infernal Rebirth sound: {sound_path}")
+            except Exception as e:
+                print(f"⚠️ Failed to load/play Infernal Rebirth sound: {e}")
+        else:
+            print(f"⚠️ Infernal Rebirth sound not found: {sound_path}")
+    except Exception as e:
+        print(f"⚠️ Failed to play Infernal Rebirth sound: {e}")
+    
+    # Show result message (same as _check_infernal_rebirth)
+    if st_wild:
+        st_wild["result"] = {
+            "kind": "info",
+            "title": "Infernal Rebirth",
+            "subtitle": f"Vessel restored to {restored_hp} HP!",
+            "t": 0.0, "alpha": 0, "played": False,
+            "exit_on_close": False,
+            "auto_dismiss_ms": 0,  # Manual dismiss
+        }
+        st_wild["auto_ready"] = False
+    elif st_battle:
+        st_battle["result"] = {
+            "kind": "info",
+            "title": "Infernal Rebirth",
+            "subtitle": f"Vessel restored to {restored_hp} HP!",
+            "t": 0.0, "alpha": 0, "played": False,
+            "exit_on_close": False,
+            "auto_dismiss_ms": 0,  # Manual dismiss
+        }
+        st_battle["auto_ready"] = False
+    
+    print(f"[_try_revive_dead_vessel_with_infernal_rebirth] ✅ Vessel {vessel_slot} revived to {restored_hp}/{max_hp} HP!")
+
+
 def _finish_forced_switch_if_done(gs, st):
     if st.get("force_switch", False):
         active_idx = _get_active_party_index(gs)
@@ -1015,6 +1253,13 @@ def _finish_forced_switch_if_done(gs, st):
             setattr(gs, "_force_switch", False)   # ← release the lock for party_action
             st["phase"] = PHASE_PLAYER
             gs._turn_ready = True
+            
+            # After forced switch completes, check if we should revive the dead vessel with Infernal Rebirth
+            dead_slot = st.get("dead_vessel_slot")
+            if dead_slot is not None:
+                _try_revive_dead_vessel_with_infernal_rebirth(gs, st, dead_slot)
+                # Clear the dead vessel slot after checking
+                st["dead_vessel_slot"] = None
 
 # ---------------- XP helpers ----------------
 def _maybe_show_xp_award(gs, st):
@@ -1133,24 +1378,49 @@ def handle(events, gs, **_):
     # Clear auto-done result cards
     _auto_dismiss_result_if_ready(st)
 
+    # After a result is dismissed, check for Echo Infusion message first (before XP award)
+    # IMPORTANT: Only show Echo Infusion if there's NO active result screen
+    # This prevents it from being replaced immediately by XP award
+    if not st.get("result") and st.get("pending_echo_infusion_message"):
+        title, message = st.pop("pending_echo_infusion_message")
+        # Show Echo Infusion message - requires manual click to dismiss
+        # Explicitly set auto_dismiss_ms to 0 to prevent any auto-dismissal
+        _show_result_screen(st, title, message, kind="success", auto_dismiss_ms=0, lock_input=False)
+        # Double-check and enforce: make absolutely sure it cannot auto-dismiss
+        res = st.get("result")
+        if res:
+            res["auto_ms"] = 0  # Force it to 0
+            res["auto_ready"] = False  # Ensure auto_ready is False
+            res["lock_input"] = False  # Ensure input is not locked
+            res["exit_on_close"] = False  # Don't exit on close for Echo Infusion
+            # Add a flag to mark this as Echo Infusion message so we can track it
+            res["is_echo_infusion"] = True
+            # Mark that this message must be manually dismissed - never auto-dismiss
+            res["_must_manual_dismiss"] = True
+        # Return early to prevent XP award from showing until this is dismissed
+        return None
+    
     # After a result is dismissed, if we have a pending XP award, show it now
+    # CRITICAL: Only show XP award if there's NO active result screen
+    # This ensures Echo Infusion message stays visible until manually dismissed
     if not st.get("result") and st.get("pending_xp_award"):
+        
         try:
             outcome, enemy_name, estats, active_idx = st.pop("pending_xp_award")
         except Exception:
             outcome, enemy_name, estats, active_idx = ("defeat", "Enemy", {}, _get_active_party_index(gs))
-
+        
         # Compute + distribute
         base_xp = xp_sys.compute_xp_reward(estats or {}, enemy_name or "Enemy", outcome or "defeat")
         active_xp, bench_xp, levelups = xp_sys.distribute_xp(gs, int(active_idx), int(base_xp))
-
+        
         # Optional: persist now
         try:
             from systems import save_system as saves
             saves.save_game(gs, force=True)
         except Exception:
             pass
-
+        
         # Build concise subtitle
         xp_line = f"+{active_xp} XP to active  |  +{bench_xp} to each benched"
         if levelups:
@@ -1165,23 +1435,21 @@ def handle(events, gs, **_):
             subtitle = f"{xp_line}   •   {pretty} leveled up! {old_lv} → {new_lv}"
         else:
             subtitle = xp_line
-
+        
         _show_result_screen(
             st,
             "Experience Gained",
             subtitle,
             kind="info",
-            exit_on_close=True  # ← when dismissed, we’ll exit to overworld
+            exit_on_close=True,  # ← when dismissed, we'll exit to overworld
+            auto_dismiss_ms=0  # Must be manually dismissed
         )
-        # And when that result is dismissed, the normal pending_exit path should trigger:
-        st["pending_exit"] = True
+        # Don't set pending_exit here - let it be set when the result is dismissed
         return None
 
 
-    # ✅ If a result was dismissed and we have XP pending, show it now
-    if (not st.get("result")) and st.get("pending_xp_award"):
-        _maybe_show_xp_award(gs, st)
-        return None
+    # Note: XP award is handled above (line 1178) after Echo Infusion message
+    # This duplicate check is removed to prevent conflicts
 
     # KO → forced switch?
     _trigger_forced_switch_if_needed(gs, st)
@@ -1216,17 +1484,33 @@ def handle(events, gs, **_):
 
     # Normal routing when not forced and not in enemy phase
     if st.get("phase") != PHASE_ENEMY:
+        # Check for result screen dismissal FIRST, before other input checks
+        # This ensures result screens can be dismissed even if other systems are active
+        res = st.get("result")
+        if res:
+            # Allow clicks/space to dismiss if not locked
+            # ALL result screens can be manually dismissed, regardless of auto_ms
+            if not res.get("lock_input", False):
+                for e in events:
+                    if e.type == pygame.MOUSEBUTTONDOWN and e.button == 1:
+                        _dismiss_result(st, allow_exit=True)
+                        # After dismissing, don't process other events in this frame
+                        return None
+                    if e.type == pygame.KEYDOWN and e.key in (pygame.K_SPACE, pygame.K_RETURN):
+                        _dismiss_result(st, allow_exit=True)
+                        # After dismissing, don't process other events in this frame
+                        return None
+        
+        # Now process other input events (only if no result screen, or result screen is locked/auto-dismissing)
         for e in events:
             if st.get("cap_vfx_playing", False):   return None
             if st.get("enemy_fade_active", False): return None
 
-            res = st.get("result")
-            if res:
-                if res.get("lock_input", False) or res.get("auto_ms", 0) > 0:
-                    return None
-                if e.type == pygame.MOUSEBUTTONDOWN and e.button == 1:
-                    _dismiss_result(st, allow_exit=True)
-                    return None
+            # If result screen exists and is not locked, block other input (dismissal was handled above)
+            if st.get("result") and not st.get("result", {}).get("lock_input", False):
+                # Result screen is active and not locked - only allow dismissal (already handled above)
+                # Block other input
+                continue
 
 
             if st.get("phase") == PHASE_PLAYER:
@@ -1534,7 +1818,10 @@ def draw(screen, gs, dt, **_):
                         pass
                     kind, title, subtitle = st["pending_result_payload"]
                     st["pending_result_payload"] = None
-                    _show_result_screen(st, title, subtitle, kind=kind, exit_on_close=False)
+                    # Show capture message first (requires click to dismiss)
+                    # Then Echo Infusion message will show after this is dismissed
+                    _show_result_screen(st, title, subtitle, kind=kind, exit_on_close=False, auto_dismiss_ms=0)
+                    # Queue XP award (will show after Echo Infusion message if present, or after capture message)
                     st["pending_xp_award"] = ("capture", enemy_name, estats, active_idx)
                 elif st.get("enemy_defeated", False):
                     st["pending_xp_award"] = ("defeat", enemy_name, estats, active_idx)
@@ -1563,7 +1850,13 @@ def draw(screen, gs, dt, **_):
             st["ally_from_slot"] = st.get("ally_swap_target_slot", st.get("ally_from_slot"))
             st["ally_swap_target_slot"] = None
             st["swap_playing"]  = False
+            # After swap completes, check for Infernal Rebirth revival
             _finish_forced_switch_if_done(gs, st)
+            # Also check for revival after any swap (not just forced switches)
+            dead_slot = st.get("dead_vessel_slot")
+            if dead_slot is not None:
+                _try_revive_dead_vessel_with_infernal_rebirth(gs, st, dead_slot)
+                st["dead_vessel_slot"] = None
         else:
             st["swap_t"]     = st.get("swap_t", 0.0) + dt
             st["swap_total"] = st.get("swap_total", 0.0) + dt

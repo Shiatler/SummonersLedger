@@ -49,8 +49,8 @@ def _get_dh_font(size: int, bold: bool = False) -> pygame.font.Font:
 
 def enter(gs, **kwargs):
     """Initialize the buff selection screen."""
-    # Generate buff selection
-    selection = buffs.generate_buff_selection()
+    # Generate buff selection (pass gs to exclude "once per run" cards)
+    selection = buffs.generate_buff_selection(gs)
     
     # Load card images
     card_images = []

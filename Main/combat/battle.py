@@ -504,9 +504,20 @@ def _first_filled_slot_index(gs) -> int:
     return 0
 
 def _battle_start_slot(gs) -> int:
+    """Respect party_active_idx if set; otherwise prefer slot 0; if it's empty, fall back to first filled slot."""
     names = getattr(gs, "party_slots_names", None) or [None]*6
+    
+    # First, check if party_active_idx is set and valid
+    active_idx = getattr(gs, "party_active_idx", None)
+    if active_idx is not None and isinstance(active_idx, int):
+        if 0 <= active_idx < len(names) and names[active_idx]:
+            return active_idx
+    
+    # Fall back to slot 0 if it has a vessel
     if names and names[0]:
         return 0
+    
+    # Finally, fall back to first filled slot
     return _first_filled_slot_index(gs)
 
 def _ensure_active_slot(gs):
@@ -768,6 +779,9 @@ def _build_initial_state(gs, preserved_bg=None, preserved_ally_pos=None, preserv
 
     "ally_hp_ratio": 1.0,
     "enemy_hp_ratio": 1.0,
+    
+    # Reset Infernal Rebirth battle flag for new battle (but keep run flag)
+    "infernal_rebirth_used_this_battle": False,
 
     # XP per-enemy (like wild_vessel)
     "pending_xp_award": None,    # tuple(outcome, enemy_name, estats, active_idx)
@@ -787,6 +801,7 @@ def _build_initial_state(gs, preserved_bg=None, preserved_ally_pos=None, preserv
         "swirl_frames": swirl,
         "swap_playing": False,
         "swap_t": 0.0,
+        "dead_vessel_slot": None,  # Track which vessel died for Infernal Rebirth
         "swap_total": 0.0,
         "swap_frame": 0,
         "ally_img_next": None,
@@ -922,8 +937,8 @@ def _exit_battle(gs):
     
     # Check for buff selection trigger (100% for testing, normally 10%)
     if was_summoner_battle:
-        # 100% chance for testing (change to 0.1 for 10% later)
-        trigger_buff = True  # random.random() < 1.0  # 100% for testing
+        # 20% chance to get a buff selection after battle
+        trigger_buff = random.random() < 0.20  # 20% chance
         if trigger_buff:
             # Set flag to start buff popup in overworld
             gs.pending_buff_selection = True
@@ -1061,14 +1076,23 @@ def _begin_enemy_phase(st: dict):
 
 # ---------------- Forced switch helpers ----------------
 def _trigger_forced_switch_if_needed(gs, st):
+    # Active stats
     idx = _get_active_party_index(gs)
     stats = getattr(gs, "party_vessel_stats", None) or [None]*6
-    cur = 0
+    cur = 0; maxhp = 0
     if 0 <= idx < len(stats) and isinstance(stats[idx], dict):
         cur = int(stats[idx].get("current_hp", stats[idx].get("hp", 0)))
+        maxhp = int(stats[idx].get("hp", 0))
+    
+    # Store which vessel died so we can revive it after the swap
+    if cur <= 0 and not st.get("force_switch", False) and not st.get("swap_playing", False):
+        # Store the dead vessel slot so we can revive it after swap
+        st["dead_vessel_slot"] = idx
+    
+    # KO?
     if cur <= 0 and not st.get("force_switch", False) and not st.get("swap_playing", False):
         if not _has_living_party(gs):
-            _show_result_screen(st, "All vessels are down!", "You can’t continue.", kind="fail", exit_on_close=True)
+            _show_result_screen(st, "All vessels are down!", "You can't continue.", kind="fail", exit_on_close=True)
             st["pending_exit"] = True
             return
         st["force_switch"] = True
@@ -1081,6 +1105,135 @@ def _trigger_forced_switch_if_needed(gs, st):
             party_action.open_popup()
         except Exception: pass
 
+def _try_revive_dead_vessel_with_infernal_rebirth(gs, st, vessel_slot: int):
+    """
+    Try to revive a dead vessel using Infernal Rebirth (DemonPact2).
+    Called after a vessel swap completes.
+    Uses the same logic as scroll_of_revivity - directly restores HP to 50% max.
+    """
+    # Check if DemonPact2 is in active buffs
+    active_buffs = getattr(gs, "active_buffs", [])
+    has_demonpact2 = False
+    for buff in active_buffs:
+        if isinstance(buff, dict):
+            buff_id = buff.get("id")
+            buff_tier = buff.get("tier", "")
+            buff_name = buff.get("name", "")
+            # Check both "DemonPact2" (full name) and 2/"2" (just the ID) with tier "DemonPact"
+            # The ID is stored as an integer (2) or string ("2"), not "DemonPact2"
+            # Also check the name field which should be "DemonPact2"
+            if (buff_id == "DemonPact2" or buff_name == "DemonPact2" or 
+                (buff_tier == "DemonPact" and (buff_id == 2 or buff_id == "2"))):
+                has_demonpact2 = True
+                break
+    
+    if not has_demonpact2:
+        print(f"[_try_revive_dead_vessel_with_infernal_rebirth] DemonPact2 not found in active buffs")
+        return
+    
+    # Check if it's been used this battle (resets each battle)
+    # NOTE: infernal_rebirth_used_this_run is ONLY for preventing the card from appearing again,
+    # NOT for preventing the revival effect. The revival can happen once per battle.
+    st_wild = getattr(gs, "_wild", {})
+    st_battle = getattr(gs, "_battle", {})
+    if st_wild.get("infernal_rebirth_used_this_battle", False) or st_battle.get("infernal_rebirth_used_this_battle", False):
+        print(f"[_try_revive_dead_vessel_with_infernal_rebirth] Already used this battle")
+        return
+    
+    stats_list = getattr(gs, "party_vessel_stats", None) or [None]*6
+    if vessel_slot < 0 or vessel_slot >= len(stats_list):
+        return
+    
+    vessel_stats = stats_list[vessel_slot]
+    if not isinstance(vessel_stats, dict):
+        return
+    
+    current_hp = int(vessel_stats.get("current_hp", 0))
+    max_hp = int(vessel_stats.get("hp", 0))
+    
+    # Only revive if vessel is actually dead (HP = 0)
+    if current_hp > 0 or max_hp <= 0:
+        print(f"[_try_revive_dead_vessel_with_infernal_rebirth] Vessel {vessel_slot} not dead (HP: {current_hp}/{max_hp})")
+        return
+    
+    print(f"[_try_revive_dead_vessel_with_infernal_rebirth] ✅ Triggering Infernal Rebirth for vessel {vessel_slot} (HP: {current_hp}/{max_hp})")
+    
+    # Restore to 50% max HP (same logic as _check_infernal_rebirth)
+    restored_hp = max(1, max_hp // 2)  # At least 1 HP
+    vessel_stats["current_hp"] = restored_hp
+    stats_list[vessel_slot] = vessel_stats
+    gs.party_vessel_stats = stats_list
+    
+    # Update on-screen HP ratio for wild_vessel
+    if st_wild:
+        # Only update if this vessel is currently active (to avoid updating wrong vessel's HP bar)
+        active_idx = _get_active_party_index(gs)
+        if vessel_slot == active_idx:
+            st_wild["ally_hp_ratio"] = (restored_hp / max_hp) if max_hp > 0 else 0.0
+            gs._wild = st_wild
+    
+    # Update on-screen HP ratio for battle
+    if st_battle:
+        active_idx = _get_active_party_index(gs)
+        if vessel_slot == active_idx:
+            st_battle["ally_hp_ratio"] = (restored_hp / max_hp) if max_hp > 0 else 0.0
+            gs._battle = st_battle
+    
+    # Mark as used for this battle (resets when entering a new battle)
+    # NOTE: We do NOT set infernal_rebirth_used_this_run here because that flag
+    # is only for preventing the card from appearing again, not for preventing the revival.
+    # The revival can happen once per battle, and the battle flag resets each battle.
+    if st_wild:
+        st_wild["infernal_rebirth_used_this_battle"] = True
+        gs._wild = st_wild
+    if st_battle:
+        st_battle["infernal_rebirth_used_this_battle"] = True
+        gs._battle = st_battle
+    
+    # Play sound effect
+    try:
+        import os
+        import pygame
+        sound_path = os.path.join("Assets", "Blessings", "InfernalRebirth.mp3")
+        if os.path.exists(sound_path):
+            if not pygame.mixer.get_init():
+                pygame.mixer.init()
+            try:
+                sound = pygame.mixer.Sound(sound_path)
+                sound.play()
+                print(f"🔊 Played Infernal Rebirth sound: {sound_path}")
+            except Exception as e:
+                print(f"⚠️ Failed to load/play Infernal Rebirth sound: {e}")
+        else:
+            print(f"⚠️ Infernal Rebirth sound not found: {sound_path}")
+    except Exception as e:
+        print(f"⚠️ Failed to play Infernal Rebirth sound: {e}")
+    
+    # Show result message (same as _check_infernal_rebirth)
+    if st_wild:
+        st_wild["result"] = {
+            "kind": "info",
+            "title": "Infernal Rebirth",
+            "subtitle": f"Vessel restored to {restored_hp} HP!",
+            "t": 0.0, "alpha": 0, "played": False,
+            "exit_on_close": False,
+            "auto_dismiss_ms": 0,  # Manual dismiss
+        }
+        st_wild["auto_ready"] = False
+    elif st_battle:
+        st_battle["result"] = {
+            "kind": "info",
+            "title": "Infernal Rebirth",
+            "subtitle": f"Vessel restored to {restored_hp} HP!",
+            "t": 0.0, "alpha": 0, "played": False,
+            "exit_on_close": False,
+            "auto_dismiss_ms": 0,  # Manual dismiss
+        }
+        st_battle["auto_ready"] = False
+    
+    print(f"[_try_revive_dead_vessel_with_infernal_rebirth] ✅ Vessel {vessel_slot} revived to {restored_hp}/{max_hp} HP!")
+
+
 def _finish_forced_switch_if_done(gs, st):
     if st.get("force_switch", False):
         active_idx = _get_active_party_index(gs)
@@ -1088,6 +1241,13 @@ def _finish_forced_switch_if_done(gs, st):
             st["force_switch"] = False
             setattr(gs, "_force_switch", False)
             st["phase"] = PHASE_PLAYER
+            
+            # After forced switch completes, check if we should revive the dead vessel with Infernal Rebirth
+            dead_slot = st.get("dead_vessel_slot")
+            if dead_slot is not None:
+                _try_revive_dead_vessel_with_infernal_rebirth(gs, st, dead_slot)
+                # Clear the dead vessel slot after checking
+                st["dead_vessel_slot"] = None
             gs._turn_ready = True
             try:
                 party_action.close_popup()
@@ -1710,7 +1870,13 @@ def draw(screen: pygame.Surface, gs, dt: float, **_):
             st["ally_from_slot"] = st.get("ally_swap_target_slot", st.get("ally_from_slot"))
             st["ally_swap_target_slot"] = None
             st["swap_playing"] = False
+            # After swap completes, check for Infernal Rebirth revival
             _finish_forced_switch_if_done(gs, st)
+            # Also check for revival after any swap (not just forced switches)
+            dead_slot = st.get("dead_vessel_slot")
+            if dead_slot is not None:
+                _try_revive_dead_vessel_with_infernal_rebirth(gs, st, dead_slot)
+                st["dead_vessel_slot"] = None
         else:
             st["swap_t"] = st.get("swap_t", 0.0) + dt
             st["swap_total"] = st.get("swap_total", 0.0) + dt

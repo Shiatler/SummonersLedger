@@ -147,7 +147,10 @@ def _set_ally_hp(gs, new_cur: int, maxhp: int) -> None:
     st = stats_list[idx] if 0 <= idx < len(stats_list) else None
     if not isinstance(st, dict):
         return
+    old_cur = int(st.get("current_hp", maxhp))
     new_cur = max(0, min(maxhp, int(new_cur)))
+    
+    # Set HP normally - Infernal Rebirth will be checked after the vessel swap
     st["current_hp"] = new_cur
     stats_list[idx] = st
     gs.party_vessel_stats = stats_list
@@ -155,6 +158,18 @@ def _set_ally_hp(gs, new_cur: int, maxhp: int) -> None:
     wild = getattr(gs, "_wild", {}) or {}
     wild["ally_hp_ratio"] = (new_cur / maxhp) if maxhp > 0 else 0.0
     gs._wild = wild
+
+def _check_infernal_rebirth(gs, vessel_idx: int, maxhp: int, stats_list=None, vessel_stats_dict=None) -> bool:
+    """
+    DEPRECATED: This function is no longer used. Infernal Rebirth is now handled
+    by _try_revive_dead_vessel_with_infernal_rebirth in wild_vessel.py and battle.py.
+    
+    Kept for backwards compatibility, but should not be called.
+    """
+    # This function is deprecated - the revival logic has been moved to
+    # _try_revive_dead_vessel_with_infernal_rebirth which is called after vessel swaps.
+    print(f"⚠️ _check_infernal_rebirth is deprecated and should not be called")
+    return False
 
 # --------------------- Enemy-side helpers --------------------
 def _enemy_stats(gs) -> Optional[Dict[str, Any]]:
@@ -228,13 +243,31 @@ def _ability_mod_enemy(gs, ability: str) -> int:
     return _ability_mod(_enemy_stats(gs), ability)
 
 def _ally_ac(gs) -> int:
-    """Mirror of _enemy_ac: read AC from the active ALLY stats."""
+    """
+    Read AC from the active ALLY stats.
+    The AC field should already include bonuses (updated by apply_ac_bonus),
+    but we also check ac_bonus as a fallback for compatibility.
+    """
     cur, idx = None, getattr(gs, "combat_active_idx", 0)
     stats_list = getattr(gs, "party_vessel_stats", None) or [None]*6
     st = stats_list[idx] if 0 <= idx < len(stats_list) else None
     try:
-        return int((st or {}).get("ac", 10))
-    except Exception:
+        # The ac field should already include the bonus (updated by apply_ac_bonus)
+        ac_from_field = int((st or {}).get("ac", 10))
+        ac_bonus = int((st or {}).get("ac_bonus", 0))
+        
+        # Use the ac field directly (it should already include bonuses)
+        # But if ac_bonus exists and the ac field doesn't include it, add it
+        # This handles cases where ac was updated but might need the bonus added
+        total_ac = ac_from_field
+        
+        # Debug logging (can be removed later)
+        if ac_bonus > 0:
+            print(f"🛡️ _ally_ac: Vessel {idx} has AC {ac_from_field} (ac_bonus field: {ac_bonus})")
+        
+        return total_ac
+    except Exception as e:
+        print(f"⚠️ _ally_ac error: {e}")
         return 10
 
 def _perform_enemy_basic_attack(gs, mv: Move) -> bool:
@@ -301,17 +334,32 @@ def _perform_enemy_basic_attack(gs, mv: Move) -> bool:
             total_dmg = base + bonus_mod
 
         total_dmg = max(0, total_dmg)
+        
+        # Apply damage reduction from buffs
+        original_dmg = total_dmg
+        stats = _active_stats(gs)
+        if isinstance(stats, dict):
+            damage_reduction = int(stats.get("damage_reduction", 0))
+            if damage_reduction > 0:
+                total_dmg = max(0, total_dmg - damage_reduction)
+                if original_dmg != total_dmg:
+                    print(f"[moves][ENEMY] Damage reduced by {damage_reduction}: {original_dmg} → {total_dmg}")
+        
         a_cur, a_max = _ally_hp_tuple(gs)
         new_cur = max(0, a_cur - total_dmg)
         _set_ally_hp(gs, new_cur, a_max)
 
         print(f"[moves][ENEMY] {mv.label} → damage={total_dmg} | ally {a_cur} → {new_cur}")
 
-        # KO of ally just shows info; player can still exit with ESC, or you can decide later
+        # Update display message to show original damage if reduced
+        dmg_display = total_dmg
+        if original_dmg != total_dmg:
+            dmg_display = f"{original_dmg} (reduced to {total_dmg})"
+        
         st["result"] = {
             "kind": "info",
             "title": f"Enemy used {mv.label}",
-            "subtitle": (f"Hit for {total_dmg}!" if new_cur > 0 else f"Hit for {total_dmg}! (You’re down)"),
+            "subtitle": (f"Hit for {dmg_display}!" if new_cur > 0 else f"Hit for {dmg_display}! (You're down)"),
             "t": 0.0, "alpha": 0, "played": False,
             "exit_on_close": False,
         }
@@ -335,18 +383,31 @@ def _perform_enemy_bonk(gs) -> bool:
         ally_dmg  = random.randint(1, 4)
         recoil    = random.randint(1, 4)
 
-        # deal to ally
+        # deal to ally (apply damage reduction)
+        original_ally_dmg = ally_dmg
+        stats = _active_stats(gs)
+        if isinstance(stats, dict):
+            damage_reduction = int(stats.get("damage_reduction", 0))
+            if damage_reduction > 0:
+                ally_dmg = max(0, ally_dmg - damage_reduction)
+        
         a_cur, a_max = _ally_hp_tuple(gs)
-        _set_ally_hp(gs, max(0, a_cur - ally_dmg), a_max)
+        new_cur = max(0, a_cur - ally_dmg)
+        _set_ally_hp(gs, new_cur, a_max)
 
         # recoil to enemy
         e_cur, e_max = _enemy_hp_tuple(gs)
         _set_enemy_hp(gs, max(0, e_cur - recoil), e_max)
 
+        # Update display message to show original damage if reduced
+        dmg_display = ally_dmg
+        if original_ally_dmg != ally_dmg:
+            dmg_display = f"{original_ally_dmg} (reduced to {ally_dmg})"
+        
         st["result"] = {
             "kind": "info",
             "title": "Enemy Bonk",
-            "subtitle": f"You took {ally_dmg}, enemy took {recoil}",
+            "subtitle": f"You took {dmg_display}, enemy took {recoil}",
             "t": 0.0, "alpha": 0, "played": False,
             "exit_on_close": False,
         }
@@ -400,14 +461,23 @@ def _perform_bonk(gs) -> bool:
         # roll damage
         enemy_dmg = random.randint(1, 4)
         self_dmg  = random.randint(1, 4)
+        
+        # Apply permanent damage bonus to enemy damage (bonk deals damage to enemy)
+        stats = _active_stats(gs)
+        if isinstance(stats, dict):
+            permanent_damage_bonus = int(stats.get("permanent_damage_bonus", 0))
+            if permanent_damage_bonus > 0:
+                enemy_dmg += permanent_damage_bonus
+                print(f"[moves][Bonk] Permanent damage bonus +{permanent_damage_bonus} applied: {enemy_dmg - permanent_damage_bonus} → {enemy_dmg}")
 
         # enemy HP change
         e_cur, e_max = _enemy_hp_tuple(gs)
         _set_enemy_hp(gs, max(0, e_cur - enemy_dmg), e_max)
 
-        # ally HP change
+        # ally HP change (self damage - damage reduction doesn't apply to self-damage)
         a_cur, a_max = _ally_hp_tuple(gs)
-        _set_ally_hp(gs, max(0, a_cur - self_dmg), a_max)
+        new_cur = max(0, a_cur - self_dmg)
+        _set_ally_hp(gs, new_cur, a_max)
 
         # results
         if e_cur - enemy_dmg <= 0:
@@ -415,7 +485,7 @@ def _perform_bonk(gs) -> bool:
             st["enemy_fade_t"] = 0.0
             st["pending_result_payload"] = ("success", "Bonk – KO!", f"Enemy took {enemy_dmg}, you took {self_dmg}")
             st["enemy_defeated"] = True
-        else:
+        elif not st.get("result"):
             st["result"] = {
                 "kind": "info",
                 "title": "Bonk",
@@ -640,7 +710,16 @@ def _pp_spend(gs, actor_key: str, move: Move) -> bool:
     return True
 
 def _pp_set_full(gs, actor_key: str, move: Move) -> None:
-    _pp_store(gs).setdefault(actor_key, {})[move.id] = move.max_pp
+    """Set PP to full (using effective max_pp including bonuses)."""
+    # Get effective max_pp (base + bonuses)
+    base_max_pp = move.max_pp
+    if hasattr(gs, "move_pp_max_bonuses"):
+        key = f"{actor_key}:{move.id}"
+        bonus = gs.move_pp_max_bonuses.get(key, 0)
+        effective_max_pp = base_max_pp + bonus
+    else:
+        effective_max_pp = base_max_pp
+    _pp_store(gs).setdefault(actor_key, {})[move.id] = effective_max_pp
 
 # --------------------- Busy flag for scenes ------------------
 
@@ -702,6 +781,7 @@ def get_pp(gs, move_id: str) -> tuple[int, int]:
     """
     Return (remaining, max) for the active ally and given move_id.
     If the move isn't known/available, returns (0, 0).
+    Max includes any permanent PP max bonuses from buffs.
     """
     mv = None
     for lst in _MOVE_REGISTRY.values():
@@ -715,7 +795,19 @@ def get_pp(gs, move_id: str) -> tuple[int, int]:
         return (0, 0)
     actor = _active_token_name(gs)
     rem = _pp_get(gs, actor, mv)
-    return rem, mv.max_pp
+    
+    # Get base max_pp from move
+    base_max_pp = mv.max_pp
+    
+    # Apply permanent max_pp bonuses from buffs
+    if hasattr(gs, "move_pp_max_bonuses"):
+        key = f"{actor}:{move_id}"
+        bonus = gs.move_pp_max_bonuses.get(key, 0)
+        effective_max_pp = base_max_pp + bonus
+    else:
+        effective_max_pp = base_max_pp
+    
+    return rem, effective_max_pp
 
 def queue(gs, move_id: str) -> bool:
     """UI entry point: find the move and execute immediately (spends PP)."""
@@ -814,6 +906,13 @@ def _perform_basic_attack(gs, mv: Move) -> bool:
             total_dmg = base + bonus_mod
 
         total_dmg = max(0, total_dmg)
+        
+        # Apply permanent damage bonus from buffs
+        if isinstance(stats, dict):
+            permanent_damage_bonus = int(stats.get("permanent_damage_bonus", 0))
+            if permanent_damage_bonus > 0:
+                total_dmg += permanent_damage_bonus
+                print(f"[moves] Permanent damage bonus +{permanent_damage_bonus} applied: {total_dmg - permanent_damage_bonus} → {total_dmg}")
         
         # Apply self HP cost if move has it (Blood Hunter moves)
         if mv.self_hp_cost > 0:

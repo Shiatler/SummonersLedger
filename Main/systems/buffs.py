@@ -13,7 +13,8 @@ RARITY_WEIGHTS = {
     "Epic": 12.5,
     "Curse": 12.5,  # Same as Epic
     "Legendary": 5.0,
-    "DemonPact": 0.9,
+    "DemonPact": 1.2,
+    "Punishment": 10.0,
 }
 
 # Maximum card IDs per tier
@@ -21,9 +22,10 @@ TIER_MAX_IDS = {
     "Common": 9,
     "Rare": 5,
     "Epic": 4,
-    "Legendary": 5,
+    "Legendary": 6,
     "DemonPact": 4,
     "Curse": 5,
+    "Punishment": 5,
 }
 
 # Blessings directory
@@ -125,7 +127,11 @@ CARD_DATA = {
     },
     "Legendary5": {
         "name": "Blessing of Restoration",
-        "description": "+1d4 healing each round (regeneration aura)"
+        "description": "Healing items heals for 1d8 more"
+    },
+    "Legendary6": {
+        "name": "Scroll of Eternity",
+        "description": "1x Scroll of eternity"
     },
     # DemonPact
     "DemonPact1": {
@@ -142,20 +148,20 @@ CARD_DATA = {
     },
     "DemonPact4": {
         "name": "Pact of the Legion",
-        "description": "+1 additional Vessel slot in your active party"
+        "description": "+1d6 bonus dmg for entire party"
     },
     # Curse
     "Curse1": {
         "name": "Scream of Terror",
-        "description": "+1 to one stat of choice / –1 to another stat of choice"
+        "description": "+1 to one stat of choice / -1 to another stat of choice"
     },
     "Curse2": {
         "name": "Haunting of Flesh",
-        "description": "+2 to one stat of choice / –1 to another random stat"
+        "description": "+2 to one stat of choice / -1 to another random stat"
     },
     "Curse3": {
         "name": "Bleeding Moon",
-        "description": "+1 to all rolls / -1d8 HP for every vessel"
+        "description": "+1 AC to all vessels / -1d8 HP to every vessel"
     },
     "Curse4": {
         "name": "The Hollow's Embrace",
@@ -163,7 +169,28 @@ CARD_DATA = {
     },
     "Curse5": {
         "name": "Dirge of the Dead",
-        "description": "+2 to one stat / –1d12 HP permanently"
+        "description": "+2 to one stat / -1d12 HP permanently"
+    },
+    # Punishment
+    "Punishment1": {
+        "name": "Oathbreaker's Tribute",
+        "description": "-10 gold"
+    },
+    "Punishment2": {
+        "name": "Weight of Sin",
+        "description": "-2 random stats"
+    },
+    "Punishment3": {
+        "name": "Broken Aegis",
+        "description": "-1 AC to a random vessel"
+    },
+    "Punishment4": {
+        "name": "Judgment's Cut",
+        "description": "-1d6 HP"
+    },
+    "Punishment5": {
+        "name": "Oathbreaker's Toll",
+        "description": "-1 Vessel"
     },
 }
 
@@ -177,6 +204,9 @@ def get_card_data(card_name: str) -> dict:
 
 def roll_buff_tier() -> str:
     """Roll a buff tier based on rarity distribution."""
+    # TESTING: Always return Punishment for testing
+    return "Punishment"
+    
     # Normalize weights to 100%
     total = sum(RARITY_WEIGHTS.values())
     normalized = {k: v / total * 100 for k, v in RARITY_WEIGHTS.items()}
@@ -191,15 +221,36 @@ def roll_buff_tier() -> str:
     return "Common"  # Fallback
 
 
-def get_3_random_cards_from_tier(tier: str) -> list:
-    """Get 3 random, unique cards from a tier."""
+def get_3_random_cards_from_tier(tier: str, exclude_cards: list = None) -> list:
+    """
+    Get 3 random, unique cards from a tier.
+    exclude_cards: List of card names (e.g., ["DemonPact2"]) to exclude from selection.
+    """
+    if exclude_cards is None:
+        exclude_cards = []
+    
     max_id = TIER_MAX_IDS.get(tier, 1)
     
-    # If tier has fewer than 3 cards, return all available
-    if max_id < 3:
-        ids = list(range(1, max_id + 1))
+    # Get all possible card IDs for this tier
+    all_ids = list(range(1, max_id + 1))
+    
+    # Filter out excluded cards
+    available_ids = []
+    for card_id in all_ids:
+        card_name = f"{tier}{card_id}"
+        if card_name not in exclude_cards:
+            available_ids.append(card_id)
+    
+    # If no cards available after filtering, return empty list
+    if len(available_ids) == 0:
+        return []
+    
+    # If we have fewer than 3 available cards, return all available
+    # Otherwise, sample 3 random cards
+    if len(available_ids) < 3:
+        ids = available_ids
     else:
-        ids = random.sample(range(1, max_id + 1), 3)
+        ids = random.sample(available_ids, 3)
     
     cards = []
     for card_id in ids:
@@ -227,9 +278,31 @@ def load_card_image(image_path: str) -> pygame.Surface | None:
         return None
 
 
-def generate_buff_selection() -> dict:
-    """Generate a buff selection with 3 random cards from a rolled tier."""
+def generate_buff_selection(gs=None) -> dict:
+    """
+    Generate a buff selection with 3 random cards from a rolled tier.
+    gs: Optional game state object to check for already-obtained cards (for "once per run" cards).
+    """
     tier = roll_buff_tier()
+    
+    # Special handling for Punishment tier: 5% chance to show only Punishment5 (forced card)
+    if tier == "Punishment":
+        if random.random() < 0.05:  # 5% chance
+            # Return only Punishment5 (forced card, player must take it)
+            card_name = "Punishment5"
+            image_path = os.path.join(BLESSINGS_DIR, f"{card_name}.png")
+            cards = [{
+                "tier": tier,
+                "id": 5,
+                "name": card_name,
+                "image_path": image_path,
+            }]
+            print(f"⚠️ Punishment5 forced selection triggered (5% chance)")
+            return {
+                "tier": tier,
+                "cards": cards,
+            }
+        # Otherwise, continue with normal selection (Punishment5 will be excluded from normal pool)
     
     # If Curse was rolled, check if DemonPact should override
     # Roll DemonPact with its own probability - if it succeeds, override Curse
@@ -243,7 +316,41 @@ def generate_buff_selection() -> dict:
             tier = "DemonPact"
         # Otherwise, keep Curse (it can still appear)
     
-    cards = get_3_random_cards_from_tier(tier)
+    # Build list of cards to exclude (cards that are "once per run" or special cases)
+    exclude_cards = []
+    
+    # Always exclude Punishment5 from normal selection (it only appears in the 5% forced case)
+    if tier == "Punishment":
+        exclude_cards.append("Punishment5")
+    
+    if gs is not None:
+        # Check active_buffs and buffs_history for "once per run" cards
+        active_buffs = getattr(gs, "active_buffs", [])
+        buffs_history = getattr(gs, "buffs_history", [])
+        
+        # Combine both lists to check
+        all_buffs = active_buffs + buffs_history
+        
+        # Check for DemonPact2 (once per run)
+        for buff in all_buffs:
+            if isinstance(buff, dict):
+                buff_name = buff.get("name", "")
+                buff_tier = buff.get("tier", "")
+                buff_id = buff.get("id")
+                
+                # Check if this is DemonPact2 (once per run)
+                # DemonPact2 should never appear again if it's already been obtained
+                if (buff_name == "DemonPact2" or 
+                    (buff_tier == "DemonPact" and (buff_id == 2 or buff_id == "2"))):
+                    if "DemonPact2" not in exclude_cards:
+                        exclude_cards.append("DemonPact2")
+                        print(f"📋 Excluding DemonPact2 from selection (already obtained)")
+    
+    cards = get_3_random_cards_from_tier(tier, exclude_cards=exclude_cards)
+    
+    # If we filtered out all cards and got an empty list, we might need to handle this
+    # For now, if we get empty cards, we'll still return it and let the caller handle it
+    # (This should be rare - only if DemonPact2 was the only DemonPact card available)
     
     return {
         "tier": tier,

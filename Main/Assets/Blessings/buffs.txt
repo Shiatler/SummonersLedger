@@ -27,18 +27,26 @@ Legendary
 1x stat to all vessels - Grand Resonance - Legendary2
 1d20 hp to 1 vessel - Vital Convergence - Legendary3
 +1 AC and +1d10 HP to 1 vessel - Guardian’s Boon - Legendary4
-+1d4 healing each round (regeneration aura) - Blessing of Restoration - Legendary5
-1x Scroll of eternity - Scroll of eternity
+Healing items heals for 1d8 more - Blessing of Restoration - Legendary5
+1x Scroll of eternity - Scroll of eternity - Legendary6
 
 DEMON PACT
 Damage reduction 1d6 for entire party (permanent roll) - Hell-Forged Hide - DemonPact1
 First death each battle restores Vessel to 50% HP once per run - Infernal Rebirth - DemonPact2
 +1d20 HP to all Vessels - Demonheart Surge - DemonPact3
-+1 additional Vessel slot in your active party - Pact of the Legion - DemonPact4
++1d6 bonus dmg for entire party - Pact of the Legion - DemonPact4
 
 Curses
 +1 to one stat of choice / –1 to another stat of choice - Scream of Terror - Curse1
 +2 to one stat of choice / –1 to another random stat - Haunting of Flesh - Curse2
-+1 to all rolls / -1d8 HP for every vessel - Bleeding Moon - Curse3
++1 AC to all vessels / -1d8 HP to every vessel - Bleeding Moon - Curse3
 +1 random stat / -1 stat of choice - The Hollow’s Embrace - Curse4
 +2 to one stat / –1d12 HP permanently - Dirge of the Dead - Curse5
+
+Punishments
+-10 gold 
+-2 random stats
+-1 AC to a random vessel
+-1d6 HP
+
+-1 Vessel - Repent

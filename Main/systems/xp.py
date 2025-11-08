@@ -177,6 +177,14 @@ def apply_level_up(gs, idx: int, new_level: int, *, preserve_hp_ratio: bool = Tr
     abilities = st.get("abilities") or {}
     old_hp_max = float(st.get("hp", 1))
     cur_hp     = float(st.get("current_hp", old_hp_max))
+    
+    # Preserve buff-related fields that should persist through level-ups
+    # These are applied by blessings and should not be lost when stats are rebuilt
+    preserved_buffs = {
+        "ac_bonus": st.get("ac_bonus", 0),
+        "permanent_damage_bonus": st.get("permanent_damage_bonus", 0),
+        "damage_reduction": st.get("damage_reduction", 0),
+    }
 
     # --- Rebuild non-HP stats for new level ---
     cls  = st.get("class_name") or "Fighter"
@@ -197,6 +205,19 @@ def apply_level_up(gs, idx: int, new_level: int, *, preserve_hp_ratio: bool = Tr
     st.update(new_stats)
     st["level"] = int(new_level)
     st.setdefault("xp_current", int(st.get("xp_current", 0)))
+    
+    # Restore preserved buff-related fields
+    for buff_key, buff_value in preserved_buffs.items():
+        if buff_value:  # Only restore if non-zero (saves space)
+            st[buff_key] = buff_value
+    
+    # Update the base AC field to include the ac_bonus from blessings
+    # This ensures the AC is displayed correctly everywhere
+    if preserved_buffs.get("ac_bonus", 0):
+        base_ac = int(st.get("ac", 10))
+        ac_bonus = preserved_buffs["ac_bonus"]
+        st["ac"] = base_ac + ac_bonus
+        print(f"📊 Level-up: Restored AC bonus +{ac_bonus} (base AC: {base_ac}, total AC: {st['ac']})")
 
     # ---------- HP: carry forward previous max, then apply milestone gains ----------
     new_hp_max = int(round(old_hp_max))

@@ -389,6 +389,14 @@ def _apply_heal_or_revive(gs, idx: int, mode: dict) -> tuple[bool, int]:
             heal += _roll_d(max(1, dS))
         if bool(mode.get("add_con", False)):
             heal += _con_mod_of(st)
+        
+        # Apply Blessing of Restoration (Legendary5) healing bonus
+        # This adds the rolled 1d8 bonus to all healing items
+        healing_bonus = getattr(gs, "healing_bonus", 0)
+        if healing_bonus > 0:
+            heal += healing_bonus
+            print(f"✨ Blessing of Restoration: Added +{healing_bonus} healing bonus (total heal: {heal})")
+        
         if heal < 0:
             heal = 0
 
@@ -622,6 +630,13 @@ def _swap(gs, i, j):
         gs.party_active_idx = j
     elif act == j:
         gs.party_active_idx = i
+    
+    # If a vessel is moved to slot 0, automatically set it as active (leading vessel)
+    # This ensures that the first party member leads battles
+    if j == 0 and names[0]:
+        gs.party_active_idx = 0
+    elif i == 0 and names[0]:
+        gs.party_active_idx = 0
 
 def _set_active(gs, idx):
     names = getattr(gs, "party_slots_names", None) or [None]*6
