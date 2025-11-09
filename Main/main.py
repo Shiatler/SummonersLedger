@@ -45,6 +45,7 @@ from screens import (
     black_screen, intro_video, settings_screen, pause_screen, master_oak
 )
 from world.Tavern import tavern as tavern_screen
+from world.Tavern import gambling as gambling_screen
 
 def _try_load(path: str | None):
     if not path:
@@ -135,6 +136,7 @@ MODE_REST = "REST"
 MODE_BOOK_OF_BOUND = "BOOK_OF_BOUND"
 MODE_ARCHIVES = "ARCHIVES"
 MODE_TAVERN = "TAVERN"
+MODE_GAMBLING = "GAMBLING"
 
 
 
@@ -664,6 +666,12 @@ def enter_mode(mode, gs, deps):
         # Add summoners to deps for tavern
         tavern_deps = dict(deps, rival_summoners=RIVAL_SUMMONERS)
         tavern_screen.enter(gs, **tavern_deps)
+    elif mode == MODE_GAMBLING:
+        # Get bet amount from tavern state
+        bet_amount = 0
+        if hasattr(gs, "_tavern_state"):
+            bet_amount = gs._tavern_state.get("selected_bet", 0)
+        gambling_screen.enter(gs, bet_amount=bet_amount, **deps)
     elif mode == S.MODE_GAME:
         # Initialize world state (important for camera initialization on loaded games)
         world.enter(gs, **deps)
@@ -1166,28 +1174,35 @@ while running:
         elif mode == MODE_CHAR_SELECT:
             audio.play_music(AUDIO, "CharacterSelect")
         elif mode == MODE_TAVERN:
-            # Stop overworld music and walking sounds
-            audio.stop_music(fade_ms=600)
-            # Stop overworld walking sound if playing
-            if hasattr(gs, "walking_channel") and gs.walking_channel:
-                try:
-                    gs.walking_channel.stop()
-                except:
-                    pass
-            if hasattr(gs, "is_walking"):
-                gs.is_walking = False
-                gs.walking_channel = None
-            
-            # Try to play tavern music (will use direct path if not in AUDIO bank)
-            tavern_music_path = os.path.join("Assets", "Tavern", "Tavern.mp3")
-            if os.path.exists(tavern_music_path):
-                audio.play_music(AUDIO, tavern_music_path, loop=True, fade_ms=600)
-            else:
-                # Fallback: try to find it in the audio bank
-                audio.play_music(AUDIO, "tavern", loop=True, fade_ms=600)
+            # Only start tavern music if we're not coming from gambling (where it's already playing)
+            if prev_mode != MODE_GAMBLING:
+                # Stop overworld music and walking sounds
+                audio.stop_music(fade_ms=600)
+                # Stop overworld walking sound if playing
+                if hasattr(gs, "walking_channel") and gs.walking_channel:
+                    try:
+                        gs.walking_channel.stop()
+                    except:
+                        pass
+                if hasattr(gs, "is_walking"):
+                    gs.is_walking = False
+                    gs.walking_channel = None
+                
+                # Try to play tavern music (will use direct path if not in AUDIO bank)
+                tavern_music_path = os.path.join("Assets", "Tavern", "Tavern.mp3")
+                if os.path.exists(tavern_music_path):
+                    audio.play_music(AUDIO, tavern_music_path, loop=True, fade_ms=600)
+                else:
+                    # Fallback: try to find it in the audio bank
+                    audio.play_music(AUDIO, "tavern", loop=True, fade_ms=600)
+            # If coming from gambling, music should already be playing - don't restart it
+        elif mode == MODE_GAMBLING:
+            # Don't stop tavern music - it should continue playing
+            # Just make sure we're not playing overworld music
+            pass
         elif mode == S.MODE_GAME:
-            # Check if we're returning from tavern - restore overworld music
-            if prev_mode == MODE_TAVERN:
+            # Check if we're returning from tavern or gambling - restore overworld music
+            if prev_mode == MODE_TAVERN or prev_mode == MODE_GAMBLING:
                 # Stop tavern music
                 audio.stop_music(fade_ms=600)
             else:
@@ -1439,7 +1454,12 @@ while running:
         cursor_manager.draw_cursor(screen, mouse_pos, gs, mode)
         pygame.display.flip()
         if next_mode:
-            mode = next_mode
+            # If pause returns to game, check if we should return to a previous mode (e.g., tavern)
+            if next_mode == S.MODE_GAME and hasattr(gs, "_pause_return_to"):
+                mode = gs._pause_return_to
+                del gs._pause_return_to  # Clear the stored mode
+            else:
+                mode = next_mode
     
     # ===================== SUMMONER BATTLE =====================
     elif mode == MODE_SUMMONER_BATTLE:
@@ -1473,7 +1493,27 @@ while running:
         cursor_manager.draw_cursor(screen, mouse_pos, gs, mode)
         pygame.display.flip()
         if next_mode:
-            mode = next_mode
+                mode = next_mode
+    
+    # ===================== Gambling =====================
+    elif mode == MODE_GAMBLING:
+        # Update gambling screen
+        gambling_screen.update(gs, dt, **deps)
+        # Handle gambling events
+        next_mode = gambling_screen.handle(events, gs, dt, **deps)
+        # Draw gambling screen
+        gambling_screen.draw(virtual_screen, gs, dt, **deps)
+        blit_virtual_to_screen(virtual_screen, screen)
+        mouse_pos = pygame.mouse.get_pos()
+        cursor_manager.draw_cursor(screen, mouse_pos, gs, mode)
+        pygame.display.flip()
+        
+        if next_mode:
+            if next_mode == "TAVERN":
+                # Return to tavern (tavern music should still be playing)
+                mode = MODE_TAVERN
+            else:
+                mode = next_mode
     
     # ===================== Death Saves ==========================
     elif mode == MODE_DEATH_SAVES:
@@ -1535,46 +1575,84 @@ while running:
 
     # ===================== Tavern ==========================
     elif mode == MODE_TAVERN:
+        # Track modal states for HUD button handling
+        any_modal_open_tavern = buff_popup.is_active() or bag_ui.is_open() or party_manager.is_open() or ledger.is_open() or gs.shop_open or currency_display.is_open() or rest_popup.is_open()
+        tavern_state = getattr(gs, "_tavern_state", {})
+        if tavern_state.get("kicked_out_textbox_active", False) or tavern_state.get("show_gambler_intro", False) or tavern_state.get("show_bet_selection", False):
+            any_modal_open_tavern = True
+        
+        # Track HUD button clicks to prevent event propagation
+        hud_button_click_positions_tavern = set()
+        
+        # --- Handle cursor changes for mouse events ---
+        for e in events:
+            cursor_manager.handle_mouse_event(e)
+        
+        # --- Handle HUD button clicks FIRST (before other UI) ---
+        for e in events:
+            if e.type == pygame.MOUSEBUTTONDOWN and e.button == 1:
+                # Convert click position to logical coordinates (button rects are in logical coords)
+                logical_pos = coords.screen_to_logical(e.pos)
+                button_clicked = hud_buttons.handle_click(logical_pos)
+                if button_clicked == 'bag':
+                    bag_ui.toggle_popup()
+                    hud_button_click_positions_tavern.add(e.pos)
+                    audio.play_click(AUDIO)
+                elif button_clicked == 'party':
+                    if not bag_ui.is_open() and not ledger.is_open():
+                        party_manager.toggle()
+                        hud_button_click_positions_tavern.add(e.pos)
+                        audio.play_click(AUDIO)
+                elif button_clicked == 'currency':
+                    if not currency_display.is_open() and not bag_ui.is_open() and not party_manager.is_open() and not ledger.is_open():
+                        currency_display.toggle()
+                        # Play Coin.mp3 sound
+                        coin_sound = AUDIO.sfx.get("Coin") or AUDIO.sfx.get("coin")
+                        if coin_sound:
+                            coin_sound.play()
+                        else:
+                            # Try to load from the path
+                            coin_path = os.path.join("Assets", "Music", "Sounds", "Coin.mp3")
+                            if os.path.exists(coin_path):
+                                try:
+                                    coin_sfx = pygame.mixer.Sound(coin_path)
+                                    coin_sfx.play()
+                                except:
+                                    pass
+                    elif currency_display.is_open():
+                        currency_display.close()
+                    hud_button_click_positions_tavern.add(e.pos)
+                elif button_clicked == 'rest':
+                    if not bag_ui.is_open() and not party_manager.is_open() and not ledger.is_open() and not currency_display.is_open() and not gs.shop_open and not rest_popup.is_open():
+                        rest_popup.toggle()
+                        hud_button_click_positions_tavern.add(e.pos)
+                        audio.play_click(AUDIO)
+        
+        # --- Handle ESC key for pause menu FIRST (before tavern handles events) ---
+        esc_pressed_for_pause = False
+        for event in events:
+            if event.type == pygame.KEYDOWN and event.key == pygame.K_ESCAPE:
+                # Don't open pause if any modal is open
+                if not any_modal_open_tavern:
+                    # Store previous mode (tavern) so pause can return to it
+                    gs._pause_return_to = MODE_TAVERN
+                    # Open pause menu
+                    audio.play_click(AUDIO)
+                    mode = MODE_PAUSE
+                    esc_pressed_for_pause = True
+                    break
+        
         # Update tavern screen
         tavern_screen.update(gs, dt, **deps)
-        # Handle tavern events
-        next_mode = tavern_screen.handle(events, gs, dt, **deps)
-        # Draw tavern screen
-        tavern_screen.draw(virtual_screen, gs, dt, **deps)
-        blit_virtual_to_screen(virtual_screen, screen)
-        mouse_pos = pygame.mouse.get_pos()
-        cursor_manager.draw_cursor(screen, mouse_pos, gs, mode)
-        pygame.display.flip()
         
-        # --- Tavern walking SFX (same logic as overworld) ---
-        # Check if any modal is open (block walking sounds if modal is open)
-        any_modal_open = buff_popup.is_active() or bag_ui.is_open() or party_manager.is_open() or ledger.is_open() or gs.shop_open or currency_display.is_open() or rest_popup.is_open()
-        # Check if kicked out textbox is active (block walking sounds)
-        tavern_state = getattr(gs, "_tavern_state", {})
-        if tavern_state.get("kicked_out_textbox_active", False):
-            any_modal_open = True
+        # Handle tavern events FIRST (before modals) so tavern interactions (E key) work properly
+        # Only if not opening pause menu
+        if not esc_pressed_for_pause:
+            next_mode = tavern_screen.handle(events, gs, dt, **deps)
+        else:
+            next_mode = None
         
-        keys = pygame.key.get_pressed()
-        # Player is walking if pressing any movement key (A/D/W/S)
-        walking = (keys[pygame.K_a] or keys[pygame.K_d] or keys[pygame.K_w] or keys[pygame.K_s]) and not any_modal_open
-        
-        if not hasattr(gs, "tavern_is_walking"):
-            gs.tavern_is_walking = False
-            gs.tavern_walking_channel = None
-        
-        if walking and not gs.tavern_is_walking:
-            # Start playing tavern footsteps sound
-            sfx = AUDIO.sfx.get("footsteps") or AUDIO.sfx.get("Footsteps")
-            if sfx:
-                gs.tavern_walking_channel = sfx.play(loops=-1, fade_ms=80)
-            gs.tavern_is_walking = True
-        elif not walking and gs.tavern_is_walking:
-            # Stop playing tavern footsteps sound
-            if gs.tavern_walking_channel:
-                gs.tavern_walking_channel.stop()
-            gs.tavern_is_walking = False
-            gs.tavern_walking_channel = None
-        
+        # If tavern handler returned a mode change, apply it immediately and skip the rest
         if next_mode:
             if next_mode == "GAME":
                 # Stop tavern walking sound when exiting
@@ -1612,8 +1690,138 @@ while running:
                 mode = S.MODE_GAME
                 # Reset overworld music state so it restarts in the game mode loop
                 gs.overworld_music_started = False
-            else:
-                mode = next_mode
+            elif next_mode == "GAMBLING":
+                # Transition to gambling screen (tavern music continues)
+                mode = MODE_GAMBLING
+            elif next_mode == "SUMMONER_BATTLE":
+                # Transition to summoner battle immediately
+                mode = MODE_SUMMONER_BATTLE
+                # Call enter_mode to initialize the summoner battle screen
+                enter_mode(mode, gs, deps)
+            # Continue to next iteration of main loop with new mode
+            continue
+        
+        # --- Let HUD handle clicks in tavern mode (party UI can open Ledger) ---
+        # Only if we didn't click a HUD button (to avoid conflicts) and not opening pause
+        if not esc_pressed_for_pause and not hud_button_click_positions_tavern and not bag_ui.is_open() and not party_manager.is_open() and not ledger.is_open() and not currency_display.is_open():
+            was_ledger_open_tavern = ledger.is_open()  # should be False, safety check
+            for e in events:
+                party_ui.handle_event(e, gs)
+            if not was_ledger_open_tavern and ledger.is_open():
+                # Ledger was just opened from party UI
+                pass
+        
+        # --- Handle modal events (bag, party manager, ledger, currency, rest) ---
+        # Route events to modals (priority: Bag → Party Manager → Ledger → Currency → Rest)
+        # Only process if not opening pause menu
+        if not esc_pressed_for_pause:
+            for e in events:
+                # Skip mouse clicks that were HUD button clicks (prevent immediate close)
+                if e.type == pygame.MOUSEBUTTONDOWN and e.button == 1:
+                    if e.pos in hud_button_click_positions_tavern:
+                        continue  # Skip this event, already handled by HUD button
+                
+                # Handle modals (only if they're open)
+                if bag_ui.is_open():
+                    if bag_ui.handle_event(e, gs, virtual_screen):
+                        continue
+                
+                if party_manager.is_open():
+                    if party_manager.handle_event(e, gs):
+                        continue
+                
+                if ledger.is_open():
+                    if ledger.handle_event(e, gs):
+                        continue
+                
+                if currency_display.is_open():
+                    if currency_display.handle_event(e, gs):
+                        continue
+                
+                if rest_popup.is_open():
+                    if rest_popup.handle_event(e, gs):
+                        continue
+        
+        # Draw tavern screen
+        tavern_screen.draw(virtual_screen, gs, dt, **deps)
+        
+        # Draw HUD (same as overworld) - only if not transitioning to pause
+        if mode == MODE_TAVERN:
+            left_hud.draw(virtual_screen, gs)  # Left side HUD panel behind character token and party UI
+            party_ui.draw_party_hud(virtual_screen, gs)  # Character token and party slots (draws on top of left_hud)
+            
+            # Draw bottom right HUD with buttons (textbox style)
+            bottom_right_hud.draw(virtual_screen, gs)  # Bottom right HUD panel with buttons inside (textbox style)
+            hud_buttons.draw(virtual_screen)  # Draw buttons on top of bottom_right_hud
+            
+            # Draw modals (party manager, bag, ledger, currency, etc.)
+            if bag_ui.is_open():
+                bag_ui.draw_popup(virtual_screen, gs)
+            if party_manager.is_open():
+                party_manager.draw(virtual_screen, gs, dt)
+            if ledger.is_open():
+                ledger.draw(virtual_screen, gs)
+            if currency_display.is_open():
+                currency_display.draw(virtual_screen, gs)
+            if rest_popup.is_open():
+                rest_popup.draw_popup(virtual_screen, gs)
+            
+            # Draw tavern textboxes AFTER HUD (so they appear on top)
+            # Import the drawing functions from tavern module
+            from world.Tavern.tavern import _draw_gambler_intro_textbox, _draw_bet_selection_popup, _draw_kicked_out_textbox
+            tavern_state = getattr(gs, "_tavern_state", {})
+            screen_w = getattr(S, "LOGICAL_WIDTH", S.WIDTH)
+            screen_h = getattr(S, "LOGICAL_HEIGHT", S.HEIGHT)
+            
+            # Draw gambler intro textbox (modal, blocks other input, drawn on top of HUD)
+            if tavern_state.get("show_gambler_intro", False):
+                _draw_gambler_intro_textbox(virtual_screen, gs, dt, screen_w, screen_h)
+            
+            # Draw bet selection popup (modal, blocks other input, drawn on top of HUD)
+            if tavern_state.get("show_bet_selection", False):
+                _draw_bet_selection_popup(virtual_screen, gs, dt, screen_w, screen_h)
+            
+            # Draw "kicked out" textbox (drawn on top of everything, modal)
+            if tavern_state.get("kicked_out_textbox_active", False):
+                _draw_kicked_out_textbox(virtual_screen, gs, dt, screen_w, screen_h)
+        
+        blit_virtual_to_screen(virtual_screen, screen)
+        mouse_pos = pygame.mouse.get_pos()
+        cursor_manager.draw_cursor(screen, mouse_pos, gs, mode)
+        pygame.display.flip()
+        
+        # Handle pause menu transition
+        if esc_pressed_for_pause:
+            # Already set mode to MODE_PAUSE above, will be handled in pause mode
+            pass
+        
+        # --- Tavern walking SFX (same logic as overworld) ---
+        # Check if any modal is open (block walking sounds if modal is open)
+        any_modal_open_walking = buff_popup.is_active() or bag_ui.is_open() or party_manager.is_open() or ledger.is_open() or gs.shop_open or currency_display.is_open() or rest_popup.is_open()
+        # Check if kicked out textbox is active (block walking sounds)
+        if tavern_state.get("kicked_out_textbox_active", False) or tavern_state.get("show_gambler_intro", False) or tavern_state.get("show_bet_selection", False):
+            any_modal_open_walking = True
+        
+        keys = pygame.key.get_pressed()
+        # Player is walking if pressing any movement key (A/D/W/S)
+        walking = (keys[pygame.K_a] or keys[pygame.K_d] or keys[pygame.K_w] or keys[pygame.K_s]) and not any_modal_open_walking
+        
+        if not hasattr(gs, "tavern_is_walking"):
+            gs.tavern_is_walking = False
+            gs.tavern_walking_channel = None
+        
+        if walking and not gs.tavern_is_walking:
+            # Start playing tavern footsteps sound
+            sfx = AUDIO.sfx.get("footsteps") or AUDIO.sfx.get("Footsteps")
+            if sfx:
+                gs.tavern_walking_channel = sfx.play(loops=-1, fade_ms=80)
+            gs.tavern_is_walking = True
+        elif not walking and gs.tavern_is_walking:
+            # Stop playing tavern footsteps sound
+            if gs.tavern_walking_channel:
+                gs.tavern_walking_channel.stop()
+            gs.tavern_is_walking = False
+            gs.tavern_walking_channel = None
 
     # ===================== Book of the Bound ==========================
     elif mode == MODE_BOOK_OF_BOUND:
@@ -1830,6 +2038,7 @@ while running:
                 party_ui.handle_event(e, gs)
             if not was_ledger_open and ledger.is_open():
                 just_opened_ledger = True
+        
 
         # --- Check for pending buff selection and start popup ---
         if getattr(gs, "pending_buff_selection", False) and not buff_popup.is_active():

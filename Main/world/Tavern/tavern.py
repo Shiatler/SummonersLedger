@@ -438,6 +438,9 @@ def enter(gs, rival_summoners=None, **_):
     # Load tavern map
     _load_tavern_map()
     
+    # Don't preload gambling assets - load them instantly when entering gambling screen instead
+    # This keeps tavern entry fast
+    
     # Initialize tavern state
     if not hasattr(gs, "_tavern_state"):
         gs._tavern_state = {}
@@ -950,6 +953,167 @@ def _get_dh_font(size: int) -> pygame.font.Font:
         pass
     return pygame.font.SysFont(None, size)
 
+def _draw_gambler_intro_textbox(screen, gs, dt: float, screen_w: int, screen_h: int):
+    """Draw gambler intro textbox (same style as kicked out textbox)."""
+    st = gs._tavern_state
+    
+    box_h = 120
+    margin_x = 36
+    margin_bottom = 28
+    rect = pygame.Rect(margin_x, screen_h - box_h - margin_bottom, screen_w - margin_x * 2, box_h)
+    
+    # Box styling (matches kicked out textbox)
+    pygame.draw.rect(screen, (245, 245, 245), rect)
+    pygame.draw.rect(screen, (0, 0, 0), rect, 4, border_radius=8)
+    inner = rect.inflate(-8, -8)
+    pygame.draw.rect(screen, (60, 60, 60), inner, 2, border_radius=6)
+    
+    # Text rendering (simple wrap)
+    font = _get_dh_font(28)
+    text = "You want to play eh? Lets play Doom Roll!"
+    words = text.split(" ")
+    lines, cur = [], ""
+    max_w = rect.w - 40
+    for w in words:
+        test = (cur + " " + w).strip()
+        if not cur or font.size(test)[0] <= max_w:
+            cur = test
+        else:
+            lines.append(cur)
+            cur = w
+    if cur:
+        lines.append(cur)
+    
+    y = rect.y + 20
+    for line in lines:
+        surf = font.render(line, False, (16, 16, 16))
+        screen.blit(surf, (rect.x + 20, y))
+        y += surf.get_height() + 6
+    
+    # Blinking prompt bottom-right
+    blink_t = st.get("gambler_intro_blink_t", 0.0)
+    blink_on = int(blink_t * 2) % 2 == 0
+    if blink_on:
+        prompt_font = _get_dh_font(20)
+        prompt = "Press SPACE or Click to continue"
+        psurf = prompt_font.render(prompt, False, (40, 40, 40))
+        px = rect.right - psurf.get_width() - 16
+        py = rect.bottom - psurf.get_height() - 12
+        screen.blit(psurf, (px, py))
+
+def _play_laugh_sound():
+    """Play laugh sound (Laugh.mp3)."""
+    try:
+        sound_path = os.path.join("Assets", "Tavern", "Laugh.mp3")
+        if os.path.exists(sound_path):
+            sfx = pygame.mixer.Sound(sound_path)
+            ch = pygame.mixer.find_channel(True)
+            ch.play(sfx)
+            print("🎵 Playing laugh sound (Laugh.mp3)")
+        else:
+            print(f"⚠️ Laugh sound not found at {sound_path}")
+    except Exception as e:
+        print(f"⚠️ Failed to play laugh sound: {e}")
+
+def _draw_bet_selection_popup(screen, gs, dt: float, screen_w: int, screen_h: int):
+    """Draw bet selection popup (centered, modal style matching popup style)."""
+    st = gs._tavern_state
+    
+    # Get player's current gold
+    player_gold = getattr(gs, "gold", 0)
+    
+    # Popup dimensions (bigger)
+    popup_w = 500
+    popup_h = 400
+    popup_x = (screen_w - popup_w) // 2
+    popup_y = (screen_h - popup_h) // 2
+    
+    # Draw semi-transparent overlay
+    overlay = pygame.Surface((screen_w, screen_h), pygame.SRCALPHA)
+    overlay.fill((0, 0, 0, 180))
+    screen.blit(overlay, (0, 0))
+    
+    # Popup box (matches popup style - dark brown/medieval)
+    popup_rect = pygame.Rect(popup_x, popup_y, popup_w, popup_h)
+    pygame.draw.rect(screen, (40, 35, 30), popup_rect)
+    pygame.draw.rect(screen, (80, 70, 60), popup_rect, 3)
+    inner = popup_rect.inflate(-8, -8)
+    pygame.draw.rect(screen, (60, 50, 40), inner, 2)
+    
+    # Title
+    font = _get_dh_font(32)
+    title_text = "How much to gamble?"
+    title_surf = font.render(title_text, True, (255, 255, 255))
+    title_x = popup_x + (popup_w - title_surf.get_width()) // 2
+    title_y = popup_y + 20
+    screen.blit(title_surf, (title_x, title_y))
+    
+    # Current gold display
+    gold_font = _get_dh_font(20)
+    gold_text = f"Your gold: {player_gold}"
+    gold_surf = gold_font.render(gold_text, True, (200, 200, 150))
+    gold_x = popup_x + (popup_w - gold_surf.get_width()) // 2
+    gold_y = title_y + title_surf.get_height() + 15
+    screen.blit(gold_surf, (gold_x, gold_y))
+    
+    # Bet buttons (1, 5, 10, 20, All in)
+    button_font = _get_dh_font(24)
+    button_options = [
+        (1, "1 Gold"),
+        (5, "5 Gold"),
+        (10, "10 Gold"),
+        (20, "20 Gold"),
+        (-1, f"All In ({player_gold})"),  # -1 means all in
+    ]
+    
+    button_y_start = gold_y + gold_surf.get_height() + 30
+    button_h = 40
+    button_spacing = 10
+    button_w = popup_w - 80
+    
+    st["bet_buttons"] = []  # Store button rects for click detection
+    
+    button_index = 0
+    for amount, label in button_options:
+        # Skip if amount exceeds available gold
+        if amount > 0 and amount > player_gold:
+            continue
+        if amount == -1 and player_gold == 0:
+            continue
+        
+        button_y = button_y_start + button_index * (button_h + button_spacing)
+        button_rect = pygame.Rect(popup_x + 40, button_y, button_w, button_h)
+        st["bet_buttons"].append((button_rect, amount))
+        button_index += 1
+        
+        # Button styling (hover effect if mouse over)
+        mouse_x, mouse_y = pygame.mouse.get_pos()
+        # Scale mouse position to logical coordinates if needed
+        logical_mouse_x = mouse_x * screen_w // screen.get_width() if screen.get_width() != screen_w else mouse_x
+        logical_mouse_y = mouse_y * screen_h // screen.get_height() if screen.get_height() != screen_h else mouse_y
+        
+        hover = button_rect.collidepoint(logical_mouse_x, logical_mouse_y)
+        button_color = (60, 50, 40) if hover else (50, 40, 30)
+        border_color = (100, 90, 80) if hover else (80, 70, 60)
+        
+        pygame.draw.rect(screen, button_color, button_rect)
+        pygame.draw.rect(screen, border_color, button_rect, 2)
+        
+        # Button text
+        button_text = label if amount != -1 or player_gold > 0 else "All In (0)"
+        text_surf = button_font.render(button_text, True, (255, 255, 255))
+        text_x = button_rect.x + (button_rect.w - text_surf.get_width()) // 2
+        text_y = button_rect.y + (button_rect.h - text_surf.get_height()) // 2
+        screen.blit(text_surf, (text_x, text_y))
+    
+    # Cancel/ESC hint
+    hint_font = _get_dh_font(18)
+    hint_text = "Press ESC to cancel"
+    hint_surf = hint_font.render(hint_text, True, (150, 150, 150))
+    hint_x = popup_x + (popup_w - hint_surf.get_width()) // 2
+    hint_y = popup_y + popup_h - hint_surf.get_height() - 15
+    screen.blit(hint_surf, (hint_x, hint_y))
+
 def _draw_kicked_out_textbox(screen, gs, dt: float, screen_w: int, screen_h: int):
     """Draw the 'kicked out' textbox (same style as summoner_battle textbox)."""
     st = gs._tavern_state
@@ -1059,7 +1223,122 @@ def handle(events, gs, dt: float, **_):
     """Handle events for the tavern screen."""
     st = gs._tavern_state
     
-    # Handle "kicked out" textbox first (modal - blocks all other input)
+    # Handle gambler intro textbox first (modal - blocks all other input)
+    if st.get("show_gambler_intro", False) or st.get("gambler_intro_active", False):
+        for event in events:
+            if event.type == pygame.KEYDOWN:
+                # ESC can still exit
+                if event.key == pygame.K_ESCAPE:
+                    # Cancel intro textbox
+                    st["show_gambler_intro"] = False
+                    st["gambler_intro_active"] = False
+                    print("🎲 Intro cancelled")
+                elif event.key in (pygame.K_RETURN, pygame.K_KP_ENTER, pygame.K_SPACE):
+                    # Dismiss intro textbox, play laugh sound, show bet selection
+                    st["show_gambler_intro"] = False
+                    st["gambler_intro_active"] = False
+                    _play_laugh_sound()
+                    st["show_bet_selection"] = True
+                    st["bet_selection_active"] = True
+                    print("🎲 Intro dismissed, showing bet selection")
+            elif event.type == pygame.MOUSEBUTTONDOWN and event.button == 1:
+                # Dismiss intro textbox, play laugh sound, show bet selection
+                st["show_gambler_intro"] = False
+                st["gambler_intro_active"] = False
+                _play_laugh_sound()
+                st["show_bet_selection"] = True
+                st["bet_selection_active"] = True
+                print("🎲 Intro dismissed, showing bet selection")
+        # Block all other input while intro is active
+        return None
+    
+    # Handle bet selection popup (modal - blocks all other input)
+    if st.get("show_bet_selection", False):
+        for event in events:
+            if event.type == pygame.KEYDOWN:
+                if event.key == pygame.K_ESCAPE:
+                    # Cancel bet selection
+                    st["show_bet_selection"] = False
+                    st["bet_selection_active"] = False
+                    st["bet_buttons"] = []
+                    print("🎲 Bet selection cancelled")
+                elif event.key == pygame.K_1:
+                    # Bet 1 gold
+                    player_gold = getattr(gs, "gold", 0)
+                    if player_gold >= 1:
+                        st["selected_bet"] = 1
+                        st["show_bet_selection"] = False
+                        st["bet_selection_active"] = False
+                        print(f"🎲 Selected bet: 1 gold")
+                        return "GAMBLING"
+                elif event.key == pygame.K_2:
+                    # Bet 5 gold
+                    player_gold = getattr(gs, "gold", 0)
+                    if player_gold >= 5:
+                        st["selected_bet"] = 5
+                        st["show_bet_selection"] = False
+                        st["bet_selection_active"] = False
+                        print(f"🎲 Selected bet: 5 gold")
+                        return "GAMBLING"
+                elif event.key == pygame.K_3:
+                    # Bet 10 gold
+                    player_gold = getattr(gs, "gold", 0)
+                    if player_gold >= 10:
+                        st["selected_bet"] = 10
+                        st["show_bet_selection"] = False
+                        st["bet_selection_active"] = False
+                        print(f"🎲 Selected bet: 10 gold")
+                        return "GAMBLING"
+                elif event.key == pygame.K_4:
+                    # Bet 20 gold
+                    player_gold = getattr(gs, "gold", 0)
+                    if player_gold >= 20:
+                        st["selected_bet"] = 20
+                        st["show_bet_selection"] = False
+                        st["bet_selection_active"] = False
+                        print(f"🎲 Selected bet: 20 gold")
+                        return "GAMBLING"
+                elif event.key == pygame.K_5:
+                    # All in
+                    player_gold = getattr(gs, "gold", 0)
+                    if player_gold > 0:
+                        st["selected_bet"] = player_gold  # Store actual gold amount for "all in"
+                        st["show_bet_selection"] = False
+                        st["bet_selection_active"] = False
+                        print(f"🎲 Selected bet: All in ({player_gold} gold)")
+                        return "GAMBLING"
+            elif event.type == pygame.MOUSEBUTTONDOWN and event.button == 1:
+                # Check if clicked on a button
+                mouse_x, mouse_y = pygame.mouse.get_pos()
+                screen_w = getattr(S, "LOGICAL_WIDTH", S.WIDTH)
+                screen_h = getattr(S, "LOGICAL_HEIGHT", S.HEIGHT)
+                # Scale mouse position to logical coordinates if needed
+                screen_surface = pygame.display.get_surface()
+                logical_mouse_x = mouse_x * screen_w // screen_surface.get_width() if screen_surface.get_width() != screen_w else mouse_x
+                logical_mouse_y = mouse_y * screen_h // screen_surface.get_height() if screen_surface.get_height() != screen_h else mouse_y
+                
+                player_gold = getattr(gs, "gold", 0)
+                buttons = st.get("bet_buttons", [])
+                for button_rect, amount in buttons:
+                    if button_rect.collidepoint(logical_mouse_x, logical_mouse_y):
+                        # Determine actual bet amount
+                        if amount == -1:  # All in
+                            bet_amount = player_gold
+                        else:
+                            bet_amount = amount
+                        
+                        # Check if player has enough gold
+                        if player_gold >= bet_amount and bet_amount > 0:
+                            st["selected_bet"] = bet_amount
+                            st["show_bet_selection"] = False
+                            st["bet_selection_active"] = False
+                            st["bet_buttons"] = []
+                            print(f"🎲 Selected bet: {bet_amount} gold")
+                            return "GAMBLING"
+        # Block all other input while bet selection is active
+        return None
+    
+    # Handle "kicked out" textbox (modal - blocks all other input)
     if st.get("kicked_out_textbox_active", False):
         for event in events:
             if event.type == pygame.KEYDOWN:
@@ -1095,10 +1374,11 @@ def handle(events, gs, dt: float, **_):
     
     for event in events:
         if event.type == pygame.KEYDOWN:
-            # Exit tavern with E only when near spawn (ESC still works from anywhere)
+            # ESC is handled in main.py for pause menu (not here)
+            # Don't handle ESC here - let main.py handle it
             if event.key == pygame.K_ESCAPE:
-                # Return to game mode
-                return "GAME"
+                # ESC is handled in main.py, ignore it here
+                pass
             elif event.key == pygame.K_e:
                 if near_spawn:
                     # Return to game mode (only when near spawn)
@@ -1108,9 +1388,11 @@ def handle(events, gs, dt: float, **_):
                     print("🍺 Player interacted with barkeeper!")
                     # For now, just print - can be extended later
                 elif near_gambler:
-                    # TODO: Handle gambler interaction (gambling minigame, etc.)
-                    print("🎲 Player interacted with gambler!")
-                    # For now, just print - can be extended later
+                    # Show intro textbox first
+                    st["show_gambler_intro"] = True
+                    st["gambler_intro_active"] = True
+                    st["gambler_intro_blink_t"] = 0.0
+                    print("🎲 Player wants to gamble - showing intro textbox")
                 elif near_whore:
                     # TODO: Handle whore interaction (sleep with whore/whores/harem, etc.)
                     whore_number = st.get("whore_number", 0)
@@ -1146,7 +1428,7 @@ def handle(events, gs, dt: float, **_):
                         # Mark that we came from tavern (so battle returns to tavern)
                         gs._from_tavern = True
                         print(f"⚔️ Starting barfight with {summoner_name}!")
-                        # Transition to summoner battle
+                        # Transition to summoner battle immediately
                         return "SUMMONER_BATTLE"
     
     return None
@@ -1164,8 +1446,13 @@ def update(gs, dt, **_):
     # Get player half size
     player_half = getattr(gs, "player_half", Vector2(S.PLAYER_SIZE[0] / 2, S.PLAYER_SIZE[1] / 2))
     
-    # Update player position (horizontal and vertical movement allowed)
-    update_player_tavern(gs, dt, player_half, map_w, map_h, map_anchor_x)
+    # Block player movement if intro textbox or bet selection is active
+    if not st.get("show_gambler_intro", False) and not st.get("show_bet_selection", False):
+        # Update player position (horizontal and vertical movement allowed)
+        update_player_tavern(gs, dt, player_half, map_w, map_h, map_anchor_x)
+    else:
+        # Player movement is blocked when textbox/popup is active
+        pass
     
     # Check if player is near spawn (update proximity check)
     spawn_pos = st.get("spawn_pos", None)
@@ -1191,9 +1478,11 @@ def update(gs, dt, **_):
     else:
         st["near_summoner"] = False
     
-    # Update textbox blink timer if textbox is active
+    # Update textbox blink timers if textboxes are active
     if st.get("kicked_out_textbox_active", False):
         st["kicked_out_blink_t"] = st.get("kicked_out_blink_t", 0.0) + dt
+    if st.get("show_gambler_intro", False):
+        st["gambler_intro_blink_t"] = st.get("gambler_intro_blink_t", 0.0) + dt
     
     # Camera is completely locked (map doesn't move)
     screen_w = getattr(S, "LOGICAL_WIDTH", S.WIDTH)
@@ -1379,10 +1668,13 @@ def draw(screen: pygame.Surface, gs, dt: float, **_):
         _draw_barkeeper_popup(screen, gs, barkeeper_pos, map_anchor_x, map_src_x, map_src_y, map_dst_x, map_dst_y, player_half, screen_w, screen_h, map_w, map_h)
     
     # Draw gambler popup when near gambler (but not when near spawn or barkeeper to avoid overlap)
+    # Also don't show gambler popup when intro textbox or bet selection is active
     gambler_pos = st.get("gambler_pos", None)
     near_gambler = st.get("near_gambler", False)
+    show_gambler_popup = (not st.get("show_gambler_intro", False) and 
+                          not st.get("show_bet_selection", False))
     
-    if gambler_pos and near_gambler and not near_spawn and not near_barkeeper:
+    if gambler_pos and near_gambler and not near_spawn and not near_barkeeper and show_gambler_popup:
         _draw_gambler_popup(screen, gs, gambler_pos, map_anchor_x, map_src_x, map_src_y, map_dst_x, map_dst_y, player_half, screen_w, screen_h, map_w, map_h)
     
     # Draw whore popup when near whore (but not when near spawn, barkeeper, or gambler to avoid overlap)
@@ -1400,8 +1692,6 @@ def draw(screen: pygame.Surface, gs, dt: float, **_):
     if summoner_pos and near_summoner and not near_spawn and not near_barkeeper and not near_gambler and not near_whore:
         _draw_summoner_popup(screen, gs, summoner_pos, map_anchor_x, map_src_x, map_src_y, map_dst_x, map_dst_y, player_half, screen_w, screen_h, map_w, map_h)
     
-    # Draw "kicked out" textbox (drawn on top of everything, modal)
-    if st.get("kicked_out_textbox_active", False):
-        _draw_kicked_out_textbox(screen, gs, dt, screen_w, screen_h)
+    # NOTE: Textboxes (gambler intro, bet selection, kicked out) are now drawn in main.py
+    # after the HUD elements so they appear on top of the HUD
     
-
