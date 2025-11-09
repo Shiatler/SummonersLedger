@@ -340,6 +340,10 @@ def _add_captured_to_party(gs, vessel_png_name: str, stats_dict: dict) -> bool:
     if not getattr(gs, "party_vessel_stats", None):gs.party_vessel_stats= [None]*6
     gs.party_slots_names[idx]  = token_png
     gs.party_slots[idx]        = None
+    
+    # Clear party_ui.py tracking so it rebuilds from names
+    if hasattr(gs, "_party_slots_token_names"):
+        delattr(gs, "_party_slots_token_names")
     gs.party_vessel_stats[idx] = dict(stats_dict) if isinstance(stats_dict, dict) else None
     return True
 
@@ -1414,12 +1418,7 @@ def handle(events, gs, **_):
         base_xp = xp_sys.compute_xp_reward(estats or {}, enemy_name or "Enemy", outcome or "defeat")
         active_xp, bench_xp, levelups = xp_sys.distribute_xp(gs, int(active_idx), int(base_xp))
         
-        # Optional: persist now
-        try:
-            from systems import save_system as saves
-            saves.save_game(gs, force=True)
-        except Exception:
-            pass
+        # No autosave - user must manually save via "Save Game" button
         
         # Build concise subtitle
         xp_line = f"+{active_xp} XP to active  |  +{bench_xp} to each benched"

@@ -89,9 +89,8 @@ def _assign_starter_and_roll(gs, token_name: str, token_surf):
             stats = generate_vessel_stats_from_asset(token_name, level=1)
             # store plain dict so it serializes cleanly
             gs.party_vessel_stats[0] = stats
-            # persist immediately
-            saves.save_game(gs)
-            print(f"✅ Starter stats rolled and saved for {token_name}")
+            # No autosave - user must manually save via "Save Game" button
+            print(f"✅ Starter stats rolled for {token_name}")
         except Exception as e:
             print(f"⚠️ Failed to roll starter stats for {token_name}: {e}")
 

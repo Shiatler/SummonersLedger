@@ -174,12 +174,7 @@ def _maybe_show_xp_award(gs, st):
       "to active idx", active_idx)  # DEBUG
     active_xp, bench_xp, levelups = xp_sys.distribute_xp(gs, int(active_idx), int(base_xp))
 
-    # optional immediate save
-    try:
-        from systems import save_system as saves
-        saves.save_game(gs)
-    except Exception:
-        pass
+    # No autosave - user must manually save via "Save Game" button
 
     xp_line = f"+{active_xp} XP to active  |  +{bench_xp} to each benched"
     if levelups:

@@ -245,10 +245,10 @@ def _draw_hp_bar(surface: pygame.Surface, rect: pygame.Rect, hp_ratio: float, na
 def _load_player_summoner_big(gs) -> pygame.Surface | None:
     gender = (getattr(gs, "chosen_gender", "") or "").lower().strip()
     if gender not in ("male", "female"):
-        tok = (getattr(gs, "player_token", "") or "").lower()
-        if "female" in tok: gender = "female"
-        elif "male" in tok: gender = "male"
-        else: gender = "male"
+        # Try player_gender instead (player_token is a Surface, not a string)
+        gender = (getattr(gs, "player_gender", "male") or "male").lower().strip()
+        if gender not in ("male", "female"):
+            gender = "male"  # Default fallback
     fname = "CharacterMale.png" if gender == "male" else "CharacterFemale.png"
     path = os.path.join("Assets", "PlayableCharacters", fname)
     surf = _try_load(path)

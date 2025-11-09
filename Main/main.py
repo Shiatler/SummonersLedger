@@ -37,6 +37,7 @@ from screens import death_saves as death_saves_screen
 from screens import death as death_screen
 from screens import rest as rest_screen
 from screens import book_of_bound, archives
+from systems import hells_deck_popup
 
 # screens
 from screens import (
@@ -266,7 +267,7 @@ def apply_player_variant(gs, variant_key, variants_dict):
     gs.walk_anim = Animator(walk_frames, fps=8, loop=True)
 
 
-def try_trigger_encounter(gs, summoners, merchant_frames):
+def try_trigger_encounter(gs, summoners, merchant_frames, tavern_sprite=None):
     if gs.in_encounter:
         return
     if gs.distance_travelled >= gs.next_event_at:
@@ -292,27 +293,31 @@ def try_trigger_encounter(gs, summoners, merchant_frames):
             # Normal chance-based spawning
             # Merchant chance: 10% (configurable)
             merchant_chance = 0.10
+            # Tavern chance: 5% (taken from vessels)
+            tavern_chance = 0.05
+            # Vessel chance: 55% (reduced from 60%)
+            vessel_chance = 0.55
+            # Summoner chance: 30% (unchanged)
+            summoner_chance = 0.30
             
-            # Remaining 90% split using ENCOUNTER_WEIGHT_VESSEL (75% vessel, 25% summoner of the remaining)
-            remaining_chance = 1.0 - merchant_chance  # 0.90
-            vessel_chance = remaining_chance * S.ENCOUNTER_WEIGHT_VESSEL  # 0.90 * 0.75 = 0.675
-            summoner_chance = remaining_chance * (1.0 - S.ENCOUNTER_WEIGHT_VESSEL)  # 0.90 * 0.25 = 0.225
-            
-            # Total percentages: Merchant 10%, Vessel 67.5%, Summoner 22.5%
+            # Total percentages: Merchant 10%, Tavern 5%, Vessel 55%, Summoner 30%
             if merchant_frames and len(merchant_frames) > 0 and roll < merchant_chance:
                 # Spawn merchant (0.0 to 0.10)
                 actors.spawn_merchant_ahead(gs, gs.start_x, merchant_frames)
                 if not gs.first_merchant_spawned:
                     gs.first_merchant_spawned = True  # Mark first merchant as spawned
                     gs.encounters_since_merchant = 0  # Reset counter (no longer needed)
-            elif roll < merchant_chance + vessel_chance:
-                # Spawn vessel (0.10 to 0.775)
+            elif roll < merchant_chance + tavern_chance:
+                # Spawn tavern (0.10 to 0.15)
+                actors.spawn_tavern_ahead(gs, gs.start_x, tavern_sprite)
+            elif roll < merchant_chance + tavern_chance + vessel_chance:
+                # Spawn vessel (0.15 to 0.70)
                 actors.spawn_vessel_shadow_ahead(gs, gs.start_x)
                 if not gs.first_merchant_spawned:
                     gs.encounters_since_merchant += 1  # Only increment if first merchant not spawned yet
                     print(f"📊 Vessel spawned. encounters_since_merchant: {gs.encounters_since_merchant}")
             elif summoners:
-                # Spawn summoner (0.775 to 1.0)
+                # Spawn summoner (0.70 to 1.0)
                 actors.spawn_rival_ahead(gs, gs.start_x, summoners)
                 if not gs.first_merchant_spawned:
                     gs.encounters_since_merchant += 1  # Only increment if first merchant not spawned yet
@@ -344,10 +349,11 @@ def update_encounter_popup(screen, dt, gs, mist_frame, width, height, pg_instanc
         pg_instance.update_needed(cam.y, height)
         pg_instance.draw_props(screen, cam.x, cam.y, width, height)
 
-    # Draw any active vessels/rivals/merchants in the world behind the popup
+    # Draw any active vessels/rivals/merchants/taverns in the world behind the popup
     actors.draw_vessels(screen, cam, gs, mist_frame, S.DEBUG_OVERWORLD)
     actors.draw_rivals(screen, cam, gs)
     actors.draw_merchants(screen, cam, gs)
+    actors.draw_taverns(screen, cam, gs)
 
     # Player sprite
     screen.blit(
@@ -436,6 +442,62 @@ def draw_merchant_speech_bubble(screen, cam, gs, merchant):
     screen.blit(text_surf, (bubble_x + padding, bubble_y + padding))
 
 
+def draw_tavern_speech_bubble(screen, cam, gs, tavern):
+    """Draw a speech bubble above the tavern saying 'Press E To Enter the Tavern'."""
+    if not tavern:
+        return
+    
+    # Taverns are bigger (1.5x player size)
+    TAVERN_SIZE_MULT = 1.5
+    SIZE_W = int(S.PLAYER_SIZE[0] * TAVERN_SIZE_MULT)
+    SIZE_H = int(S.PLAYER_SIZE[1] * TAVERN_SIZE_MULT)
+    
+    pos = tavern["pos"]
+    screen_x = int(pos.x - cam.x)
+    screen_y = int(pos.y - cam.y - SIZE_H // 2 - 40)  # Above tavern
+    
+    # Medieval-style text
+    text = "Press E To Enter the Tavern"
+    
+    # Load DH font if available, fallback to default
+    try:
+        dh_font_path = os.path.join(S.ASSETS_FONTS_DIR, S.DND_FONT_FILE)
+        if os.path.exists(dh_font_path):
+            font = pygame.font.Font(dh_font_path, 20)
+        else:
+            font = pygame.font.SysFont(None, 20)
+    except:
+        font = pygame.font.SysFont(None, 20)
+    
+    text_surf = font.render(text, True, (255, 255, 255))
+    text_rect = text_surf.get_rect()
+    
+    # Speech bubble background
+    padding = 12
+    bubble_w = text_rect.width + padding * 2
+    bubble_h = text_rect.height + padding * 2
+    bubble = pygame.Surface((bubble_w, bubble_h), pygame.SRCALPHA)
+    
+    # Draw bubble with rounded corners effect (using filled rect + border)
+    bubble.fill((40, 35, 30, 240))  # Dark brown/medieval color
+    pygame.draw.rect(bubble, (80, 70, 60, 255), bubble.get_rect(), 2)  # Border
+    
+    # Draw small triangle pointing down to tavern
+    triangle_points = [
+        (bubble_w // 2 - 8, bubble_h),
+        (bubble_w // 2 + 8, bubble_h),
+        (bubble_w // 2, bubble_h + 10),
+    ]
+    pygame.draw.polygon(bubble, (40, 35, 30, 240), triangle_points)
+    pygame.draw.polygon(bubble, (80, 70, 60, 255), triangle_points, 2)
+    
+    bubble_x = screen_x - bubble_w // 2
+    bubble_y = screen_y - bubble_h - 10
+    
+    screen.blit(bubble, (bubble_x, bubble_y))
+    screen.blit(text_surf, (bubble_x + padding, bubble_y + padding))
+
+
 def reset_run_state(gs):
     gs.in_encounter = False
     gs.encounter_timer = 0.0
@@ -451,9 +513,18 @@ def reset_run_state(gs):
 
 def start_new_game(gs):
     import random
+    # Ensure player_half is set before using it
+    if not hasattr(gs, "player_half") or gs.player_half.y == 0:
+        # Use default player half size if not set
+        gs.player_half = Vector2(S.PLAYER_SIZE[0] / 2, S.PLAYER_SIZE[1] / 2)
+    
     gs.player_pos = Vector2(S.WORLD_W // 2, S.WORLD_H - gs.player_half.y - 10)
     gs.start_x = gs.player_pos.x
     reset_run_state(gs)
+
+    # Preserve Book of Bound discoveries across new games (persistent collection)
+    # They should already be loaded before start_new_game is called
+    preserved_book_of_bound = getattr(gs, "book_of_bound_discovered", set())
 
     # NEW: fresh randomness for this run + clear any old party data
     gs.run_seed = random.getrandbits(32)   # 32-bit salt unique to this run
@@ -472,15 +543,70 @@ def start_new_game(gs):
     
     # Reset first overworld blessing flag for new run
     gs.first_overworld_blessing_given = False
+    # Mark that this is a NEW game (not loaded from save)
+    gs._game_was_loaded_from_save = False
+    
+    # Clear buff history and active buffs for new game
+    gs.active_buffs = []
+    gs.buffs_history = []
+    
+    # Restore Book of Bound discoveries (persistent across new games)
+    gs.book_of_bound_discovered = preserved_book_of_bound
 
 
 def continue_game(gs):
-    start_new_game(gs)
-    # NOTE: requires SUMMONER_SPRITES to be defined (built after assets.load_everything())
-    if saves.load_game(gs, SUMMONER_SPRITES):
-        apply_player_variant(gs, gs.player_gender, PLAYER_VARIANTS)
-        gs.player_pos.x = gs.start_x
-        gs.player_pos.y = max(gs.player_half.y, min(gs.player_pos.y, S.WORLD_H - gs.player_half.y))
+    # Preserve Book of Bound discoveries before any resets
+    preserved_book_of_bound = getattr(gs, "book_of_bound_discovered", set())
+    
+    # CRITICAL: For continue game, we need to set start_x but NOT reset the run state
+    # The run state (distance_travelled, position, etc.) will be loaded from the save file
+    # Only set start_x to the center of the world (it's not saved, always recalculated)
+    if not hasattr(gs, "player_half") or gs.player_half.y == 0:
+        # Use default player half size if not set
+        gs.player_half = Vector2(S.PLAYER_SIZE[0] / 2, S.PLAYER_SIZE[1] / 2)
+    
+    # Set start_x to center of world (always the same, not saved)
+    gs.start_x = S.WORLD_W // 2
+    
+    # Load the save file - this will restore position, distance_travelled, and all other state
+    # NOTE: requires SUMMONER_SPRITES, MERCHANT_FRAMES, and TAVERN_SPRITE to be defined (built after assets.load_everything())
+    if not saves.load_game(gs, SUMMONER_SPRITES, MERCHANT_FRAMES, TAVERN_SPRITE):
+        # If load failed, fall back to new game
+        print("⚠️ Failed to load save, falling back to new game state")
+        start_new_game(gs)
+        return
+    
+    print(f"✅ Save loaded successfully. Position: ({gs.player_pos.x:.1f}, {gs.player_pos.y:.1f}), start_x: {gs.start_x:.1f}, distance: {gs.distance_travelled:.1f}")
+    
+    # After loading, restore player variant and ensure position is valid
+    apply_player_variant(gs, gs.player_gender, PLAYER_VARIANTS)
+    
+    # CRITICAL: Restore X position from start_x (NOT from save file)
+    # The X position is always restored from start_x because player stays centered horizontally
+    gs.player_pos.x = gs.start_x
+    
+    # CRITICAL: Clamp Y position to world bounds after loading
+    # This ensures the loaded position is valid even if world bounds changed
+    loaded_y_before_clamp = gs.player_pos.y
+    min_y = gs.player_half.y
+    max_y = S.WORLD_H - gs.player_half.y
+    gs.player_pos.y = max(min_y, min(gs.player_pos.y, max_y))
+    
+    if abs(loaded_y_before_clamp - gs.player_pos.y) > 0.1:
+        print(f"⚠️ WARNING: Y position was clamped from {loaded_y_before_clamp:.1f} to {gs.player_pos.y:.1f}")
+        print(f"   Bounds: min={min_y:.1f}, max={max_y:.1f}, WORLD_H={S.WORLD_H}")
+    
+    print(f"✅ After adjustments. Position: ({gs.player_pos.x:.1f}, {gs.player_pos.y:.1f}), start_x: {gs.start_x:.1f}")
+    
+    # Mark that this is a continued game (loaded from save), so first overworld blessing should NOT trigger
+    gs._game_was_loaded_from_save = True
+    gs.first_overworld_blessing_given = True
+    
+    # Ensure Book of Bound discoveries are preserved (should already be loaded, but double-check)
+    if preserved_book_of_bound:
+        if not hasattr(gs, "book_of_bound_discovered"):
+            gs.book_of_bound_discovered = set()
+        gs.book_of_bound_discovered.update(preserved_book_of_bound)
 
 
 # ===================== Mode Switch Helper ====================
@@ -526,8 +652,8 @@ def enter_mode(mode, gs, deps):
             archives.enter(gs, **deps)
             gs._archives_entered = True
     elif mode == S.MODE_GAME:
-        # gameplay has no dedicated enter; handled inline
-        pass
+        # Initialize world state (important for camera initialization on loaded games)
+        world.enter(gs, **deps)
 
 
 # ===================== Main / Entrypoint =====================
@@ -625,6 +751,10 @@ if __name__ == "__main__":
     
     # Create virtual surface for rendering at logical resolution
     virtual_screen = pygame.Surface((S.LOGICAL_WIDTH, S.LOGICAL_HEIGHT))
+    
+    # Load custom cursors AFTER display is initialized
+    from systems import cursor_manager
+    cursor_manager.load_cursors()
 
     # -------- Theme & Assets ----------
     fonts = theme.load_fonts()
@@ -636,12 +766,31 @@ if __name__ == "__main__":
     RARE_VESSELS    = loaded["rare_vessels"]
     MIST_FRAMES     = loaded["mist_frames"]
     MERCHANT_FRAMES = loaded["merchant_frames"]
+    TAVERN_SPRITE   = loaded.get("tavern_sprite")
     
     # Debug: Check if merchant frames loaded
     if MERCHANT_FRAMES:
         print(f"✅ Loaded {len(MERCHANT_FRAMES)} merchant animation frames")
     else:
         print("⚠️ No merchant frames loaded - check Assets/Animations/Merchant1-5.png")
+    
+    # Debug: Check if tavern sprite loaded
+    if TAVERN_SPRITE:
+        print(f"✅ Tavern sprite loaded")
+    else:
+        print("⚠️ No tavern sprite loaded - check Assets/Tavern/Tavern.png")
+    
+    # Load tavern ambient audio
+    TAVERN_AUDIO_PATH = os.path.join("Assets", "Tavern", "OutsideTavern.mp3")
+    TAVERN_AUDIO = None
+    if os.path.exists(TAVERN_AUDIO_PATH):
+        try:
+            TAVERN_AUDIO = pygame.mixer.Sound(TAVERN_AUDIO_PATH)
+            print(f"✅ Loaded tavern audio: {TAVERN_AUDIO_PATH}")
+        except Exception as e:
+            print(f"⚠️ Failed to load tavern audio {TAVERN_AUDIO_PATH}: {e}")
+    else:
+        print(f"⚠️ Tavern audio not found at: {TAVERN_AUDIO_PATH}")
 
     # Map summoner names -> surfaces for save/load rehydration
     SUMMONER_SPRITES = {name: surf for (name, surf) in RIVAL_SUMMONERS}
@@ -654,8 +803,11 @@ if __name__ == "__main__":
     pg = procgen.ProcGen(rng_seed=42)
 
     # -------- GameState ----------
+    # Calculate correct starting Y position: WORLD_H - player_half.y - 10
+    # Use PLAYER_SIZE[1] / 2 since player_half isn't set yet
+    starting_y = S.WORLD_H - (S.PLAYER_SIZE[1] / 2) - 10
     gs = GameState(
-        player_pos=Vector2(S.WORLD_W // 2, S.WORLD_H - 64),
+        player_pos=Vector2(S.WORLD_W // 2, starting_y),
         player_speed=S.PLAYER_SPEED,
         start_x=S.WORLD_W // 2,
     )
@@ -670,16 +822,40 @@ if __name__ == "__main__":
     if not getattr(gs, "party_slots_names", None):
         gs.party_slots_names = [None] * 6
 
-    start_new_game(gs)
-    
-    # Initialize Book of the Bound discovered vessels (persistent across games)
-    # This should NOT be reset by start_new_game - it persists across all games
-    if not hasattr(gs, "book_of_bound_discovered"):
+    # Load Book of Bound discoveries (persistent across games)
+    # This ensures discoveries are preserved even when starting a new game
+    if saves.has_save():
+        try:
+            import json
+            with open(S.SAVE_PATH, "r", encoding="utf-8") as f:
+                data = json.load(f)
+                discovered = data.get("book_of_bound_discovered", [])
+                if isinstance(discovered, list) and discovered:
+                    gs.book_of_bound_discovered = set(discovered)
+                else:
+                    gs.book_of_bound_discovered = set()
+        except Exception as e:
+            print(f"⚠️ Failed to load Book of Bound discoveries: {e}")
+            gs.book_of_bound_discovered = set()
+    else:
         gs.book_of_bound_discovered = set()
-
-    # ensure slot stats list exists (JSON-serializable dicts per slot)
-    if not getattr(gs, "party_vessel_stats", None):
+    
+    # CRITICAL: Don't call start_new_game() here - it resets position to start!
+    # Only initialize minimal state. start_new_game() will be called when user chooses "New Game"
+    # If user chooses "Continue", continue_game() will load the save instead
+    # Initialize only what's needed for the menu to work
+    if not hasattr(gs, "party_slots"):
+        gs.party_slots = [None] * 6
+    if not hasattr(gs, "party_slots_names"):
+        gs.party_slots_names = [None] * 6
+    if not hasattr(gs, "party_vessel_stats"):
         gs.party_vessel_stats = [None] * 6
+    if not hasattr(gs, "inventory"):
+        gs.inventory = {}
+    if not hasattr(gs, "distance_travelled"):
+        gs.distance_travelled = 0.0
+    if not hasattr(gs, "next_event_at"):
+        gs.next_event_at = S.FIRST_EVENT_AT
 
     # -------- Loop State ----------
 mode = S.MODE_MENU
@@ -687,7 +863,7 @@ prev_mode = None
 running = True
 settings_return_to = S.MODE_MENU  # used inside settings screen; kept for parity
 is_fullscreen = use_fullscreen  # Track fullscreen state for toggle
-display_mode = "fullscreen" if use_fullscreen else "windowed"  # Track display mode: "fullscreen", "windowed", "borderless"
+display_mode = "fullscreen" if use_fullscreen else "windowed"  # Track display mode: "fullscreen", "windowed"
 # Cache the desktop resolution when entering fullscreen (Info().current_w/h can be unreliable with SCALED flag)
 _cached_desktop_resolution = None
 
@@ -698,7 +874,7 @@ assert pygame.display.get_surface() is not None, "Display not created before mai
 def change_display_mode(mode_name: str, screen_ref) -> pygame.Surface:
     """
     Change the display mode. Returns the new screen surface.
-    Modes: "fullscreen", "windowed", "borderless"
+    Modes: "fullscreen", "windowed"
     """
     global display_mode, is_fullscreen
     
@@ -728,13 +904,6 @@ def change_display_mode(mode_name: str, screen_ref) -> pygame.Surface:
         # Use desktop resolution for fullscreen - this is the actual physical screen size
         new_screen = pygame.display.set_mode((desktop_w, desktop_h), pygame.FULLSCREEN | pygame.SCALED)
         # The actual surface size after SCALED might be different, but the physical screen is desktop_w x desktop_h
-        actual_physical_width, actual_physical_height = desktop_w, desktop_h
-    elif mode_name == "borderless":
-        is_fullscreen = True
-        # Same as fullscreen - use desktop resolution
-        # CACHE IT: Info().current_w/h can return wrong values after set_mode with SCALED flag
-        _cached_desktop_resolution = (desktop_w, desktop_h)
-        new_screen = pygame.display.set_mode((desktop_w, desktop_h), pygame.NOFRAME | pygame.SCALED)
         actual_physical_width, actual_physical_height = desktop_w, desktop_h
     else:  # windowed
         is_fullscreen = False
@@ -777,7 +946,7 @@ def change_display_mode(mode_name: str, screen_ref) -> pygame.Surface:
     # Update coordinate system with ACTUAL surface dimensions
     # This ensures all coordinate conversions work correctly after mode change
     # For fullscreen, force scale to 1.0 (user requested)
-    if mode_name == "fullscreen" or mode_name == "borderless":
+    if mode_name == "fullscreen":
         coords.update_scale_factors(actual_width, actual_height, force_scale=1.0)
     else:
         coords.update_scale_factors(actual_width, actual_height)
@@ -835,7 +1004,7 @@ def blit_virtual_to_screen(virtual_screen, screen):
     
     # SIMPLE FIX: If display_mode says fullscreen, ALWAYS use physical screen size
     # No complex detection - just trust the display_mode variable
-    if display_mode == "fullscreen" or display_mode == "borderless":
+    if display_mode == "fullscreen":
         # Fullscreen: ALWAYS use physical screen size (desktop resolution)
         # CRITICAL: Make absolutely sure we're using physical size
         if physical_width < S.LOGICAL_WIDTH or physical_height < S.LOGICAL_HEIGHT:
@@ -945,8 +1114,6 @@ while running:
                 current = display_mode
                 if current == "fullscreen":
                     screen = change_display_mode("windowed", screen)
-                elif current == "borderless":
-                    screen = change_display_mode("windowed", screen)
                 else:  # windowed
                     screen = change_display_mode("fullscreen", screen)
                 events_to_remove.append(i)
@@ -1025,7 +1192,7 @@ while running:
         info = pygame.display.Info()
         physical_w, physical_h = info.current_w, info.current_h
         
-        if mode_name == "fullscreen" or mode_name == "borderless":
+        if mode_name == "fullscreen":
             # For fullscreen: Use physical screen size (desktop resolution)
             actual_w, actual_h = physical_w, physical_h
             print(f"✅ Fullscreen mode: Using physical size {actual_w}x{actual_h}")
@@ -1039,7 +1206,7 @@ while running:
         
         # Update coordinate system with correct size
         # For fullscreen, force scale to 1.0 (user requested)
-        if mode_name == "fullscreen" or mode_name == "borderless":
+        if mode_name == "fullscreen":
             coords.update_scale_factors(actual_w, actual_h, force_scale=1.0)
         else:
             coords.update_scale_factors(actual_w, actual_h)
@@ -1073,23 +1240,54 @@ while running:
     # ========== Universal window close ==========
     for e in events:
         if e.type == pygame.QUIT:
-            saves.save_game(gs)
+            # No autosave - user must manually save via "Save Game" button
+            print(f"🛑 Quitting game (mode={mode})")
             running = False
 
     # ===================== MENU ============================
     if mode == S.MODE_MENU:
-        next_mode = menu_screen.handle(events, gs, **deps, can_continue=saves.has_save())
-        menu_screen.draw(virtual_screen, gs, **deps, can_continue=saves.has_save())
+        # Use has_valid_save() to check for actual vessel data, not just file existence
+        next_mode = menu_screen.handle(events, gs, **deps, can_continue=saves.has_valid_save())
+        menu_screen.draw(virtual_screen, gs, **deps, can_continue=saves.has_valid_save())
         blit_virtual_to_screen(virtual_screen, screen)
+        mouse_pos = pygame.mouse.get_pos()
+        cursor_manager.draw_cursor(screen, mouse_pos, gs, mode)
         pygame.display.flip()
         if next_mode:
-            mode = next_mode
+            # Check if this is a continue action (tuple with "CONTINUE" marker)
+            if isinstance(next_mode, tuple) and next_mode[0] == "CONTINUE":
+                # Load the saved game FIRST, before changing mode
+                # This ensures _game_was_loaded_from_save flag is set before world.enter() is called
+                continue_game(gs)
+                # Verify the flag was set
+                if not getattr(gs, "_game_was_loaded_from_save", False):
+                    print(f"⚠️ WARNING: _game_was_loaded_from_save flag not set after continue_game()!")
+                
+                # CRITICAL: Check if all vessels are dead after loading
+                # If so, redirect to death screen instead of game (death is permanent)
+                stats = getattr(gs, "party_vessel_stats", None) or []
+                has_any_member = any(isinstance(st, dict) for st in stats)
+                has_living = any(
+                    isinstance(st, dict) and int(st.get("current_hp", st.get("hp", 0)) or 0) > 0
+                    for st in stats
+                )
+                if has_any_member and not has_living:
+                    # All vessels are dead - player died, send them to death screen
+                    print("💀 All vessels are dead - redirecting to death screen (death is permanent)")
+                    mode = MODE_DEATH
+                else:
+                    # Vessels are alive - can continue playing
+                    mode = next_mode[1]  # Set mode to MODE_GAME
+            else:
+                mode = next_mode
 
     # ===================== CHARACTER SELECT ================
     elif mode == MODE_CHAR_SELECT:
         next_mode = char_select.handle(events, gs, **deps)
         char_select.draw(virtual_screen, gs, **deps)
         blit_virtual_to_screen(virtual_screen, screen)
+        mouse_pos = pygame.mouse.get_pos()
+        cursor_manager.draw_cursor(screen, mouse_pos, gs, mode)
         pygame.display.flip()
         if next_mode:
             mode = next_mode
@@ -1099,6 +1297,8 @@ while running:
         next_mode = name_entry.handle(events, gs, dt, **deps)
         name_entry.draw(virtual_screen, gs, dt, **deps)
         blit_virtual_to_screen(virtual_screen, screen)
+        mouse_pos = pygame.mouse.get_pos()
+        cursor_manager.draw_cursor(screen, mouse_pos, gs, mode)
         pygame.display.flip()
         if next_mode:
             mode = next_mode
@@ -1108,12 +1308,38 @@ while running:
         next_mode = master_oak.handle(events, gs, dt, **deps)
         master_oak.draw(virtual_screen, gs, dt, **deps)
         blit_virtual_to_screen(virtual_screen, screen)
+        mouse_pos = pygame.mouse.get_pos()
+        cursor_manager.draw_cursor(screen, mouse_pos, gs, mode)
         pygame.display.flip()
         if next_mode:
             if next_mode == MODE_BLACK_SCREEN:
-                start_new_game(gs)
+                # Preserve Book of Bound discoveries BEFORE any operations
+                # start_new_game() will preserve them, but we need to ensure they're in memory first
+                # They should already be loaded from save file at startup, but ensure they exist
+                if not hasattr(gs, "book_of_bound_discovered"):
+                    # If not in memory, try to load from save file before deleting it
+                    from systems import save_system as saves
+                    if saves.has_save():
+                        try:
+                            import json
+                            with open(S.SAVE_PATH, "r", encoding="utf-8") as f:
+                                data = json.load(f)
+                                discovered = data.get("book_of_bound_discovered", [])
+                                if isinstance(discovered, list):
+                                    gs.book_of_bound_discovered = set(discovered)
+                                else:
+                                    gs.book_of_bound_discovered = set()
+                        except Exception:
+                            gs.book_of_bound_discovered = set()
+                    else:
+                        gs.book_of_bound_discovered = set()
+                
+                # Now delete save file (discoveries are safe in memory)
                 from systems import save_system as saves
-                saves.delete_save()  # ensure truly fresh run
+                saves.delete_save(gs)  # Delete save file but preserve discoveries in memory
+                
+                # Start new game (this will preserve discoveries from memory)
+                start_new_game(gs)
 
                 from bootstrap.default_party import add_default_on_new_game
                 add_default_on_new_game(gs)
@@ -1132,6 +1358,8 @@ while running:
         next_mode = black_screen.handle(events, gs, **deps, saves=saves)
         black_screen.draw(virtual_screen, gs, **deps)
         blit_virtual_to_screen(virtual_screen, screen)
+        mouse_pos = pygame.mouse.get_pos()
+        cursor_manager.draw_cursor(screen, mouse_pos, gs, mode)
         pygame.display.flip()
         if next_mode:
             try:
@@ -1145,6 +1373,8 @@ while running:
         next_mode = intro_video.handle(events, gs, dt, **deps)
         intro_video.draw(virtual_screen, gs, dt, **deps)
         blit_virtual_to_screen(virtual_screen, screen)
+        mouse_pos = pygame.mouse.get_pos()
+        cursor_manager.draw_cursor(screen, mouse_pos, gs, mode)
         pygame.display.flip()
         if next_mode:
             if next_mode == S.MODE_GAME:
@@ -1156,15 +1386,19 @@ while running:
         next_mode = settings_screen.handle(events, gs, **deps)
         settings_screen.draw(virtual_screen, gs, **deps)
         blit_virtual_to_screen(virtual_screen, screen)
+        mouse_pos = pygame.mouse.get_pos()
+        cursor_manager.draw_cursor(screen, mouse_pos, gs, mode)
         pygame.display.flip()
         if next_mode:
             mode = next_mode
 
     # ===================== PAUSE ===========================
     elif mode == MODE_PAUSE:
-        next_mode = pause_screen.handle(events, gs, **deps)
+        next_mode = pause_screen.handle(events, gs, **deps, saves=saves)
         pause_screen.draw(virtual_screen, gs, **deps)
         blit_virtual_to_screen(virtual_screen, screen)
+        mouse_pos = pygame.mouse.get_pos()
+        cursor_manager.draw_cursor(screen, mouse_pos, gs, mode)
         pygame.display.flip()
         if next_mode:
             mode = next_mode
@@ -1174,6 +1408,8 @@ while running:
         next_mode = summoner_battle.handle(events, gs, dt, **deps)
         summoner_battle.draw(virtual_screen, gs, dt, **deps)
         blit_virtual_to_screen(virtual_screen, screen)
+        mouse_pos = pygame.mouse.get_pos()
+        cursor_manager.draw_cursor(screen, mouse_pos, gs, mode)
         pygame.display.flip()
         if next_mode:
             mode = next_mode
@@ -1184,6 +1420,8 @@ while running:
         next_mode = wild_vessel.handle(events, gs, **deps)
         wild_vessel.draw(virtual_screen, gs, dt, **deps)
         blit_virtual_to_screen(virtual_screen, screen)
+        mouse_pos = pygame.mouse.get_pos()
+        cursor_manager.draw_cursor(screen, mouse_pos, gs, mode)
         pygame.display.flip()
         if next_mode:
             mode = next_mode  # ESC returns to overworld
@@ -1193,6 +1431,8 @@ while running:
         next_mode = battle.handle(events, gs, dt, **deps)
         battle.draw(virtual_screen, gs, dt, **deps)
         blit_virtual_to_screen(virtual_screen, screen)
+        mouse_pos = pygame.mouse.get_pos()
+        cursor_manager.draw_cursor(screen, mouse_pos, gs, mode)
         pygame.display.flip()
         if next_mode:
             mode = next_mode
@@ -1202,6 +1442,8 @@ while running:
         next_mode = death_saves_screen.handle(events, gs, **deps)
         death_saves_screen.draw(virtual_screen, gs, dt, **deps)
         blit_virtual_to_screen(virtual_screen, screen)
+        mouse_pos = pygame.mouse.get_pos()
+        cursor_manager.draw_cursor(screen, mouse_pos, gs, mode)
         pygame.display.flip()
         if next_mode:
             mode = next_mode
@@ -1212,6 +1454,8 @@ while running:
         next_mode = death_screen.handle(events, gs, **deps)
         death_screen.draw(virtual_screen, gs, dt, **deps)
         blit_virtual_to_screen(virtual_screen, screen)
+        mouse_pos = pygame.mouse.get_pos()
+        cursor_manager.draw_cursor(screen, mouse_pos, gs, mode)
         pygame.display.flip()
         if next_mode:
             mode = next_mode
@@ -1221,34 +1465,33 @@ while running:
         next_mode = rest_screen.handle(events, gs, dt, **deps)
         rest_screen.draw(virtual_screen, gs, dt, **deps)
         blit_virtual_to_screen(virtual_screen, screen)
+        mouse_pos = pygame.mouse.get_pos()
+        cursor_manager.draw_cursor(screen, mouse_pos, gs, mode)
         pygame.display.flip()
         if next_mode:
             if next_mode == "GAME":
-                # Ensure campfire sound is stopped before returning to game
-                # Use the rest screen's stop function for reliability
+                # The campfire sound should already be stopped by the rest screen's draw function
+                # Just ensure it's cleaned up if somehow it wasn't
+                if hasattr(gs, "_rest_state") and gs._rest_state.get("campfire_channel"):
+                    try:
+                        ch = gs._rest_state["campfire_channel"]
+                        if ch.get_busy():
+                            ch.fadeout(50)
+                    except:
+                        pass
+                    gs._rest_state["campfire_channel"] = None
+                
+                # Save game after rest completes (long rest or short rest)
                 try:
-                    from screens import rest as rest_module
-                    if hasattr(gs, "_rest_state"):
-                        rest_module._stop_campfire_sound(gs._rest_state)
+                    rest_type = getattr(gs, "_rest_state", {}).get("rest_type", "rest")
+                    saves.save_game(gs, force=True)
+                    print(f"💾 Game saved after {rest_type} rest")
                 except Exception as e:
-                    print(f"⚠️ Error stopping campfire sound: {e}")
-                    # Fallback: try to stop manually
-                    if hasattr(gs, "_rest_state") and gs._rest_state.get("campfire_channel"):
-                        try:
-                            gs._rest_state["campfire_channel"].stop()
-                        except:
-                            pass
-                        gs._rest_state["campfire_channel"] = None
+                    print(f"⚠️ Save after rest failed: {e}")
                 
                 mode = S.MODE_GAME
-                # Restart overworld music
-                if hasattr(gs, "last_overworld_track"):
-                    nxt = audio.pick_next_track(AUDIO, gs.last_overworld_track, prefix="music")
-                else:
-                    nxt = audio.pick_next_track(AUDIO, None, prefix="music")
-                if nxt:
-                    audio.play_music(AUDIO, nxt, loop=False, fade_ms=600)
-                    gs.last_overworld_track = nxt
+                # Reset overworld music state so it restarts in the game mode loop
+                gs.overworld_music_started = False
             else:
                 mode = next_mode
 
@@ -1257,6 +1500,8 @@ while running:
         next_mode = book_of_bound.handle(events, gs, dt, **deps)
         book_of_bound.draw(virtual_screen, gs, dt, **deps)
         blit_virtual_to_screen(virtual_screen, screen)
+        mouse_pos = pygame.mouse.get_pos()
+        cursor_manager.draw_cursor(screen, mouse_pos, gs, mode)
         pygame.display.flip()
         if next_mode:
             # Clear the entered flag when exiting
@@ -1285,6 +1530,8 @@ while running:
             pass
         
         blit_virtual_to_screen(virtual_screen, screen)
+        mouse_pos = pygame.mouse.get_pos()
+        cursor_manager.draw_cursor(screen, mouse_pos, gs, mode)
         pygame.display.flip()
         if next_mode:
             # Clear the entered flag when exiting
@@ -1297,14 +1544,17 @@ while running:
     # ===================== GAMEPLAY ========================
     elif mode == S.MODE_GAME:
         # ===== First overworld blessing check =====
-        # Check if we should give a blessing when first entering overworld this run
-        # Only check if buff popup is not already active and no blessing is pending
-        if (not getattr(gs, "first_overworld_blessing_given", False) 
+        # Only trigger on NEW games, not when continuing a saved game
+        # Check if this game was loaded from a save file - if so, don't trigger first blessing
+        game_was_loaded = getattr(gs, "_game_was_loaded_from_save", False)
+        
+        if (not game_was_loaded
+            and not getattr(gs, "first_overworld_blessing_given", False) 
             and not buff_popup.is_active() 
             and not getattr(gs, "pending_buff_selection", False)):
-            # 100% chance for testing (change to 0.1 for 10% later)
+            # 100% chance to get a buff selection when starting new game
             import random
-            trigger_buff = True  # random.random() < 1.0  # 100% for testing
+            trigger_buff = True  # 100% chance
             if trigger_buff:
                 # Set flag to start buff popup in overworld
                 gs.pending_buff_selection = True
@@ -1319,11 +1569,20 @@ while running:
             for st in stats
         )
         if has_any_member and not has_living:
+            # Save game when all vessels hit 0 HP (prevents save scumming)
+            try:
+                saves.save_game(gs, force=True)
+                print("💾 Game saved: All vessels at 0 HP - entering death saves")
+            except Exception as e:
+                print(f"⚠️ Save failed on death: {e}")
+            
             mode = MODE_DEATH_SAVES
             enter_mode(mode, gs, deps)
             # Draw once to avoid a 1-frame flash of overworld under black
             death_saves_screen.draw(virtual_screen, gs, dt, **deps)
             blit_virtual_to_screen(virtual_screen, screen)
+            mouse_pos = pygame.mouse.get_pos()
+            cursor_manager.draw_cursor(screen, mouse_pos, gs, MODE_DEATH_SAVES)
             pygame.display.flip()
             continue
 
@@ -1332,7 +1591,7 @@ while running:
         # --- Snapshots for this frame (used to suppress ESC->Pause) ---
         bag_open_at_frame_start = bag_ui.is_open()
         modal_open_at_frame_start = (
-            bag_ui.is_open() or party_manager.is_open() or ledger.is_open() or gs.shop_open or currency_display.is_open() or rest_popup.is_open()
+            bag_ui.is_open() or party_manager.is_open() or ledger.is_open() or gs.shop_open or currency_display.is_open() or rest_popup.is_open() or hells_deck_popup.is_open()
         )
 
         just_toggled_pm = False
@@ -1341,6 +1600,10 @@ while running:
 
         # Track HUD button clicks to prevent event propagation
         hud_button_click_positions = set()
+
+        # --- Handle cursor changes for mouse events ---
+        for e in events:
+            cursor_manager.handle_mouse_event(e)
 
         # --- Handle HUD button clicks FIRST (before other UI) ---
         for e in events:
@@ -1398,6 +1661,11 @@ while running:
                     mode = MODE_ARCHIVES
                     archives.enter(gs, **deps)
                     gs._archives_entered = True
+                    hud_button_click_positions.add(e.pos)
+                    audio.play_click(AUDIO)
+                elif button_clicked == 'hells_deck':
+                    # Open Hell's Deck popup
+                    hells_deck_popup.open_popup(gs)
                     hud_button_click_positions.add(e.pos)
                     audio.play_click(AUDIO)
 
@@ -1504,6 +1772,11 @@ while running:
                     # Popup was closed
                     continue
             
+            # Handle Hell's Deck popup
+            if hells_deck_popup.is_open():
+                if hells_deck_popup.handle_event(e, gs):
+                    continue  # Event consumed by popup
+            
             if gs.shop_open:
                 purchase_result = shop.handle_event(e, gs)
                 # Check if purchase was confirmed (needs laugh sound)
@@ -1519,7 +1792,14 @@ while running:
 
         # --- Pause / music events / shop ---
         for event in events:
+            # Handle ESC key - check popups first
             if event.type == pygame.KEYDOWN and event.key == pygame.K_ESCAPE:
+                # Close Hell's Deck popup if open
+                if hells_deck_popup.is_open():
+                    hells_deck_popup.close_popup()
+                    from systems import audio as audio_sys
+                    audio_sys.play_click(AUDIO)
+                    continue
                 # If any modal was open at frame start OR is open now, don't enter Pause
                 if (
                     modal_open_at_frame_start
@@ -1530,6 +1810,7 @@ while running:
                     or gs.shop_open
                     or currency_display.is_open()
                     or rest_popup.is_open()
+                    or hells_deck_popup.is_open()
                 ):
                     # If shop is open, close it instead
                     if gs.shop_open:
@@ -1657,6 +1938,36 @@ while running:
             if nxt:
                 audio.play_music(AUDIO, nxt, loop=False, fade_ms=600)
                 gs.last_overworld_track = nxt
+        
+        # --- Tavern ambient audio ---
+        near_tavern = getattr(gs, "near_tavern", None)
+        tavern_audio_channel = getattr(gs, "_tavern_audio_channel", None)
+        
+        if near_tavern and TAVERN_AUDIO:
+            # Player is near tavern - play ambient audio if not already playing
+            if tavern_audio_channel is None or not tavern_audio_channel.get_busy():
+                # Find a free channel and play tavern audio
+                channel = pygame.mixer.find_channel(True)
+                if channel:
+                    # Set volume to 40% of SFX volume (ambient sound)
+                    ambient_volume = audio.get_sfx_volume() * 0.4
+                    channel.set_volume(ambient_volume)
+                    channel.play(TAVERN_AUDIO, loops=-1)  # Loop indefinitely
+                    gs._tavern_audio_channel = channel
+                    print(f"🔊 Started tavern ambient audio")
+            elif tavern_audio_channel and tavern_audio_channel.get_busy():
+                # Update volume continuously to respect SFX volume settings
+                ambient_volume = audio.get_sfx_volume() * 0.4
+                try:
+                    tavern_audio_channel.set_volume(ambient_volume)
+                except:
+                    pass
+        else:
+            # Player is not near tavern - stop audio if playing
+            if tavern_audio_channel and tavern_audio_channel.get_busy():
+                tavern_audio_channel.stop()
+                gs._tavern_audio_channel = None
+                print(f"🔇 Stopped tavern ambient audio")
 
         # --- Mist animation ---
         mist_frame = None
@@ -1731,7 +2042,8 @@ while running:
             actors.update_rivals(gs, dt, gs.player_half)
             actors.update_vessels(gs, dt, gs.player_half, VESSELS, RARE_VESSELS)
             actors.update_merchants(gs, dt, gs.player_half)
-            try_trigger_encounter(gs, RIVAL_SUMMONERS, MERCHANT_FRAMES)
+            actors.update_taverns(gs, dt, gs.player_half)
+            try_trigger_encounter(gs, RIVAL_SUMMONERS, MERCHANT_FRAMES, TAVERN_SPRITE)
 
             cam = world.get_camera_offset(gs.player_pos, S.LOGICAL_WIDTH, S.LOGICAL_HEIGHT, gs.player_half)
             world.draw_repeating_road(virtual_screen, cam.x, cam.y)
@@ -1740,6 +2052,7 @@ while running:
             actors.draw_vessels(virtual_screen, cam, gs, mist_frame, S.DEBUG_OVERWORLD)
             actors.draw_rivals(virtual_screen, cam, gs)
             actors.draw_merchants(virtual_screen, cam, gs)
+            actors.draw_taverns(virtual_screen, cam, gs)
 
             virtual_screen.blit(
                 gs.player_image,
@@ -1750,6 +2063,10 @@ while running:
             # Draw speech bubble when near merchant (if not in shop)
             if gs.near_merchant and not gs.shop_open:
                 draw_merchant_speech_bubble(virtual_screen, cam, gs, gs.near_merchant)
+            
+            # Draw speech bubble when near tavern
+            if getattr(gs, "near_tavern", None):
+                draw_tavern_speech_bubble(virtual_screen, cam, gs, gs.near_tavern)
 
         # --- Draw HUD then modals (z-order: Bag < Party Manager < Ledger < Shop < Rest Popup) ---
         left_hud.draw(virtual_screen, gs)  # Left side HUD panel behind character token and party UI (textbox style)
@@ -1768,9 +2085,16 @@ while running:
             currency_display.draw(virtual_screen, gs)
         if rest_popup.is_open():
             rest_popup.draw(virtual_screen, gs)
+        if hells_deck_popup.is_open():
+            hells_deck_popup.draw(virtual_screen, gs)
         if buff_popup.is_active():
             buff_popup.draw(virtual_screen, dt, gs)
 
         update_and_draw_fade(virtual_screen, dt, gs)
         blit_virtual_to_screen(virtual_screen, screen)
+        
+        # Draw custom cursor on top of everything
+        mouse_pos = pygame.mouse.get_pos()
+        cursor_manager.draw_cursor(screen, mouse_pos, gs, S.MODE_GAME)
+        
         pygame.display.flip()

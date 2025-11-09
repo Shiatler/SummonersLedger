@@ -792,8 +792,9 @@ def update(dt, gs):
                 application["step"] = "complete"
                 print(f"✅ Result card dismissed, step set to complete")
         
-        # Check if application is complete
-        if application.get("step") == "complete":
+        # Check if application is complete (only do this once)
+        if application.get("step") == "complete" and not application.get("completed", False):
+            application["completed"] = True  # Mark as completed to prevent repeated execution
             print(f"✅ Buff application complete, closing party manager and marking done")
             # Stop card selection music
             _stop_card_selection_music()
@@ -1306,7 +1307,7 @@ def _stop_card_selection_music():
     """Stop the card selection music."""
     try:
         pygame.mixer.music.fadeout(400)
-        print(f"🔇 Stopped card selection music")
+        # Removed debug print to prevent console spam
     except Exception as e:
         print(f"⚠️ Failed to stop card selection music: {e}")
 

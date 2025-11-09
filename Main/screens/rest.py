@@ -249,38 +249,28 @@ def _consume_item(gs, item_id: str) -> bool:
     return True
 
 def _stop_campfire_sound(st):
-    """Stop the campfire sound channel reliably."""
+    """Stop the campfire sound channel reliably (only stops campfire, not other channels)."""
     global _CAMPFIRE_CHANNEL
     
-    # Stop via stored channel references
+    # Stop via stored channel references - use fadeout for smooth transition
     if st.get("campfire_channel"):
         try:
             ch = st["campfire_channel"]
-            ch.stop()  # Stop immediately, don't check get_busy
+            # Use fadeout for smoother transition (100ms)
+            ch.fadeout(100)
+            # The channel will stop automatically after fadeout
+            # We don't need to force stop immediately
         except:
             pass
         st["campfire_channel"] = None
     
     if _CAMPFIRE_CHANNEL:
         try:
-            _CAMPFIRE_CHANNEL.stop()  # Stop immediately
+            # Use fadeout for smoother transition
+            _CAMPFIRE_CHANNEL.fadeout(100)
         except:
             pass
         _CAMPFIRE_CHANNEL = None
-    
-    # Nuclear option: stop ALL busy channels (aggressive but ensures it stops)
-    # During rest screen transition, this should be safe
-    try:
-        num_channels = pygame.mixer.get_num_channels()
-        for i in range(num_channels):
-            ch = pygame.mixer.Channel(i)
-            try:
-                if ch.get_busy():
-                    ch.stop()
-            except:
-                pass
-    except:
-        pass
     
     # Mark that we've stopped
     st["campfire_stopped"] = True
@@ -331,8 +321,9 @@ def enter(gs, rest_type="long", **_):
         # Use a dedicated channel and set volume
         channel = pygame.mixer.find_channel(True)
         if channel:
-            # Set volume to 0.4 (40% - ambient sound) before playing
-            channel.set_volume(0.4)
+            # Set volume to 40% of SFX volume (ambient sound)
+            ambient_volume = audio_sys.get_sfx_volume() * 0.4
+            channel.set_volume(ambient_volume)
             channel.play(sfx, loops=-1)
             st["campfire_channel"] = channel
             _CAMPFIRE_CHANNEL = channel  # Store globally as backup
@@ -385,10 +376,18 @@ def draw(screen: pygame.Surface, gs, dt: float, **_):
             # Fade out campfire sound during the fade (start fading at 2.5 seconds)
             if st.get("campfire_channel") and st["fade_timer"] >= 2.5:
                 # Fade out over the last 0.5 seconds
+                base_volume = audio_sys.get_sfx_volume() * 0.4  # 40% of SFX volume
                 fade_progress = (st["fade_timer"] - 2.5) / 0.5
-                volume = max(0.0, 0.4 * (1.0 - fade_progress))
+                volume = max(0.0, base_volume * (1.0 - fade_progress))
                 try:
                     st["campfire_channel"].set_volume(volume)
+                except:
+                    pass
+            elif st.get("campfire_channel") and st["campfire_channel"].get_busy():
+                # Update volume continuously to respect SFX volume settings (when not fading)
+                ambient_volume = audio_sys.get_sfx_volume() * 0.4
+                try:
+                    st["campfire_channel"].set_volume(ambient_volume)
                 except:
                     pass
             
@@ -441,10 +440,15 @@ def handle(events, gs, dt: float, **_):
                     st["fade_alpha"] = 0.0
                     st["fade_speed"] = 255.0 / 3.0  # 3 second fade
                     st["fade_timer"] = 0.0
-                    # Play long rest sound
+                    # Play long rest sound (respects SFX volume)
                     sfx = _load_longrest_sfx()
                     if sfx:
-                        st["longrest_channel"] = sfx.play()
+                        # Get channel and set volume based on SFX volume settings
+                        channel = pygame.mixer.find_channel(True)
+                        if channel:
+                            channel.set_volume(audio_sys.get_sfx_volume())
+                            channel.play(sfx)
+                            st["longrest_channel"] = channel
                     audio_sys.play_click(_get_cached_bank())
             
             elif event.type == pygame.MOUSEBUTTONDOWN and event.button == 1:
@@ -452,10 +456,15 @@ def handle(events, gs, dt: float, **_):
                 st["fade_alpha"] = 0.0
                 st["fade_speed"] = 255.0 / 3.0  # 3 second fade
                 st["fade_timer"] = 0.0
-                # Play long rest sound
+                # Play long rest sound (respects SFX volume)
                 sfx = _load_longrest_sfx()
                 if sfx:
-                    st["longrest_channel"] = sfx.play()
+                    # Get channel and set volume based on SFX volume settings
+                    channel = pygame.mixer.find_channel(True)
+                    if channel:
+                        channel.set_volume(audio_sys.get_sfx_volume())
+                        channel.play(sfx)
+                        st["longrest_channel"] = channel
                 audio_sys.play_click(audio_sys.get_global_bank())
         
         return None

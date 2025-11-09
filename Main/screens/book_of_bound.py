@@ -165,12 +165,7 @@ def mark_vessel_discovered(gs, vessel_asset_name: str):
         gs.book_of_bound_discovered.add(vessel_name)
         print(f"📚 Discovered vessel: {vessel_name}")
         
-        # Auto-save to persist discovery
-        try:
-            from systems import save_system as saves
-            saves.save_game(gs, force=True)
-        except Exception as e:
-            print(f"⚠️ Failed to save discovery: {e}")
+        # No autosave - user must manually save via "Save Game" button to persist discovery
 
 
 def is_vessel_discovered(gs, vessel_name: str) -> bool:

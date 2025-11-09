@@ -22,9 +22,19 @@ def update_player(gs, dt, player_half):
     if party_manager.is_open():
         return  # freeze movement while modal is open
 
+    # Debug: Log position on first update after loading
+    if not hasattr(update_player, "_logged_first_update"):
+        game_was_loaded = getattr(gs, "_game_was_loaded_from_save", False)
+        if game_was_loaded:
+            print(f"🎮 First update_player() call after load - pos=({gs.player_pos.x:.1f}, {gs.player_pos.y:.1f}), distance={getattr(gs, 'distance_travelled', 0.0):.1f}")
+            update_player._logged_first_update = True
+
     keys = pygame.key.get_pressed()
     moving = False
     speed = getattr(gs, "player_speed", 180)
+    
+    # Store previous Y position to calculate actual distance moved
+    prev_y = gs.player_pos.y
 
     if keys[pygame.K_w]:
         gs.player_pos.y -= speed * dt
@@ -34,11 +44,36 @@ def update_player(gs, dt, player_half):
         moving = True
 
     # Clamp to world bounds
+    # CRITICAL: Only clamp if actually out of bounds - don't clamp valid positions
+    old_y = gs.player_pos.y
+    game_was_loaded = getattr(gs, "_game_was_loaded_from_save", False)
+    
+    # Calculate clamp bounds
+    min_y = player_half.y
+    max_y = S.WORLD_H - player_half.y
+    
+    # Clamp X position (always)
     gs.player_pos.x = clamp(gs.player_pos.x, player_half.x, S.WORLD_W - player_half.x)
-    gs.player_pos.y = clamp(gs.player_pos.y, player_half.y, S.WORLD_H - player_half.y)
-
+    
+    # Clamp Y position ONLY if actually out of bounds
+    # This prevents clamping valid positions that are within bounds
+    if gs.player_pos.y < min_y:
+        gs.player_pos.y = min_y
+        if hasattr(update_player, "_logged_first_update"):
+            print(f"⚠️ Clamped Y from {old_y:.1f} to {min_y:.1f} (below min)")
+    elif gs.player_pos.y > max_y:
+        gs.player_pos.y = max_y
+        if hasattr(update_player, "_logged_first_update"):
+            print(f"⚠️ Clamped Y from {old_y:.1f} to {max_y:.1f} (above max)")
+    # If position is within bounds, don't clamp it (allows smooth movement)
+    
+    # Calculate distance travelled based on ACTUAL distance moved (change in Y position)
+    # Player moves UP (Y decreases) when moving forward, so distance = previous_y - current_y
     if moving:
-        gs.distance_travelled = getattr(gs, "distance_travelled", 0.0) + speed * dt
+        # Only count forward movement (Y decreasing), not backward movement
+        distance_moved = max(0.0, prev_y - gs.player_pos.y)
+        current_distance = getattr(gs, "distance_travelled", 0.0)
+        gs.distance_travelled = current_distance + distance_moved
 
 
 def get_camera_offset(target_pos: Vector2, screen_w: int, screen_h: int, player_half: Vector2) -> Vector2:
@@ -194,16 +229,58 @@ def enter(gs, **_):
     if ROAD_IMG is None:
         load_road()
 
-    # default player state
-    if not hasattr(gs, "player_pos"):
-        gs.player_pos = Vector2(S.WORLD_W / 2, S.WORLD_H / 2)
+    # Check if game was loaded from save - if so, don't reset position/distance
+    game_was_loaded = getattr(gs, "_game_was_loaded_from_save", False)
+    
+    # Debug: Log current state
+    if hasattr(gs, "player_pos"):
+        print(f"🌍 world.enter() called - game_was_loaded={game_was_loaded}, current_pos=({gs.player_pos.x:.1f}, {gs.player_pos.y:.1f})")
+    
+    # CRITICAL: Never reset position if game was loaded from save
+    # The position should already be set correctly by continue_game() -> load_game()
+    if game_was_loaded:
+        # Game was loaded - preserve position, distance, and all loaded state
+        print(f"✅ world.enter() preserving loaded game state")
+        if not hasattr(gs, "player_pos"):
+            print(f"⚠️ ERROR: player_pos missing after load_game()!")
+            gs.player_pos = Vector2(S.WORLD_W / 2, S.WORLD_H / 2)
+    else:
+        # New game - initialize default state
+        if not hasattr(gs, "player_pos"):
+            print(f"ℹ️ world.enter() initializing new game player_pos")
+            gs.player_pos = Vector2(S.WORLD_W / 2, S.WORLD_H / 2)
+        else:
+            print(f"ℹ️ world.enter() preserving existing position for new game")
+    
     if not hasattr(gs, "player_speed"):
         gs.player_speed = 180
+    
+    # Only reset distance_travelled if this is a new game (not loaded from save)
     if not hasattr(gs, "distance_travelled"):
         gs.distance_travelled = 0.0
+    elif not game_was_loaded:
+        # For new games, ensure distance starts at 0
+        # For loaded games, preserve the loaded distance
+        pass
 
-    # camera cache
-    gs._cam = Vector2(0, 0)
+    # camera cache - ALWAYS initialize to follow player position (for both new and loaded games)
+    # This ensures the camera is correct regardless of whether the game was loaded or not
+    if hasattr(gs, "player_pos"):
+        # Calculate camera position to show the current player position
+        # Use logical dimensions for camera calculation (consistent with rendering)
+        player_half = getattr(gs, "player_half", Vector2(S.PLAYER_SIZE[0] / 2, S.PLAYER_SIZE[1] / 2))
+        screen_w = getattr(S, "LOGICAL_WIDTH", S.WIDTH)
+        screen_h = getattr(S, "LOGICAL_HEIGHT", S.HEIGHT)
+        cam = get_camera_offset(gs.player_pos, screen_w, screen_h, player_half)
+        gs._cam = Vector2(cam.x, cam.y)
+        if game_was_loaded:
+            print(f"✅ Camera initialized to follow loaded player: cam=({cam.x:.1f}, {cam.y:.1f}), player=({gs.player_pos.x:.1f}, {gs.player_pos.y:.1f}), screen=({screen_w}x{screen_h})")
+        else:
+            print(f"✅ Camera initialized to follow new game player: cam=({cam.x:.1f}, {cam.y:.1f}), player=({gs.player_pos.x:.1f}, {gs.player_pos.y:.1f}), screen=({screen_w}x{screen_h})")
+    else:
+        # Fallback: initialize camera to top-left if player_pos doesn't exist (shouldn't happen)
+        gs._cam = Vector2(0, 0)
+        print(f"⚠️ WARNING: player_pos missing in world.enter(), camera set to (0, 0)")
 
 
 def handle(events, gs, **_):
@@ -244,11 +321,18 @@ def update(gs, dt, **_):
         return
 
 
-    player_half = Vector2(S.PLAYER_SIZE[0] / 2, S.PLAYER_SIZE[1] / 2)
+    # Use gs.player_half if available (from apply_player_variant), otherwise use default
+    player_half = getattr(gs, "player_half", None)
+    if player_half is None:
+        player_half = Vector2(S.PLAYER_SIZE[0] / 2, S.PLAYER_SIZE[1] / 2)
+    
     update_player(gs, dt, player_half)
 
     # camera follows even while manager is open (player is frozen anyway)
-    cam = get_camera_offset(gs.player_pos, S.WIDTH, S.HEIGHT, player_half)
+    # Use logical dimensions for camera calculation (consistent with rendering)
+    screen_w = getattr(S, "LOGICAL_WIDTH", S.WIDTH)
+    screen_h = getattr(S, "LOGICAL_HEIGHT", S.HEIGHT)
+    cam = get_camera_offset(gs.player_pos, screen_w, screen_h, player_half)
     gs._cam.update(cam.x, cam.y)
 
 
@@ -263,11 +347,17 @@ def draw(screen: pygame.Surface, gs, dt, **_):
     px = int(gs.player_pos.x - cam_x)
     py = int(gs.player_pos.y - cam_y)
     pw, ph = S.PLAYER_SIZE
+    
+    # Debug: Print position on first draw after loading (only once)
+    if not hasattr(gs, "_position_debug_printed"):
+        print(f"🎮 First draw: player world pos=({gs.player_pos.x:.1f}, {gs.player_pos.y:.1f}), camera=({cam_x:.1f}, {cam_y:.1f}), screen pos=({px}, {py})")
+        gs._position_debug_printed = True
+    
     pygame.draw.rect(screen, (230, 215, 180), (px - pw//2, py - ph//2, pw, ph), border_radius=6)
     pygame.draw.rect(screen, (40, 30, 18), (px - pw//2, py - ph//2, pw, ph), 2, border_radius=6)
 
     # HUD (optional simple debug)
-    dbg = pygame.font.SysFont("consolas", 16).render(f"Pos {int(gs.player_pos.x)},{int(gs.player_pos.y)}", True, (240, 230, 210))
+    dbg = pygame.font.SysFont("consolas", 16).render(f"Pos {int(gs.player_pos.x)},{int(gs.player_pos.y)} Cam {int(cam_x)},{int(cam_y)}", True, (240, 230, 210))
     screen.blit(dbg, (8, 8))
 
     # --- overlay: Party Manager (drawn last; modal) ---

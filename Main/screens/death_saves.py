@@ -201,6 +201,20 @@ def handle(events, gs, **_):
                 st["overlay"] = None  # dismiss
                 # Resolve terminal states now
                 if st["fail"] >= 3:
+                    # Save game when death saves fail (prevents save scumming)
+                    # CRITICAL: Save before transitioning to death screen
+                    try:
+                        from systems import save_system as saves
+                        save_result = saves.save_game(gs, force=True)
+                        if save_result:
+                            print("💾 Game saved: Death saves failed (3 failures) - saved successfully")
+                        else:
+                            print("⚠️ Game save returned False: Death saves failed (3 failures)")
+                    except Exception as e:
+                        print(f"⚠️ Save failed on death save failure: {e}")
+                        import traceback
+                        traceback.print_exc()
+                    
                     try: pygame.mixer.music.stop()
                     except Exception: pass
                     return MODE_DEATH
@@ -209,6 +223,15 @@ def handle(events, gs, **_):
                     for st_v in stats:
                         if isinstance(st_v, dict):
                             st_v["current_hp"] = 1
+                    
+                    # Save game when death saves succeed (prevents save scumming)
+                    try:
+                        from systems import save_system as saves
+                        saves.save_game(gs, force=True)
+                        print("💾 Game saved: Death saves succeeded (3 successes)")
+                    except Exception as e:
+                        print(f"⚠️ Save failed on death save success: {e}")
+                    
                     try: pygame.mixer.music.stop()
                     except Exception: pass
                     return S.MODE_GAME
@@ -277,6 +300,14 @@ def handle(events, gs, **_):
 
         # Escape hatch: any key without overlay goes straight to death
         if e.type == pygame.KEYDOWN:
+            # Save game before going to death screen (prevents save scumming)
+            try:
+                from systems import save_system as saves
+                saves.save_game(gs, force=True)
+                print("💾 Game saved: Death saves escape hatch - going to death screen")
+            except Exception as ex:
+                print(f"⚠️ Save failed on death saves escape: {ex}")
+            
             try: pygame.mixer.music.stop()
             except Exception: pass
             return MODE_DEATH

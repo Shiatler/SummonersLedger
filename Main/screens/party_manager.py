@@ -608,22 +608,46 @@ def _draw_heal_textbox(screen: pygame.Surface, dt: float = 0.016):
 
 
 def _swap(gs, i, j):
-    names = getattr(gs, "party_slots_names", None) or [None]*6
-    stats = getattr(gs, "party_vessel_stats", None) or [None]*6
-    slots = getattr(gs, "party_slots", None) or [None]*6
+    # Get current names and stats - create new lists to avoid reference issues
+    names_src = getattr(gs, "party_slots_names", None)
+    stats_src = getattr(gs, "party_vessel_stats", None)
+    
     if i == j:
         return
 
-    if len(names) < 6: names += [None]*(6-len(names))
-    if len(stats) < 6: stats += [None]*(6-len(stats))
-    if len(slots) < 6: slots += [None]*(6-len(slots))
+    # Create new lists with exactly 6 slots (copy to avoid modifying original)
+    names = list(names_src) if names_src and isinstance(names_src, list) else [None]*6
+    stats = list(stats_src) if stats_src and isinstance(stats_src, list) else [None]*6
+    
+    # Ensure exactly 6 slots
+    while len(names) < 6:
+        names.append(None)
+    names = names[:6]
+    while len(stats) < 6:
+        stats.append(None)
+    stats = stats[:6]
 
+    # Store original names for debug logging
+    name_i_before = names[i] if i < len(names) else None
+    name_j_before = names[j] if j < len(names) else None
+    
+    # Swap names and stats in the new lists
     names[i], names[j] = names[j], names[i]
     stats[i], stats[j] = stats[j], stats[i]
-    slots[i], slots[j] = slots[j], slots[i]
-    gs.party_slots_names = names
-    gs.party_vessel_stats = stats
-    gs.party_slots = slots
+    
+    # Debug: Log the swap
+    print(f"🔄 Swapped slots {i} and {j}:")
+    print(f"   Slot {i}: '{name_i_before}' -> '{names[i]}'")
+    print(f"   Slot {j}: '{name_j_before}' -> '{names[j]}'")
+    
+    # Assign the new lists back to gs (this updates the reference)
+    # CRITICAL: Create a fresh list to ensure we're not sharing references
+    gs.party_slots_names = list(names)
+    gs.party_vessel_stats = list(stats) if isinstance(stats, list) else stats
+    
+    # CRITICAL: Clear party_slots surfaces - let party_ui.py rebuild from names
+    # This ensures party_ui.py correctly detects the swap and rebuilds tokens
+    gs.party_slots = [None] * 6
 
     act = getattr(gs, "party_active_idx", 0)
     if act == i:

@@ -591,6 +591,62 @@ def reset_scroll():
     _SCROLL_Y = 0
     _CURRENT_CATEGORY_INDEX = 0  # Reset to first category (healing)
 
+def _screen_to_panel_coords(mouse_pos):
+    """Convert screen/logical coordinates to panel coordinates."""
+    import settings as S
+    width, height = S.LOGICAL_WIDTH, S.LOGICAL_HEIGHT
+    panel_w, panel_h = 800, 600
+    panel_x = (width - panel_w) // 2
+    panel_y = (height - panel_h) // 2
+    
+    mx, my = mouse_pos
+    panel_mx = mx - panel_x
+    panel_my = my - panel_y
+    return panel_mx, panel_my
+
+def is_hovering_shop_item(mouse_pos):
+    """Check if mouse is hovering over any shop item. Returns True if hovering."""
+    global _LAST_ITEMS, _SCROLL_Y, _CURRENT_CATEGORY_INDEX
+    
+    # Calculate item rects on the fly (same logic as draw function)
+    panel_mx, panel_my = _screen_to_panel_coords(mouse_pos)
+    
+    # Get current items (same logic as draw)
+    all_items = _get_shop_items()
+    current_category = item_categories.CATEGORIES[_CURRENT_CATEGORY_INDEX]
+    items = item_categories.filter_items_by_category(all_items, current_category)
+    
+    if not items:
+        return False
+    
+    # Viewport for scrollable item list (same as in draw)
+    panel_w, panel_h = 800, 600
+    viewport_x = 50
+    viewport_y = 100
+    viewport_w = panel_w - 100
+    viewport_h = panel_h - 180
+    viewport_rect = pygame.Rect(viewport_x, viewport_y, viewport_w, viewport_h)
+    
+    # Calculate item rects (same logic as draw)
+    y = viewport_rect.y - _SCROLL_Y
+    for idx, item in enumerate(items):
+        row_rect = pygame.Rect(viewport_rect.x, y, viewport_rect.w, ROW_H)
+        
+        # Skip if outside viewport
+        if row_rect.bottom < viewport_rect.top:
+            y += ROW_H + ROW_GAP
+            continue
+        if row_rect.top > viewport_rect.bottom:
+            break
+        
+        # Check if mouse is over this item
+        if row_rect.collidepoint(panel_mx, panel_my):
+            return True
+        
+        y += ROW_H + ROW_GAP
+    
+    return False
+
 def _can_afford(item_id: str, player_level: int, player_gold: int, player_silver: int, player_bronze: int) -> bool:
     """Check if player can afford an item."""
     return item_pricing.can_afford_item(item_id, player_level, player_gold, player_silver, player_bronze)

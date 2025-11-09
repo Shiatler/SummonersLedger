@@ -418,6 +418,10 @@ def _move_archives_vessel_to_party(gs, archive_index: int) -> bool:
         gs.party_slots[empty_slot] = None  # Will be loaded when needed
         gs.party_vessel_stats[empty_slot] = dict(stats) if isinstance(stats, dict) else {}
         
+        # Clear party_ui.py tracking so it rebuilds from names
+        if hasattr(gs, "_party_slots_token_names"):
+            delattr(gs, "_party_slots_token_names")
+        
         # Remove from archives
         removed_vessel = archives.pop(archive_index)
         print(f"🗑️ Removed {removed_vessel.get('vessel_name', 'unknown')} from archives")
@@ -470,6 +474,10 @@ def _swap_vessel_with_party(gs, archive_index: int, party_index: int) -> bool:
         gs.party_slots[party_index] = None  # Will be loaded when needed
         gs.party_vessel_stats[party_index] = dict(archive_vessel["stats"])
         
+        # Clear party_ui.py tracking so it rebuilds from names
+        if hasattr(gs, "_party_slots_token_names"):
+            delattr(gs, "_party_slots_token_names")
+        
         # Swap: party vessel goes to archives (if there was one)
         if party_vessel_name:
             # Convert token back to vessel name
@@ -489,12 +497,7 @@ def _swap_vessel_with_party(gs, archive_index: int, party_index: int) -> bool:
             # Empty party slot, just remove from archives
             archives.pop(archive_index)
         
-        # Save game
-        try:
-            from systems.save_system import save_game
-            save_game(gs, force=True)
-        except Exception as e:
-            print(f"⚠️ Failed to save after swap: {e}")
+        # No autosave - user must manually save via "Save Game" button
         
         return True
     except Exception as e:
@@ -737,12 +740,7 @@ def handle(gs, events, dt, **deps):
                     _party_picker_active = False
                 except Exception:
                     pass
-            # Save game
-            try:
-                from systems.save_system import save_game
-                save_game(gs, force=True)
-            except Exception:
-                pass
+            # No autosave - user must manually save via "Save Game" button
         else:
             # Failed to move - clear flag anyway
             delattr(gs, '_archives_party_selected_idx')
@@ -919,13 +917,7 @@ def handle(gs, events, dt, **deps):
                                 success = _move_archives_vessel_to_party(gs, _selected_vessel_index)
                                 if success:
                                     print(f"✅ Successfully moved vessel to party!")
-                                    # Save game
-                                    try:
-                                        from systems.save_system import save_game
-                                        save_game(gs, force=True)
-                                        print(f"💾 Game saved")
-                                    except Exception as e:
-                                        print(f"⚠️ Failed to save game: {e}")
+                                    # No autosave - user must manually save via "Save Game" button
                                 else:
                                     print(f"⚠️ Failed to move vessel to party")
                             else:
@@ -1029,12 +1021,7 @@ def handle(gs, events, dt, **deps):
                                 archives[_drag_source_index] = target_vessel
                                 archives[global_index] = _drag_vessel_data
                                 
-                                # Save game
-                                try:
-                                    from systems.save_system import save_game
-                                    save_game(gs, force=True)
-                                except Exception as e:
-                                    print(f"⚠️ Failed to save game after drag: {e}")
+                                # No autosave - user must manually save via "Save Game" button
                                 
                                 # Select the new location
                                 _selected_vessel_index = global_index

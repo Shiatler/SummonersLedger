@@ -368,10 +368,7 @@ def _repair_existing_stats_if_needed(gs, slot_index: int, token_name: str):
                 notes="Migrated to current AC/HP rules (ledger auto-repair)",
             ).to_dict()
             gs.party_vessel_stats[slot_index] = fixed
-            try:
-                saves.save_game(gs)
-            except Exception as e:
-                print(f"⚠️ Save after migration failed (slot {slot_index}): {e}")
+            # No autosave - user must manually save via "Save Game" button
     except Exception as e:
         print(f"⚠️ Ledger migrate slot {slot_index} failed: {e}")
 
@@ -431,10 +428,7 @@ def _ensure_stats_for_slot(gs, slot_index: int):
         notes="Rolled on add to party",
     )
     gs.party_vessel_stats[slot_index] = stats
-    try:
-        saves.save_game(gs)
-    except Exception as e:
-        print(f"⚠️ Save after rolling stats failed (slot {slot_index}): {e}")
+    # No autosave - user must manually save via "Save Game" button
 
 # ---------- Slot navigation ----------
 def _slot_count(gs) -> int:

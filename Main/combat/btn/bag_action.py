@@ -49,6 +49,87 @@ def draw_button(screen: pygame.Surface):
     _ensure_btn()
     draw_icon_button(screen, _ICON, _RECT)
 
+def is_hovering_button(pos: tuple[int, int]) -> bool:
+    """
+    Check if the mouse position is hovering over the bag button.
+    Returns True if hovering over the button, False otherwise.
+    
+    Args:
+        pos: Mouse position tuple (x, y) in logical coordinates
+    """
+    _ensure_btn()
+    if _RECT is None:
+        return False
+    return _RECT.collidepoint(pos)
+
+def is_hovering_popup_element(pos: tuple[int, int]) -> bool:
+    """
+    Check if the mouse position is hovering over any clickable element in the bag popup.
+    Returns True if hovering over items, arrows, or the panel, False otherwise.
+    
+    Args:
+        pos: Mouse position tuple (x, y) in logical coordinates
+    """
+    global _PANEL_RECT, _ITEM_RECTS, _LEFT_ARROW_RECT, _RIGHT_ARROW_RECT, _VIEWPORT_RECT
+    
+    if not _OPEN:
+        return False
+    
+    # Ensure panel rect is initialized (fallback if draw hasn't been called)
+    if _PANEL_RECT is None:
+        try:
+            import settings as S
+            sw, sh = S.LOGICAL_WIDTH, S.LOGICAL_HEIGHT
+            # Calculate panel rect (same logic as draw_popup fallback)
+            margin_w = int(sw * 0.06)
+            margin_h = int(sh * 0.12)
+            _PANEL_RECT = pygame.Rect(margin_w, margin_h, sw - margin_w * 2, sh - margin_h * 2)
+        except:
+            return False
+    
+    # Check navigation arrows first (these are in logical coordinates)
+    if _LEFT_ARROW_RECT and _LEFT_ARROW_RECT.collidepoint(pos):
+        return True
+    if _RIGHT_ARROW_RECT and _RIGHT_ARROW_RECT.collidepoint(pos):
+        return True
+    
+    # Calculate viewport rect if it's not set (fallback for when draw hasn't been called)
+    viewport_rect = _VIEWPORT_RECT
+    if viewport_rect is None and _PANEL_RECT:
+        try:
+            # Calculate viewport rect from panel rect (same logic as _draw_inventory_on_popup)
+            import settings as S
+            # Create screen rect using logical dimensions
+            screen_rect = pygame.Rect(0, 0, S.LOGICAL_WIDTH, S.LOGICAL_HEIGHT)
+            vis = _PANEL_RECT.clip(screen_rect)
+            cx = vis.x + int(vis.w * _BOX_POS_REL[0])
+            cy = vis.y + int(vis.h * _BOX_POS_REL[1])
+            vw, vh = _BOX_SIZE_PX
+            vx = cx - vw // 2
+            vy = cy - vh // 2
+            box = pygame.Rect(vx, vy, vw, vh)
+            box.clamp_ip(vis)
+            viewport_rect = box
+        except:
+            pass
+    
+    # Check item rows first (most precise detection)
+    if _ITEM_RECTS:
+        for rect in _ITEM_RECTS:
+            if rect and rect.collidepoint(pos):
+                return True
+    
+    # Check if mouse is over the viewport (where items are displayed)
+    # This is the main area where items are shown, so if mouse is here, it's likely over an item
+    if viewport_rect and viewport_rect.collidepoint(pos):
+        return True
+    
+    # Check if mouse is over the panel (for scrolling) - this is a large area
+    if _PANEL_RECT and _PANEL_RECT.collidepoint(pos):
+        return True
+    
+    return False
+
 # ---------------- Popup state/media ----------------
 _OPEN = False
 _PANEL_RECT = None  # image rect
@@ -686,9 +767,10 @@ def _draw_inventory_on_popup(screen: pygame.Surface, popup_rect: pygame.Rect, fa
 
     # local mouse for hover - convert to logical coordinates
     from systems import coords
-    mx, my = coords.screen_to_logical(pygame.mouse.get_pos())
+    screen_mx, screen_my = pygame.mouse.get_pos()
+    mx, my = coords.screen_to_logical((screen_mx, screen_my))
     local_mouse = (mx - vx, my - vy)
-    screen_mouse = (mx, my)  # For arrow collision detection
+    screen_mouse = (mx, my)  # For arrow collision detection (already in logical coords)
 
     y = -_SCROLL_Y
     if not items:

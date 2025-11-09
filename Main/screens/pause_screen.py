@@ -56,7 +56,7 @@ def handle(events, gs, audio_bank=None, saves=None, **_):
                 audio_sys.play_click(audio_bank)
                 if saves:
                     try:
-                        saves.save_game(gs)
+                        saves.save_game(gs, force=True)
                         print("💾 Saved game from Pause.")
                     except Exception as e:
                         print(f"⚠️ Save failed: {e}")
@@ -68,11 +68,7 @@ def handle(events, gs, audio_bank=None, saves=None, **_):
 
             if b_quit.clicked(event):
                 audio_sys.play_click(audio_bank)
-                if saves:
-                    try:
-                        saves.save_game(gs)
-                    except Exception as e:
-                        print(f"⚠️ Save-on-quit failed: {e}")
+                # No autosave - user must manually save via "Save Game" button
                 return S.MODE_MENU
 
     return None

@@ -13,7 +13,7 @@ from typing import Dict, Tuple
 # ---------- Grid Configuration ----------
 BUTTON_SCALE = 0.3  # Scale factor for buttons (30% of original size)
 BUTTON_SIZE = 100  # Target size for buttons in grid (will scale images to this)
-GRID_COLS = 3  # Number of columns in grid (horizontal layout)
+GRID_COLS = 4  # Number of columns in grid (horizontal layout) - expanded from 3 to fit 2 more buttons
 GRID_GAP = 6  # Gap between buttons
 BOTTOM_PADDING = 12  # Padding from bottom edge
 RIGHT_PADDING = 12  # Padding from right edge
@@ -28,6 +28,7 @@ _BUTTONS = [
     {"id": "rest", "path": "Campfire.png", "action": "rest"},
     {"id": "book_of_bound", "path": "BookOfBound.png", "action": "book_of_bound"},
     {"id": "archives", "path": "Archives.png", "action": "archives"},
+    {"id": "hells_deck", "path": "DeckOfCards.png", "action": "hells_deck"},
     # Placeholder for future button:
     # {"id": "placeholder", "path": "Placeholder.png", "action": "placeholder"},
 ]
@@ -66,7 +67,12 @@ def _load_button_image(button_id: str, path: str) -> pygame.Surface | None:
     if button_id in _LOADED_BUTTONS:
         return _LOADED_BUTTONS[button_id]
     
-    full_path = os.path.join("Assets", "Map", path)
+    # Special handling for hells_deck button - it's in Blessings folder
+    if button_id == "hells_deck":
+        full_path = os.path.join("Assets", "Blessings", path)
+    else:
+        full_path = os.path.join("Assets", "Map", path)
+    
     if not os.path.exists(full_path):
         print(f"⚠️ {path} not found at {full_path}")
         return None
@@ -198,12 +204,36 @@ def handle_click(pos: tuple[int, int]) -> str | None:
     return None
 
 
+def is_hovering_any_button(pos: tuple[int, int]) -> bool:
+    """
+    Check if the mouse position is hovering over any HUD button.
+    Returns True if hovering over any button, False otherwise.
+    
+    Args:
+        pos: Mouse position tuple (x, y) in logical coordinates
+    """
+    _load_all_buttons()
+    
+    for btn_def in _BUTTONS:
+        btn_id = btn_def["id"]
+        rect = _BUTTON_RECTS.get(btn_id)
+        if rect and rect.collidepoint(pos):
+            return True
+    
+    return False
+
+
 def draw(screen: pygame.Surface):
     """Draw all HUD buttons in a grid layout with hover glow effects."""
     _load_all_buttons()
     
-    # Get mouse position for hover detection
-    mx, my = pygame.mouse.get_pos()
+    # Get mouse position for hover detection - convert to logical coordinates
+    screen_mx, screen_my = pygame.mouse.get_pos()
+    try:
+        from systems import coords
+        mx, my = coords.screen_to_logical((screen_mx, screen_my))
+    except:
+        mx, my = screen_mx, screen_my
     
     for btn_def in _BUTTONS:
         btn_id = btn_def["id"]

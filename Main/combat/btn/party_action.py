@@ -28,6 +28,51 @@ def draw_button(screen: pygame.Surface):
     _ensure_btn()
     draw_icon_button(screen, _ICON, _RECT)
 
+def is_hovering_button(pos: tuple[int, int]) -> bool:
+    """
+    Check if the mouse position is hovering over the party button.
+    Returns True if hovering over the button, False otherwise.
+    
+    Args:
+        pos: Mouse position tuple (x, y) in logical coordinates
+    """
+    _ensure_btn()
+    if _RECT is None:
+        return False
+    return _RECT.collidepoint(pos)
+
+def is_hovering_popup_element(pos: tuple[int, int]) -> bool:
+    """
+    Check if the mouse position is hovering over any clickable element in the party popup.
+    Returns True if hovering over vessel rows, confirmation buttons, or the panel, False otherwise.
+    
+    Args:
+        pos: Mouse position tuple (x, y) in logical coordinates
+    """
+    if not _OPEN:
+        return False
+    
+    # Check vessel rows
+    for rect in _ITEM_RECTS:
+        if rect and rect.collidepoint(pos):
+            return True
+    
+    # Check confirmation modal buttons
+    if _CONFIRM:
+        confirm_rects = _CONFIRM_RECTS
+        if confirm_rects.get('yes') and confirm_rects['yes'].collidepoint(pos):
+            return True
+        if confirm_rects.get('no') and confirm_rects['no'].collidepoint(pos):
+            return True
+        if confirm_rects.get('panel') and confirm_rects['panel'].collidepoint(pos):
+            return True
+    
+    # Check if mouse is over the panel
+    if _PANEL_RECT and _PANEL_RECT.collidepoint(pos):
+        return True
+    
+    return False
+
 def handle_click(pos) -> bool:
     _ensure_btn()
     if not _RECT.collidepoint(pos):

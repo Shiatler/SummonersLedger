@@ -59,7 +59,7 @@ SPRITE_SIZE       = PLAYER_SIZE  # temporary compatibility alias
 # ===================== Encounters & pacing ===================
 EVENT_MIN, EVENT_MAX      = 160, 320
 FIRST_EVENT_AT            = 120
-ENCOUNTER_WEIGHT_VESSEL   = 0.75  # 75% vessel, 25% summoner
+ENCOUNTER_WEIGHT_VESSEL   = 2/3  # 66.67% vessel, 33.33% summoner (of remaining 90% after merchant)
 SPAWN_GAP_MIN             = 1500
 SPAWN_GAP_MAX             = 10000
 ENCOUNTER_SHOW_TIME       = 2.0
@@ -77,8 +77,8 @@ DEBUG_OVERWORLD  = False
 
 # ===================== Audio Defaults ========================
 # Referenced by audio.py via getattr(..., default)
-MUSIC_VOLUME = 0.6
-SFX_VOLUME   = 0.8
+MUSIC_VOLUME = 0.3
+SFX_VOLUME   = 0.3
 
 
 # ===================== Save Files ============================

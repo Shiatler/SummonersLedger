@@ -44,7 +44,36 @@ def ensure_save_dir():
         os.makedirs(S.SAVE_DIR, exist_ok=True)
 
 def has_save():
+    """Check if save file exists."""
     return os.path.exists(S.SAVE_PATH)
+
+def has_valid_save():
+    """
+    Check if save file exists AND contains actual vessel data.
+    Returns True only if there's at least one vessel in party_slots_names.
+    Note: We check party_slots_names because that's what the UI uses to display vessels.
+    """
+    if not os.path.exists(S.SAVE_PATH):
+        return False
+    
+    try:
+        with open(S.SAVE_PATH, "r", encoding="utf-8") as f:
+            data = json.load(f)
+        
+        # CRITICAL: Check party_slots_names - this is what the UI displays
+        # The UI shows vessels based on party_slots_names, so we need at least one valid name
+        names = data.get("party_slots_names", [])
+        if isinstance(names, list):
+            valid_names = [name for name in names if name is not None and name != ""]
+            if valid_names:
+                # Found vessels in party_slots_names - this is a valid save
+                return True
+        
+        # No valid vessel names found - this save has no displayable vessels
+        return False
+    except Exception as e:
+        print(f"⚠️ Error checking valid save: {e}")
+        return False
 
 def _resolve_token_path(filename: str | None) -> str | None:
     """Try to find a token image by filename across known asset dirs."""
@@ -106,18 +135,30 @@ def save_game(gs, *, force: bool = False):
     Save key game state, player choice, spawns, party token filenames,
     and party_vessel_stats (dicts) permanently.
 
-    Throttled: max once per _MIN_SAVE_INTERVAL_MS unless force=True.
-    Deduped: skips writing/logging if the snapshot JSON is identical
-    to the previous successful save.
+    When force=True: Bypasses ALL checks (throttling, dedup, starting position) and always saves.
+    When force=False: Throttled and deduped to avoid spam.
     """
     global _LAST_SAVE_MS, _LAST_SAVE_DIGEST
 
     ensure_save_dir()
 
-    # --- throttle ---
-    now = _now_ms()
-    if not force and (now - _LAST_SAVE_MS) < _MIN_SAVE_INTERVAL_MS:
-        return False  # suppressed due to rate limit
+    # When force=True, bypass ALL checks and save immediately
+    if force:
+        # Get current state for logging
+        player_name = getattr(gs, "player_name", "")
+        distance = getattr(gs, "distance_travelled", 0.0)
+        party_slots = getattr(gs, "party_slots_names", [])
+        has_party = any(party_slots) if party_slots else False
+        inventory = getattr(gs, "inventory", {})
+        has_inventory = bool(inventory)
+        
+        # Always save when force=True - user explicitly requested it
+        print(f"💾 Force saving game (player={player_name}, distance={distance:.1f}, party={has_party}, inventory={has_inventory})")
+    else:
+        # --- throttle (only when not forced) ---
+        now = _now_ms()
+        if (now - _LAST_SAVE_MS) < _MIN_SAVE_INTERVAL_MS:
+            return False  # suppressed due to rate limit
 
     # ensure parallel filenames list exists
     names = getattr(gs, "party_slots_names", None)
@@ -125,6 +166,25 @@ def save_game(gs, *, force: bool = False):
         # (fixed minor bug in original: attribute name had a stray comma)
         n = len(getattr(gs, "party_slots", [])) or 6
         names = [None] * n
+    
+    # Ensure names is a list and has exactly 6 slots
+    if not isinstance(names, list):
+        names = [None] * 6
+    if len(names) < 6:
+        names = names + [None] * (6 - len(names))
+    elif len(names) > 6:
+        names = names[:6]
+    
+    # Normalize names: ensure they're strings or None, and make a clean copy
+    normalized_names = []
+    for name in names:
+        if name is None or name == "":
+            normalized_names.append(None)
+        else:
+            # Ensure it's a string and normalize
+            name_str = str(name).strip()
+            normalized_names.append(name_str if name_str else None)
+    names = normalized_names
 
     # stats list (JSON-safe list of dicts/None)
     stats_src = getattr(gs, "party_vessel_stats", None)
@@ -136,15 +196,61 @@ def save_game(gs, *, force: bool = False):
     elif len(stats_list) > len(names):
         stats_list = stats_list[:len(names)]
 
+    # Debug: Log what we're saving
+    player_pos = getattr(gs, "player_pos", Vector2(0, 0))
+    start_x_val = getattr(gs, "start_x", S.WORLD_W // 2)
+    distance = getattr(gs, "distance_travelled", 0.0)
+    
+    # Only check starting position when NOT forced (autosave protection)
+    if not force:
+        # CRITICAL: Don't save if we're at the starting position and haven't moved
+        # This prevents overwriting a good save with the starting position
+        player_half_y = getattr(gs, "player_half", Vector2(0, 0)).y
+        if player_half_y == 0:
+            player_half_y = S.PLAYER_SIZE[1] / 2
+        expected_start_y = S.WORLD_H - player_half_y - 10
+        
+        # If we're at starting position with no distance travelled, don't overwrite a potentially better save
+        is_at_start = abs(player_pos.y - expected_start_y) < 10 and distance == 0.0
+        
+        if is_at_start and os.path.exists(S.SAVE_PATH):
+            # Check if existing save has progress
+            try:
+                with open(S.SAVE_PATH, "r", encoding="utf-8") as f:
+                    existing_data = json.load(f)
+                    existing_distance = existing_data.get("distance_travelled", 0.0)
+                    existing_y = existing_data.get("player_y", expected_start_y)
+                    # If existing save has progress, don't overwrite with starting position
+                    if existing_distance > 0.0 or abs(existing_y - expected_start_y) > 10:
+                        print(f"⚠️ Skipping save: At starting position (distance=0) but existing save has progress (distance={existing_distance:.1f}, y={existing_y:.1f})")
+                        return False  # Don't overwrite good save with starting position
+            except Exception:
+                pass  # If we can't read existing save, proceed with saving
+        
+        # Calculate expected starting Y position
+        # Warn if saving starting position when player has moved
+        if distance > 0.0:
+            player_half_y = getattr(gs, "player_half", Vector2(0, 0)).y
+            if player_half_y == 0:
+                player_half_y = S.PLAYER_SIZE[1] / 2
+            expected_start_y = S.WORLD_H - player_half_y - 10
+            if abs(player_pos.y - expected_start_y) < 10:
+                print(f"⚠️ WARNING: Saving starting position (Y={player_pos.y:.1f}) but distance_travelled={distance:.1f} > 0!")
+                print(f"   Expected start Y: {expected_start_y:.1f}, Current Y: {player_pos.y:.1f}")
+    
+    if not force:
+        print(f"💾 Saving position: player=({player_pos.x:.1f}, {player_pos.y:.1f}), start_x={start_x_val:.1f}, distance={distance:.1f}")
+    
     data = {
         # player & progress
-        "player_y": float(getattr(gs, "player_pos", Vector2(0, 0)).y),
+        "player_y": float(player_pos.y),  # Only save Y position - X is always restored from start_x
         "distance_travelled": float(getattr(gs, "distance_travelled", 0.0)),
         "next_event_at": float(getattr(gs, "next_event_at", 200.0)),
         "player_gender": getattr(gs, "player_gender", "male"),
+        # NOTE: player_x and start_x are NOT saved - they're recalculated on load
 
         # party token filenames (NOT surfaces)
-        "party_slots_names": names,
+        "party_slots_names": names,  # Save normalized names directly
 
         # 🔒 persistent rolled stats (JSON dicts)
         "party_vessel_stats": stats_list,
@@ -153,6 +259,7 @@ def save_game(gs, *, force: bool = False):
         "rivals_on_map": [
             {
                 "name":  r.get("name", ""),
+                "filename": r.get("filename", ""),  # Store original filename for sprite lookup
                 "side":  r.get("side", "left"),
                 "x":     float(r["pos"].x),
                 "y":     float(r["pos"].y),
@@ -166,6 +273,22 @@ def save_game(gs, *, force: bool = False):
                 "y":    float(v["pos"].y),
             }
             for v in getattr(gs, "vessels_on_map", [])
+        ],
+        "merchants_on_map": [
+            {
+                "side": m.get("side", "left"),
+                "x":    float(m["pos"].x),
+                "y":    float(m["pos"].y),
+            }
+            for m in getattr(gs, "merchants_on_map", [])
+        ],
+        "taverns_on_map": [
+            {
+                "side": t.get("side", "left"),
+                "x":    float(t["pos"].x),
+                "y":    float(t["pos"].y),
+            }
+            for t in getattr(gs, "taverns_on_map", [])
         ],
 
         # ✅ inventory
@@ -191,33 +314,56 @@ def save_game(gs, *, force: bool = False):
         "first_overworld_blessing_given": getattr(gs, "first_overworld_blessing_given", False),
     }
 
-    # --- dedupe identical snapshots ---
-    try:
-        blob = json.dumps(data, sort_keys=True, separators=(",", ":")).encode("utf-8")
-        digest = hashlib.sha1(blob).hexdigest()
-        if _LAST_SAVE_DIGEST == digest and not force:
-            return False  # nothing changed; skip write
-    except Exception:
-        digest = None  # fall back to writing
+    # --- dedupe identical snapshots (skip when forced) ---
+    now = _now_ms()
+    digest = None
+    if not force:
+        try:
+            blob = json.dumps(data, sort_keys=True, separators=(",", ":")).encode("utf-8")
+            digest = hashlib.sha1(blob).hexdigest()
+            if _LAST_SAVE_DIGEST == digest:
+                return False  # nothing changed; skip write
+        except Exception:
+            digest = None  # fall back to writing
 
     # --- write ---
     try:
         with open(S.SAVE_PATH, "w", encoding="utf-8") as f:
             json.dump(data, f, indent=2)
+            # Flush to ensure data is written to disk
+            f.flush()
+            if hasattr(f, 'fileno'):
+                try:
+                    os.fsync(f.fileno())
+                except Exception:
+                    pass  # fsync may not be available on all platforms
+        
         _LAST_SAVE_MS = now
         if digest:
             _LAST_SAVE_DIGEST = digest
-        _maybe_log_saved(S.SAVE_PATH)
+        
+        if force:
+            print(f"💾 Force saved game to {S.SAVE_PATH}")
+        else:
+            _maybe_log_saved(S.SAVE_PATH)
         return True
     except Exception as e:
         print(f"⚠️ Save failed: {e}")
+        import traceback
+        traceback.print_exc()
         return False
 
 
-def load_game(gs, summoner_sprites: dict[str, object] | None = None):
+def load_game(gs, summoner_sprites: dict[str, object] | None = None, merchant_frames: list | None = None, tavern_sprite: object | None = None):
     """
     Load saved data and restore player pos, pacing, character, spawns,
     rebuild party tokens from saved filenames, and rehydrate party stats.
+    
+    Args:
+        gs: GameState object
+        summoner_sprites: Dict mapping summoner names to sprites
+        merchant_frames: List of merchant animation frames
+        tavern_sprite: Tavern sprite surface
     """
     try:
         with open(S.SAVE_PATH, "r", encoding="utf-8") as f:
@@ -226,7 +372,30 @@ def load_game(gs, summoner_sprites: dict[str, object] | None = None):
         # player/progress
         if not hasattr(gs, "player_pos"):  # safety
             gs.player_pos = Vector2(0, 0)
-        gs.player_pos.y       = float(data.get("player_y", gs.player_pos.y))
+        
+        # Restore full position (both X and Y) from save file
+        # Use explicit defaults to ensure we get the saved values
+        saved_x = data.get("player_x")
+        saved_y = data.get("player_y")
+        # NOTE: start_x is NOT loaded from save - it's recalculated by start_new_game() in continue_game()
+        # start_x should always be WORLD_W // 2 (center of world)
+        
+        # Restore player position
+        # CRITICAL: Only restore Y position from save file
+        # X position is NOT saved - it's always restored from start_x in continue_game()
+        if saved_y is not None:
+            gs.player_pos.y = float(saved_y)
+            print(f"✅ Loaded player position Y: {gs.player_pos.y:.1f}, start_x: {gs.start_x:.1f}")
+            print(f"   Saved values: player_y={saved_y}")
+        else:
+            # Fallback: keep current Y or use a default
+            if gs.player_pos.y == 0:
+                gs.player_pos.y = float(S.WORLD_H - 64)
+            print(f"⚠️ No player_y in save, using fallback: {gs.player_pos.y}")
+        
+        # NOTE: player_x is NOT loaded from save - it will be restored from start_x in continue_game()
+        # NOTE: start_x is NOT loaded from save - it's recalculated by start_new_game() in continue_game()
+        
         gs.distance_travelled = float(data.get("distance_travelled", 0.0))
         gs.next_event_at      = float(data.get("next_event_at", 200.0))
         gs.player_gender      = data.get("player_gender", "male")
@@ -275,11 +444,25 @@ def load_game(gs, summoner_sprites: dict[str, object] | None = None):
         if not isinstance(names, list):
             names = [None] * 6
 
-        gs.party_slots_names = [None] * len(names)
-        gs.party_slots = [None] * len(names)
-        for i, fname in enumerate(names):
-            gs.party_slots_names[i] = fname
-            gs.party_slots[i] = _load_token_surface(fname) if fname else None
+        # Ensure we have exactly 6 slots
+        if len(names) < 6:
+            names = names + [None] * (6 - len(names))
+        elif len(names) > 6:
+            names = names[:6]
+
+        # Load party_slots_names directly (source of truth)
+        gs.party_slots_names = list(names)  # Make a copy to avoid reference issues
+        
+        # Clear party_slots - let party_ui.py rebuild tokens from names
+        # This ensures party_ui.py's tracking system works correctly
+        gs.party_slots = [None] * 6
+        
+        # Clear party_ui.py's tracking list so it rebuilds correctly
+        if hasattr(gs, "_party_slots_token_names"):
+            delattr(gs, "_party_slots_token_names")
+        
+        # Debug: Log what we loaded
+        print(f"📦 Loaded party_slots_names: {gs.party_slots_names}")
 
         # ----- Party vessel stats (JSON dicts) -----
         stats = data.get("party_vessel_stats", [None] * len(names))
@@ -306,21 +489,34 @@ def load_game(gs, summoner_sprites: dict[str, object] | None = None):
         # rehydrate rivals (if we have sprite mapping)
         rivals_json = data.get("rivals_on_map", [])
         for r in rivals_json:
+            # Try filename first (more reliable), then fall back to name
+            filename = r.get("filename", "")
             name = r.get("name", "")
+            # Use filename if available, otherwise use name
+            lookup_key = filename if filename else name
             side = r.get("side", "left")
             x    = float(r.get("x", getattr(gs, "start_x", 0.0)))
             y    = float(r.get("y", gs.player_pos.y))
 
             sprite = None
             if summoner_sprites:
-                sprite = summoner_sprites.get(name)
+                # Try filename first, then name
+                sprite = summoner_sprites.get(filename) or summoner_sprites.get(name)
 
             if sprite is None:
-                print(f"ℹ️ Skipping rival '{name}' (sprite not found).")
+                print(f"ℹ️ Skipping rival '{lookup_key}' (sprite not found).")
                 continue
 
+            # Use saved name if available, otherwise generate a new one
+            display_name = name  # Use saved name by default
+            if not display_name or display_name == "":
+                # Generate display name if not saved
+                from systems.name_generator import generate_summoner_name
+                display_name = generate_summoner_name(filename if filename else lookup_key)
+
             gs.rivals_on_map.append({
-                "name": name,
+                "name": display_name,  # Use saved name or generated name
+                "filename": filename if filename else name,  # Original filename for sprite lookup
                 "sprite": sprite,
                 "pos": Vector2(x, y),
                 "side": side,
@@ -337,9 +533,51 @@ def load_game(gs, summoner_sprites: dict[str, object] | None = None):
                 "side": side,
             })
 
+        # rehydrate merchants
+        if not hasattr(gs, "merchants_on_map"):
+            gs.merchants_on_map = []
+        else:
+            gs.merchants_on_map.clear()
+        
+        merchants_json = data.get("merchants_on_map", [])
+        for m in merchants_json:
+            side = m.get("side", "left")
+            x    = float(m.get("x", getattr(gs, "start_x", 0.0)))
+            y    = float(m.get("y", gs.player_pos.y))
+            
+            if merchant_frames and len(merchant_frames) > 0:
+                gs.merchants_on_map.append({
+                    "frames": merchant_frames,
+                    "pos": Vector2(x, y),
+                    "side": side,
+                    "anim_time": 0.0,
+                    "frame_index": 0,
+                })
+
+        # rehydrate taverns
+        if not hasattr(gs, "taverns_on_map"):
+            gs.taverns_on_map = []
+        else:
+            gs.taverns_on_map.clear()
+        
+        taverns_json = data.get("taverns_on_map", [])
+        for t in taverns_json:
+            side = t.get("side", "left")
+            x    = float(t.get("x", getattr(gs, "start_x", 0.0)))
+            y    = float(t.get("y", gs.player_pos.y))
+            
+            if tavern_sprite:
+                gs.taverns_on_map.append({
+                    "sprite": tavern_sprite,
+                    "pos": Vector2(x, y),
+                    "side": side,
+                })
+
         print(
             f"📂 Loaded save from {S.SAVE_PATH} (character={gs.player_gender}, "
+            f"position=({gs.player_pos.x:.1f}, {gs.player_pos.y:.1f}), "
             f"rivals={len(gs.rivals_on_map)}, vessels={len(gs.vessels_on_map)}, "
+            f"merchants={len(gs.merchants_on_map)}, taverns={len(gs.taverns_on_map)}, "
             f"party={sum(1 for n in names if n)}, stats={sum(1 for s in gs.party_vessel_stats if s)}, "
             f"inventory_items={len(gs.inventory) if gs.inventory else 0})"
         )
@@ -352,16 +590,29 @@ def load_game(gs, summoner_sprites: dict[str, object] | None = None):
 
 # ===================== Delete ==============================================
 
-def delete_save():
-    """Delete existing save file safely."""
+def delete_save(gs=None, clear_book_of_bound=False):
+    """
+    Delete existing save file safely.
+    
+    Args:
+        gs: Optional GameState object. If provided and clear_book_of_bound=True, will clear Book of Bound discoveries.
+        clear_book_of_bound: If True, clears Book of Bound discoveries from memory. Default False (preserves discoveries).
+    """
     try:
         if os.path.exists(S.SAVE_PATH):
             os.remove(S.SAVE_PATH)
             print("🗑️ Deleted savegame.json")
-            return True
+        
+        # Clear Book of Bound discoveries from memory only if explicitly requested
+        if clear_book_of_bound and gs is not None:
+            if hasattr(gs, "book_of_bound_discovered"):
+                gs.book_of_bound_discovered = set()
+                print("🗑️ Cleared Book of Bound discoveries from memory")
+        
+        return True
     except Exception as e:
         print(f"⚠️ Delete failed: {e}")
-    return False
+        return False
 
 
 # ===================== Optional Autosave Helpers ============================

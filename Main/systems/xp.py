@@ -138,12 +138,7 @@ def distribute_xp(gs, active_idx: int, base_xp: int) -> Tuple[int, int, List[Tup
         st["xp_needed"] = xp_needed(lvl)
 
 
-    # auto-save if function available
-    try:
-        from systems import save_system as saves
-        saves.save_game(gs)
-    except Exception:
-        pass
+    # No autosave - user must manually save via "Save Game" button
 
     return active_gain, bench_gain, levelups
 

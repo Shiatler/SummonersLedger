@@ -16,11 +16,12 @@ from rolling.roller import Roller
 # gs.rivals_on_map:  list of dict {name, sprite, pos(Vector2), side}
 # gs.vessels_on_map: list of dict {pos(Vector2), side}
 # gs.merchants_on_map: list of dict {animator, pos(Vector2), side}
+# gs.taverns_on_map: list of dict {sprite, pos(Vector2), side}
 
 
 # ===================== Shared spawn helpers ==================
 def _y_too_close(y: float, gs, min_sep: float) -> bool:
-    """Return True if y is within min_sep of any existing spawn (vessels, rivals, or merchants)."""
+    """Return True if y is within min_sep of any existing spawn (vessels, rivals, merchants, or taverns)."""
     for r in gs.rivals_on_map:
         if abs(y - r["pos"].y) < min_sep:
             return True
@@ -29,6 +30,9 @@ def _y_too_close(y: float, gs, min_sep: float) -> bool:
             return True
     for m in getattr(gs, "merchants_on_map", []):
         if abs(y - m["pos"].y) < min_sep:
+            return True
+    for t in getattr(gs, "taverns_on_map", []):
+        if abs(y - t["pos"].y) < min_sep:
             return True
     return False
 
@@ -367,6 +371,99 @@ def draw_merchants(screen, cam, gs):
             
             screen.blit(
                 current_frame,
+                (pos.x - cam.x - SIZE_W // 2,
+                 pos.y - cam.y - SIZE_H // 2)
+            )
+
+
+# ===================== Taverns =================
+def spawn_tavern_ahead(gs, start_x, tavern_sprite):
+    """Spawn a tavern (left/right lane) some distance above the player, with separation."""
+    if not tavern_sprite:
+        return
+    
+    side = random.choice(["left", "right"])
+    x = start_x + (-S.LANE_OFFSET if side == "left" else S.LANE_OFFSET)
+    
+    spawn_gap = random.randint(S.SPAWN_GAP_MIN, S.SPAWN_GAP_MAX)
+    base_y = gs.player_pos.y - spawn_gap
+    
+    # Ensure vertical separation from ALL existing spawns
+    sep = getattr(S, "OVERWORLD_MIN_SEPARATION_Y", 200)
+    y = _pick_spawn_y(gs, base_y, sep)
+    if y is None:
+        # If no valid spawn location found, try spawning further away (force spawn)
+        print(f"⚠️ No valid spawn location found for tavern, trying fallback position")
+        y = base_y - 500  # Spawn further away
+        # Check if even this position is too close, if so just use it anyway (force spawn)
+        if _y_too_close(y, gs, sep):
+            print(f"⚠️ Fallback position also too close, forcing spawn anyway")
+    
+    if not hasattr(gs, "taverns_on_map"):
+        gs.taverns_on_map = []
+    
+    gs.taverns_on_map.append({
+        "sprite": tavern_sprite,
+        "pos": Vector2(x, y),
+        "side": side,
+    })
+    print(f"✅ Tavern spawned at position ({x}, {y}) on {side} side")
+
+
+def update_taverns(gs, dt, player_half: Vector2):
+    """Update tavern detection for player proximity."""
+    if not hasattr(gs, "taverns_on_map"):
+        gs.taverns_on_map = []
+        return
+    
+    # Taverns are bigger than player (1.5x size)
+    TAVERN_SIZE_MULT = 1.5
+    SIZE_W = int(S.PLAYER_SIZE[0] * TAVERN_SIZE_MULT)
+    SIZE_H = int(S.PLAYER_SIZE[1] * TAVERN_SIZE_MULT)
+    x_threshold = S.LANE_OFFSET + SIZE_W
+    
+    player_top    = gs.player_pos.y - player_half.y
+    player_bottom = gs.player_pos.y + player_half.y
+    
+    near_tavern = None
+    
+    for t in gs.taverns_on_map:
+        # Check if player is near tavern
+        same_lane = abs(t["pos"].x - gs.player_pos.x) <= x_threshold
+        tavern_top = t["pos"].y - SIZE_H // 2
+        tavern_bottom = t["pos"].y + SIZE_H // 2
+        
+        in_front = player_top <= (tavern_bottom + S.FRONT_TOLERANCE)
+        overlapping_vertically = player_bottom >= (tavern_top - S.FRONT_TOLERANCE)
+        
+        if same_lane and in_front and overlapping_vertically:
+            near_tavern = t
+    
+    # Store which tavern is near (for popup display and audio)
+    gs.near_tavern = near_tavern
+    
+    # Cull far below player
+    cutoff = gs.player_pos.y + S.HEIGHT * 1.5
+    gs.taverns_on_map[:] = [t for t in gs.taverns_on_map if t["pos"].y < cutoff]
+
+
+def draw_taverns(screen, cam, gs):
+    """Draw tavern sprites."""
+    if not hasattr(gs, "taverns_on_map"):
+        return
+    
+    # Taverns are bigger than player (1.5x size)
+    TAVERN_SIZE_MULT = 1.5
+    SIZE_W = int(S.PLAYER_SIZE[0] * TAVERN_SIZE_MULT)
+    SIZE_H = int(S.PLAYER_SIZE[1] * TAVERN_SIZE_MULT)
+    
+    for t in gs.taverns_on_map:
+        pos = t["pos"]
+        sprite = t.get("sprite")
+        
+        if sprite:
+            screen.blit(
+                sprite,
                 (pos.x - cam.x - SIZE_W // 2,
                  pos.y - cam.y - SIZE_H // 2)
             )

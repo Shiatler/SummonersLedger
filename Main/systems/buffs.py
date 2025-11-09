@@ -204,9 +204,6 @@ def get_card_data(card_name: str) -> dict:
 
 def roll_buff_tier() -> str:
     """Roll a buff tier based on rarity distribution."""
-    # TESTING: Always return Punishment for testing
-    return "Punishment"
-    
     # Normalize weights to 100%
     total = sum(RARITY_WEIGHTS.values())
     normalized = {k: v / total * 100 for k, v in RARITY_WEIGHTS.items()}

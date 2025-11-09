@@ -10,8 +10,8 @@ from systems.theme import PANEL_BG, PANEL_BORDER, DND_RED, DND_RED_HOV
 # Dropdown state
 _dropdown_open = False
 _dropdown_rect = None
-_options = ["Fullscreen", "Windowed", "Borderless Fullscreen"]
-_option_values = ["fullscreen", "windowed", "borderless"]
+_options = ["Fullscreen", "Windowed"]
+_option_values = ["fullscreen", "windowed"]
 
 def enter(gs, **_):
     global _dropdown_open
@@ -59,15 +59,14 @@ def draw(screen, gs, fonts=None, menu_bg=None, audio_bank=None, **kwargs):
     current_mode = get_display_mode()
     mode_labels = {
         "fullscreen": "Fullscreen",
-        "windowed": "Windowed",
-        "borderless": "Borderless Fullscreen"
+        "windowed": "Windowed"
     }
     current_label = mode_labels.get(current_mode, "Windowed")
     
     # Draw dropdown button
     dropdown_y = S.LOGICAL_HEIGHT // 2 + 200
-    dropdown_width = 400
-    dropdown_height = 50
+    dropdown_width = 600
+    dropdown_height = 70
     dropdown_x = S.LOGICAL_WIDTH // 2 - dropdown_width // 2
     
     global _dropdown_rect, _dropdown_open
@@ -91,8 +90,8 @@ def draw(screen, gs, fonts=None, menu_bg=None, audio_bank=None, **kwargs):
     screen.blit(text_surf, text_rect)
     
     # Dropdown arrow
-    arrow_size = 8
-    arrow_x = _dropdown_rect.right - 20
+    arrow_size = 12
+    arrow_x = _dropdown_rect.right - 30
     arrow_y = _dropdown_rect.centery
     arrow_points = [
         (arrow_x, arrow_y - arrow_size // 2),
@@ -103,7 +102,7 @@ def draw(screen, gs, fonts=None, menu_bg=None, audio_bank=None, **kwargs):
     
     # Draw dropdown menu if open
     if _dropdown_open:
-        option_height = 40
+        option_height = 50
         dropdown_menu_height = len(_options) * option_height
         dropdown_menu_rect = pygame.Rect(
             dropdown_x,
@@ -175,7 +174,7 @@ def handle(events, gs, fonts=None, audio_bank=None, **kwargs):
                 audio_sys.play_click(audio_bank)
             # Check if clicking dropdown option
             elif _dropdown_open and dropdown_menu_rect and dropdown_menu_rect.collidepoint(mx, my):
-                option_height = 40
+                option_height = 50
                 option_index = int((my - dropdown_menu_rect.y) / option_height)
                 if 0 <= option_index < len(_option_values):
                     selected_mode = _option_values[option_index]

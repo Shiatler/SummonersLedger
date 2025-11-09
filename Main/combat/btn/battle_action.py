@@ -27,6 +27,46 @@ def draw_button(screen: pygame.Surface):
     _ensure()
     draw_icon_button(screen, _ICON, _RECT)
 
+def is_hovering_button(pos: tuple[int, int]) -> bool:
+    """
+    Check if the mouse position is hovering over the battle button.
+    Returns True if hovering over the button, False otherwise.
+    
+    Args:
+        pos: Mouse position tuple (x, y) in logical coordinates
+    """
+    _ensure()
+    if _RECT is None:
+        return False
+    return _RECT.collidepoint(pos)
+
+def is_hovering_popup_element(pos: tuple[int, int], gs) -> bool:
+    """
+    Check if the mouse position is hovering over any clickable element in the battle popup.
+    Returns True if hovering over move rows or the panel, False otherwise.
+    
+    Args:
+        pos: Mouse position tuple (x, y) in logical coordinates
+        gs: Game state (needed to get move rows)
+    """
+    if not _OPEN or _PANEL_RECT is None:
+        return False
+    
+    # Check if mouse is over the panel
+    if not _PANEL_RECT.collidepoint(pos):
+        return False
+    
+    # Check move rows
+    try:
+        rects, labels, subs_left, subs_right, handlers, disabled = _move_rows(_PANEL_RECT, gs)
+        for rect in rects:
+            if rect and rect.collidepoint(pos):
+                return True
+    except:
+        pass
+    
+    return True  # If mouse is in panel, assume hovering over something
+
 def handle_click(pos) -> bool:
     _ensure()
     if not _RECT.collidepoint(pos):

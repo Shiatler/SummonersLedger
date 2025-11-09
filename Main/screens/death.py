@@ -76,6 +76,20 @@ def _stop_music():
 
 def enter(gs, **_):
     """Initialize death screen state."""
+    # Save game when entering death screen (prevents save scumming)
+    # CRITICAL: Always save when entering death screen, regardless of previous saves
+    try:
+        from systems import save_system as saves
+        save_result = saves.save_game(gs, force=True)
+        if save_result:
+            print("💾 Game saved: Entering death screen - saved successfully")
+        else:
+            print("⚠️ Game save returned False: Entering death screen")
+    except Exception as e:
+        print(f"⚠️ Save failed on death screen enter: {e}")
+        import traceback
+        traceback.print_exc()
+    
     _load_bg()
     _load_anim_frames()
     st = {
@@ -93,11 +107,37 @@ def handle(events, gs, **_):
 
     for e in events:
         if e.type == pygame.KEYDOWN and e.key in (pygame.K_RETURN, pygame.K_SPACE, pygame.K_ESCAPE):
+            # Save game when exiting death screen to menu
+            try:
+                from systems import save_system as saves
+                save_result = saves.save_game(gs, force=True)
+                if save_result:
+                    print("💾 Game saved: Exiting death screen to menu - saved successfully")
+                else:
+                    print("⚠️ Game save returned False: Exiting death screen to menu")
+            except Exception as e:
+                print(f"⚠️ Save failed on death screen exit: {e}")
+                import traceback
+                traceback.print_exc()
+            
             _stop_music()
             return MODE_MENU
         if e.type == pygame.MOUSEBUTTONDOWN and e.button == 1:
             rect = st.get("btn_rect")
             if rect and rect.collidepoint(e.pos):
+                # Save game when exiting death screen to menu (button click)
+                try:
+                    from systems import save_system as saves
+                    save_result = saves.save_game(gs, force=True)
+                    if save_result:
+                        print("💾 Game saved: Exiting death screen to menu (button) - saved successfully")
+                    else:
+                        print("⚠️ Game save returned False: Exiting death screen to menu (button)")
+                except Exception as e:
+                    print(f"⚠️ Save failed on death screen exit (button): {e}")
+                    import traceback
+                    traceback.print_exc()
+                
                 _stop_music()
                 return MODE_MENU
     return None

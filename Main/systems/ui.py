@@ -73,6 +73,9 @@ class Button:
     def clicked(self, event):
         if not self.enabled:
             return False
+        # Events passed to menu screen are already converted to logical coordinates in main.py
+        # So event.pos should already be in logical coordinates matching self.rect
+        # Just use event.pos directly since both button rect and event.pos are in logical space
         return (
             event.type == pygame.MOUSEBUTTONDOWN
             and event.button == 1

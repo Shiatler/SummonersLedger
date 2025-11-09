@@ -44,9 +44,8 @@ Curses
 +2 to one stat / –1d12 HP permanently - Dirge of the Dead - Curse5
 
 Punishments
--10 gold 
--2 random stats
--1 AC to a random vessel
--1d6 HP
-
--1 Vessel - Repent
+-10 gold - Oathbreaker’s Tribute - Punishment1
+-2 random stats - Weight of Sin - Punishment2
+-1 AC to a random vessel - Broken Aegis - Punishment3
+-1d6 HP - Judgment’s Cut - Punishment4
+-1 Vessel - Oathbreaker’s Toll - Punishment5

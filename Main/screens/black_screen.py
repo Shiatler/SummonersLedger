@@ -307,11 +307,7 @@ def handle(events, gs, saves=None, audio_bank=None, **_):
                                 if not placed:
                                     print("ℹ️ No empty party slots available.")
 
-                            if saves:
-                                try:
-                                    saves.save_game(gs)
-                                except Exception as se:
-                                    print(f"⚠️ Save after starter pick failed: {se}")
+                            # No autosave - user must manually save via "Save Game" button
                         else:
                             print(f"ℹ️ Token file not found for '{starter_name}' in {_STARTERS_DIR}")
                     else:

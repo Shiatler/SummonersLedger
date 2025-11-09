@@ -55,13 +55,13 @@ HUD_MARGIN_BOTTOM = 12  # Distance from bottom edge
 
 # Button grid configuration (should match hud_buttons.py)
 BUTTON_SIZE = 100  # Target size for buttons in grid
-GRID_COLS = 3  # Number of columns in grid (horizontal layout)
+GRID_COLS = 4  # Number of columns in grid (horizontal layout) - expanded from 3 to fit 2 more buttons
 GRID_GAP = 6  # Gap between buttons
 
 # Calculate HUD size based on button grid
-# We need space for 3 columns of buttons plus padding
+# We need space for 4 columns of buttons plus padding
 HUD_WIDTH = (GRID_COLS * BUTTON_SIZE) + ((GRID_COLS - 1) * GRID_GAP) + (HUD_PADDING * 2)
-# Height: enough for 2 rows of buttons (6 buttons total, 2 rows)
+# Height: enough for 2 rows of buttons (8 buttons total, 2 rows)
 HUD_HEIGHT = (2 * BUTTON_SIZE) + (1 * GRID_GAP) + (HUD_PADDING * 2)
 
 # ---------- HUD State ----------

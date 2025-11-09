@@ -25,6 +25,19 @@ def draw_button(screen: pygame.Surface):
     _ensure()
     draw_icon_button(screen, _ICON, _RECT)
 
+def is_hovering_button(pos: tuple[int, int]) -> bool:
+    """
+    Check if the mouse position is hovering over the run button.
+    Returns True if hovering over the button, False otherwise.
+    
+    Args:
+        pos: Mouse position tuple (x, y) in logical coordinates
+    """
+    _ensure()
+    if _RECT is None:
+        return False
+    return _RECT.collidepoint(pos)
+
 def handle_click(pos, gs) -> bool:
     """Kick off a DEX check via roller; resolution deferred until popup closes."""
     _ensure()
