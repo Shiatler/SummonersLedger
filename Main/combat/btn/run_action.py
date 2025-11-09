@@ -50,9 +50,14 @@ def handle_click(pos, gs) -> bool:
     dex_score = getattr(gs, "dexterity", 10)
     result = roller.roll_check(dex_score, dc=10, notify=True)
     print(f"🏃 Run Attempt: {result.text}")
-    st = getattr(gs, "_wild", None)
+    # Check both _wild and _battle (battle.py uses _battle, wild_vessel uses _wild)
+    st = getattr(gs, "_wild", None) or getattr(gs, "_battle", None)
     if st is not None:
         st["pending_run"] = ("escape" if result.success else "fail")
+        # Also store in the other state if it exists (for consistency)
+        other_st = getattr(gs, "_battle", None) if st is getattr(gs, "_wild", None) else getattr(gs, "_wild", None)
+        if other_st is not None:
+            other_st["pending_run"] = ("escape" if result.success else "fail")
 
     gs._turn_ready = False  # <-- mark turn consumed
     return True
@@ -76,8 +81,9 @@ def _play_runaway_sfx():
         print(f"⚠️ RunAway SFX error: {e}")
 
 def resolve_after_popup(gs):
-    """Called by wild_vessel.handle after the roll popup is dismissed."""
-    st = getattr(gs, "_wild", None)
+    """Called by battle.handle or wild_vessel.handle after the roll popup is dismissed."""
+    # Check both _wild and _battle (battle.py uses _battle, wild_vessel uses _wild)
+    st = getattr(gs, "_wild", None) or getattr(gs, "_battle", None)
     if not st:
         return None
     outcome = st.pop("pending_run", None)
@@ -94,5 +100,13 @@ def resolve_after_popup(gs):
         gs.encounter_stats = None
         from rolling.roller import set_roll_callback
         set_roll_callback(None)
-        return S.MODE_GAME
+        
+        # Check if we came from tavern - if so, return to tavern (will trigger kicked out logic)
+        from_tavern = getattr(gs, "_from_tavern", False)
+        if from_tavern:
+            # Don't clear the flag yet - let the tavern handle it (same as winning battle)
+            return "TAVERN"
+        else:
+            # Normal escape - return to overworld
+            return S.MODE_GAME
     return None

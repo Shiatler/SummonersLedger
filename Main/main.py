@@ -44,6 +44,7 @@ from screens import (
     menu_screen, char_select, name_entry,
     black_screen, intro_video, settings_screen, pause_screen, master_oak
 )
+from world.Tavern import tavern as tavern_screen
 
 def _try_load(path: str | None):
     if not path:
@@ -133,6 +134,7 @@ MODE_DEATH = getattr(S, "MODE_DEATH", "DEATH")
 MODE_REST = "REST"
 MODE_BOOK_OF_BOUND = "BOOK_OF_BOUND"
 MODE_ARCHIVES = "ARCHIVES"
+MODE_TAVERN = "TAVERN"
 
 
 
@@ -293,23 +295,30 @@ def try_trigger_encounter(gs, summoners, merchant_frames, tavern_sprite=None):
             # Normal chance-based spawning
             # Merchant chance: 10% (configurable)
             merchant_chance = 0.10
-            # Tavern chance: 5% (taken from vessels)
-            tavern_chance = 0.05
+            # TESTING: Tavern chance set to 100% for testing purposes
+            # OLD VALUE: tavern_chance = 0.05  # Original: 5% (taken from vessels)
+            tavern_chance = 1.0  # 100% for testing - REMOVE THIS AND RESTORE OLD VALUE WHEN DONE TESTING
             # Vessel chance: 55% (reduced from 60%)
             vessel_chance = 0.55
             # Summoner chance: 30% (unchanged)
             summoner_chance = 0.30
             
-            # Total percentages: Merchant 10%, Tavern 5%, Vessel 55%, Summoner 30%
-            if merchant_frames and len(merchant_frames) > 0 and roll < merchant_chance:
+            # TESTING MODE: Tavern spawns 100% of the time
+            # When testing is done, restore old percentages: Merchant 10%, Tavern 5%, Vessel 55%, Summoner 30%
+            if tavern_sprite and tavern_chance >= 1.0:
+                # TESTING: Always spawn tavern (100%)
+                actors.spawn_tavern_ahead(gs, gs.start_x, tavern_sprite)
+            elif merchant_frames and len(merchant_frames) > 0 and roll < merchant_chance:
                 # Spawn merchant (0.0 to 0.10)
                 actors.spawn_merchant_ahead(gs, gs.start_x, merchant_frames)
                 if not gs.first_merchant_spawned:
                     gs.first_merchant_spawned = True  # Mark first merchant as spawned
                     gs.encounters_since_merchant = 0  # Reset counter (no longer needed)
             elif roll < merchant_chance + tavern_chance:
-                # Spawn tavern (0.10 to 0.15)
-                actors.spawn_tavern_ahead(gs, gs.start_x, tavern_sprite)
+                # Spawn tavern (0.10 to 0.15) - OLD LOGIC (when tavern_chance = 0.05)
+                # This branch only executes when tavern_chance < 1.0
+                if tavern_sprite:
+                    actors.spawn_tavern_ahead(gs, gs.start_x, tavern_sprite)
             elif roll < merchant_chance + tavern_chance + vessel_chance:
                 # Spawn vessel (0.15 to 0.70)
                 actors.spawn_vessel_shadow_ahead(gs, gs.start_x)
@@ -651,6 +660,10 @@ def enter_mode(mode, gs, deps):
         if not hasattr(gs, '_archives_entered'):
             archives.enter(gs, **deps)
             gs._archives_entered = True
+    elif mode == MODE_TAVERN:
+        # Add summoners to deps for tavern
+        tavern_deps = dict(deps, rival_summoners=RIVAL_SUMMONERS)
+        tavern_screen.enter(gs, **tavern_deps)
     elif mode == S.MODE_GAME:
         # Initialize world state (important for camera initialization on loaded games)
         world.enter(gs, **deps)
@@ -1152,8 +1165,33 @@ while running:
             audio.play_music(AUDIO, "MainMenu")
         elif mode == MODE_CHAR_SELECT:
             audio.play_music(AUDIO, "CharacterSelect")
+        elif mode == MODE_TAVERN:
+            # Stop overworld music and walking sounds
+            audio.stop_music(fade_ms=600)
+            # Stop overworld walking sound if playing
+            if hasattr(gs, "walking_channel") and gs.walking_channel:
+                try:
+                    gs.walking_channel.stop()
+                except:
+                    pass
+            if hasattr(gs, "is_walking"):
+                gs.is_walking = False
+                gs.walking_channel = None
+            
+            # Try to play tavern music (will use direct path if not in AUDIO bank)
+            tavern_music_path = os.path.join("Assets", "Tavern", "Tavern.mp3")
+            if os.path.exists(tavern_music_path):
+                audio.play_music(AUDIO, tavern_music_path, loop=True, fade_ms=600)
+            else:
+                # Fallback: try to find it in the audio bank
+                audio.play_music(AUDIO, "tavern", loop=True, fade_ms=600)
         elif mode == S.MODE_GAME:
-            audio.stop_music()
+            # Check if we're returning from tavern - restore overworld music
+            if prev_mode == MODE_TAVERN:
+                # Stop tavern music
+                audio.stop_music(fade_ms=600)
+            else:
+                audio.stop_music()
             gs.overworld_music_started = False
         elif mode == MODE_DEATH:
             audio.stop_music()
@@ -1489,6 +1527,88 @@ while running:
                 except Exception as e:
                     print(f"⚠️ Save after rest failed: {e}")
                 
+                mode = S.MODE_GAME
+                # Reset overworld music state so it restarts in the game mode loop
+                gs.overworld_music_started = False
+            else:
+                mode = next_mode
+
+    # ===================== Tavern ==========================
+    elif mode == MODE_TAVERN:
+        # Update tavern screen
+        tavern_screen.update(gs, dt, **deps)
+        # Handle tavern events
+        next_mode = tavern_screen.handle(events, gs, dt, **deps)
+        # Draw tavern screen
+        tavern_screen.draw(virtual_screen, gs, dt, **deps)
+        blit_virtual_to_screen(virtual_screen, screen)
+        mouse_pos = pygame.mouse.get_pos()
+        cursor_manager.draw_cursor(screen, mouse_pos, gs, mode)
+        pygame.display.flip()
+        
+        # --- Tavern walking SFX (same logic as overworld) ---
+        # Check if any modal is open (block walking sounds if modal is open)
+        any_modal_open = buff_popup.is_active() or bag_ui.is_open() or party_manager.is_open() or ledger.is_open() or gs.shop_open or currency_display.is_open() or rest_popup.is_open()
+        # Check if kicked out textbox is active (block walking sounds)
+        tavern_state = getattr(gs, "_tavern_state", {})
+        if tavern_state.get("kicked_out_textbox_active", False):
+            any_modal_open = True
+        
+        keys = pygame.key.get_pressed()
+        # Player is walking if pressing any movement key (A/D/W/S)
+        walking = (keys[pygame.K_a] or keys[pygame.K_d] or keys[pygame.K_w] or keys[pygame.K_s]) and not any_modal_open
+        
+        if not hasattr(gs, "tavern_is_walking"):
+            gs.tavern_is_walking = False
+            gs.tavern_walking_channel = None
+        
+        if walking and not gs.tavern_is_walking:
+            # Start playing tavern footsteps sound
+            sfx = AUDIO.sfx.get("footsteps") or AUDIO.sfx.get("Footsteps")
+            if sfx:
+                gs.tavern_walking_channel = sfx.play(loops=-1, fade_ms=80)
+            gs.tavern_is_walking = True
+        elif not walking and gs.tavern_is_walking:
+            # Stop playing tavern footsteps sound
+            if gs.tavern_walking_channel:
+                gs.tavern_walking_channel.stop()
+            gs.tavern_is_walking = False
+            gs.tavern_walking_channel = None
+        
+        if next_mode:
+            if next_mode == "GAME":
+                # Stop tavern walking sound when exiting
+                if hasattr(gs, "tavern_walking_channel") and gs.tavern_walking_channel:
+                    try:
+                        gs.tavern_walking_channel.stop()
+                    except:
+                        pass
+                gs.tavern_is_walking = False
+                gs.tavern_walking_channel = None
+                
+                # Return to game mode
+                # Restore player position to where they were when entering the tavern
+                if hasattr(gs, "_tavern_state") and gs._tavern_state.get("overworld_player_pos"):
+                    overworld_pos = gs._tavern_state["overworld_player_pos"]
+                    gs.player_pos.x = overworld_pos.x
+                    gs.player_pos.y = overworld_pos.y
+                    print(f"✅ Restored player position to overworld: ({overworld_pos.x:.1f}, {overworld_pos.y:.1f})")
+                    # Clear stored tavern position so next tavern entry uses spawn logic
+                    if "tavern_player_pos" in gs._tavern_state:
+                        del gs._tavern_state["tavern_player_pos"]
+                    
+                    # Check if we need to remove tavern from overworld (kicked out)
+                    if gs._tavern_state.get("remove_tavern_on_exit", False):
+                        overworld_tavern = gs._tavern_state.get("overworld_tavern", None)
+                        if overworld_tavern and hasattr(gs, "taverns_on_map"):
+                            if overworld_tavern in gs.taverns_on_map:
+                                gs.taverns_on_map.remove(overworld_tavern)
+                                print("🚪 Removed tavern from overworld (kicked out)")
+                        # Clear near_tavern flag
+                        gs.near_tavern = None
+                        # Clear the flag
+                        gs._tavern_state["remove_tavern_on_exit"] = False
+                        
                 mode = S.MODE_GAME
                 # Reset overworld music state so it restarts in the game mode loop
                 gs.overworld_music_started = False
@@ -1848,8 +1968,22 @@ while running:
                         pass
                 
                 elif event.key == pygame.K_e:
+                    # Enter tavern when near tavern and no other modals are open
+                    near_tavern = getattr(gs, "near_tavern", None)
+                    if (near_tavern and not bag_ui.is_open() 
+                        and not party_manager.is_open() and not ledger.is_open()
+                        and not gs.shop_open and not currency_display.is_open()
+                        and not rest_popup.is_open() and not hells_deck_popup.is_open()):
+                        # Enter tavern mode
+                        mode = MODE_TAVERN
+                        audio.play_click(AUDIO)
+                        # Stop tavern ambient audio if playing
+                        tavern_audio_channel = getattr(gs, "_tavern_audio_channel", None)
+                        if tavern_audio_channel:
+                            tavern_audio_channel.stop()
+                            gs._tavern_audio_channel = None
                     # Open shop when near merchant and no other modals are open
-                    if (gs.near_merchant and not bag_ui.is_open() 
+                    elif (gs.near_merchant and not bag_ui.is_open() 
                         and not party_manager.is_open() and not ledger.is_open()):
                         was_open = gs.shop_open
                         gs.shop_open = not gs.shop_open

@@ -29,12 +29,14 @@ def set_sfx_volume(v: float, bank: "AudioBank|None" = None):
 _MUSIC_DIRS = [
     os.path.join("Assets", "Music"),
     os.path.join("Assets", "Music", "Shop"),  # Shop music directory
+    os.path.join("Assets", "Tavern"),  # Tavern music directory
     os.path.join("Assets", "Audio", "Music"),
     os.path.join("Assets", "audio", "music"),
 ]
 _SFX_DIRS = [
     os.path.join("Assets", "Music", "Sounds"),  # legacy layout
     os.path.join("Assets", "Music", "Shop"),   # Shop laugh sounds
+    os.path.join("Assets", "Tavern"),  # Tavern sounds (footsteps)
     os.path.join("Assets", "Sounds"),
     os.path.join("Assets", "Audio", "SFX"),
     os.path.join("Assets", "audio", "sfx"),
@@ -137,6 +139,9 @@ def load_all() -> AudioBank:
                 continue
             for f in files:
                 if not _is_audio_file(f): continue
+                # Skip Footsteps.mp3 (it's a sound effect, not music)
+                if f.lower() == "footsteps.mp3":
+                    continue
                 bank.music[_norm_key(f)] = os.path.join(root, f)
 
     # sfx
@@ -145,6 +150,9 @@ def load_all() -> AudioBank:
         for root, _, files in os.walk(root_dir):
             for f in files:
                 if not _is_audio_file(f): continue
+                # Skip Tavern.mp3 (it's music, not SFX) - but include Footsteps.mp3
+                if f.lower() == "tavern.mp3":
+                    continue
                 full = os.path.join(root, f)
                 s = _load_sfx(full, DEFAULT_SFX_VOL)
                 if s: bank.sfx[_norm_key(f)] = s

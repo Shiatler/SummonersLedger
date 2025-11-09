@@ -988,7 +988,19 @@ def _exit_battle(gs):
         pass
 
     set_roll_callback(None)
-    setattr(gs, "mode", MODE_GAME)
+    
+    # Check if we came from tavern - if so, return to tavern instead of overworld
+    from_tavern = getattr(gs, "_from_tavern", False)
+    if from_tavern:
+        # Clear the flag
+        gs._from_tavern = False
+        # Return to tavern mode
+        next_mode = "TAVERN"
+        setattr(gs, "mode", next_mode)
+    else:
+        # Normal exit to overworld
+        next_mode = MODE_GAME
+        setattr(gs, "mode", next_mode)
 
     if hasattr(gs, "_ending_battle"):
         delattr(gs, "_ending_battle")
@@ -998,6 +1010,8 @@ def _exit_battle(gs):
     if trigger_animation and not getattr(gs, "pending_buff_selection", False):
         from systems import score_display
         score_display.start_score_animation(gs, start_score, target_score)
+    
+    return next_mode
 
 def _on_battle_use_item(gs, item) -> bool:
     """Authoritative bag use handler (heals only; capture blocked)."""
@@ -1404,8 +1418,8 @@ def handle(events, gs, dt=None, **_):
 
     # Exit queued? (only if no modal result is visible)
     if st.get("pending_exit") and not st.get("result"):
-        _exit_battle(gs)
-        return MODE_GAME
+        next_mode = _exit_battle(gs)
+        return next_mode
 
     # Dice popup is modal (kept for parity)
     if roll_ui.is_active():
@@ -1480,8 +1494,8 @@ def handle(events, gs, dt=None, **_):
                 if e.type == pygame.KEYDOWN and e.key == pygame.K_ESCAPE:
                     # Only allow ESC when battle already concluded (result shown)
                     if st.get("pending_exit") or st.get("result"):
-                        _exit_battle(gs)
-                        return MODE_GAME
+                        next_mode = _exit_battle(gs)
+                        return next_mode
 
                 if e.type == pygame.MOUSEBUTTONDOWN and e.button == 1:
                     pos = e.pos
