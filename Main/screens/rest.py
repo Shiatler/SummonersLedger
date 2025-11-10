@@ -1,10 +1,9 @@
 # =============================================================
-# screens/rest.py — Rest screen (Long rest / Short rest)
-# - Shows campfire background
-# - Plays campfire sound (no music)
+# screens/rest.py — Rest screen (Long Rest / Short Rest)
+# - Shows campfire background with player character sprite
 # - Displays textbox with rest message
-# - Fades out with LongRest sound
-# - Heals vessels appropriately
+# - Fades out while LongRest.mp3 plays
+# - Applies healing and PP restoration
 # =============================================================
 
 import os
@@ -12,15 +11,7 @@ import pygame
 import settings as S
 from systems import audio as audio_sys
 from systems.heal import heal_to_full, heal_to_half
-from combat.btn.bag_action import _decrement_inventory as decrement_inventory
-
-# Pre-load global bank at module level to avoid first-time lag
-_AUDIO_BANK_CACHE = None
-def _get_cached_bank():
-    global _AUDIO_BANK_CACHE
-    if _AUDIO_BANK_CACHE is None:
-        _AUDIO_BANK_CACHE = audio_sys.get_global_bank()
-    return _AUDIO_BANK_CACHE
+from combat.moves import get_available_moves, _pp_set_full, _pp_get, _pp_store
 
 # ---------- Font helpers ----------
 _DH_FONT_PATH = None
@@ -60,11 +51,13 @@ def _get_dh_font(size: int, bold: bool = False) -> pygame.font.Font:
 
 # ---------- Assets ----------
 _BACKGROUND = None
-_CAMPFIRE_SFX = None
-_LONGREST_SFX = None
-_CAMPFIRE_CHANNEL = None  # Global reference to track the channel
-_CHARACTER_LOG_IMAGE = None  # Character sitting on log sprite
-_CHARACTER_SCALE = 1.8  # Same scale as Master Oak
+_PLAYER_SPRITE = None
+_PLAYER_GENDER = None
+_CAMPFIRE_MUSIC = None
+_LONGREST_SOUND = None
+
+_PLAYER_SCALE = 1.8  # Same as master_oak scale
+_SPRITE_X_OFFSET = -320  # Shift player sprite left on rest screen
 
 def _load_background() -> pygame.Surface | None:
     """Load the campfire background."""
@@ -72,65 +65,38 @@ def _load_background() -> pygame.Surface | None:
     if _BACKGROUND is not None:
         return _BACKGROUND
     
-    path = os.path.join("Assets", "Map", "CampfireBG.png")
-    if not os.path.exists(path):
-        print(f"⚠️ CampfireBG.png not found at {path}")
-        return None
+    candidates = [
+        os.path.join("Assets", "Map", "CampfireBG.png"),
+        os.path.join("Assets", "CampfireBG.png"),
+        r"C:\Users\Frederik\Desktop\SummonersLedger\Main\Assets\Map\CampfireBG.png",
+        r"C:\Users\Frederik\Desktop\SummonersLedger\Main\Assets\CampfireBG.png",
+    ]
     
-    try:
-        bg = pygame.image.load(path).convert()
-        # Scale to logical screen size
-        bg = pygame.transform.smoothscale(bg, (S.LOGICAL_WIDTH, S.LOGICAL_HEIGHT))
-        _BACKGROUND = bg
-        return bg
-    except Exception as e:
-        print(f"⚠️ Failed to load background: {e}")
-        return None
+    for path in candidates:
+        if os.path.exists(path):
+            try:
+                bg = pygame.image.load(path).convert()
+                # Scale to logical size if needed
+                if bg.get_size() != (S.LOGICAL_WIDTH, S.LOGICAL_HEIGHT):
+                    bg = pygame.transform.smoothscale(bg, (S.LOGICAL_WIDTH, S.LOGICAL_HEIGHT))
+                _BACKGROUND = bg
+                print(f"✅ Loaded CampfireBG.png from {path}")
+                return bg
+            except Exception as e:
+                print(f"⚠️ Failed to load CampfireBG.png: {e}")
+    
+    print(f"⚠️ CampfireBG.png not found")
+    return None
 
-def _load_campfire_sfx() -> pygame.mixer.Sound | None:
-    """Load the campfire sound effect."""
-    global _CAMPFIRE_SFX
-    if _CAMPFIRE_SFX is not None:
-        return _CAMPFIRE_SFX
+def _load_player_sprite(gs) -> pygame.Surface | None:
+    """Load player sprite (FLog.png or MLog.png) based on gender."""
+    global _PLAYER_SPRITE, _PLAYER_GENDER
     
-    path = os.path.join("Assets", "Music", "Sounds", "Campfire.mp3")
-    if not os.path.exists(path):
-        print(f"⚠️ Campfire.mp3 not found at {path}")
-        return None
-    
-    try:
-        _CAMPFIRE_SFX = pygame.mixer.Sound(path)
-        return _CAMPFIRE_SFX
-    except Exception as e:
-        print(f"⚠️ Failed to load Campfire.mp3: {e}")
-        return None
-
-def _load_longrest_sfx() -> pygame.mixer.Sound | None:
-    """Load the long rest sound effect."""
-    global _LONGREST_SFX
-    if _LONGREST_SFX is not None:
-        return _LONGREST_SFX
-    
-    path = os.path.join("Assets", "Music", "Sounds", "LongRest.mp3")
-    if not os.path.exists(path):
-        print(f"⚠️ LongRest.mp3 not found at {path}")
-        return None
-    
-    try:
-        _LONGREST_SFX = pygame.mixer.Sound(path)
-        return _LONGREST_SFX
-    except Exception as e:
-        print(f"⚠️ Failed to load LongRest.mp3: {e}")
-        return None
-
-def _load_character_log_image(gs) -> pygame.Surface | None:
-    """Load the character sitting on log image based on player gender."""
-    global _CHARACTER_LOG_IMAGE
-    # Always reload to get the correct gender (could change between sessions)
-    _CHARACTER_LOG_IMAGE = None
-    
-    # Get player gender
     player_gender = getattr(gs, "player_gender", "male")
+    
+    # Check if we already have the correct sprite cached
+    if _PLAYER_SPRITE is not None and _PLAYER_GENDER == player_gender:
+        return _PLAYER_SPRITE
     
     # Determine filename based on gender
     if player_gender.lower().startswith("f"):
@@ -138,45 +104,100 @@ def _load_character_log_image(gs) -> pygame.Surface | None:
     else:
         filename = "MLog.png"
     
-    path = os.path.join("Assets", "PlayableCharacters", filename)
-    if not os.path.exists(path):
-        print(f"⚠️ {filename} not found at {path}")
-        return None
+    candidates = [
+        os.path.join("Assets", "PlayableCharacters", filename),
+        os.path.join("Assets", filename),
+        os.path.join("Assets", "Animations", filename),
+        r"C:\Users\Frederik\Desktop\SummonersLedger\Main\Assets\PlayableCharacters\{}".format(filename),
+        r"C:\Users\Frederik\Desktop\SummonersLedger\Main\Assets\{}".format(filename),
+    ]
     
-    try:
-        img = pygame.image.load(path).convert_alpha()
-        # Scale up to match Master Oak size (1.8x scale)
-        original_size = img.get_size()
-        scaled_size = (int(original_size[0] * _CHARACTER_SCALE), int(original_size[1] * _CHARACTER_SCALE))
-        img = pygame.transform.smoothscale(img, scaled_size)
-        _CHARACTER_LOG_IMAGE = img
-        return img
-    except Exception as e:
-        print(f"⚠️ Failed to load {filename}: {e}")
-        return None
+    for path in candidates:
+        if os.path.exists(path):
+            try:
+                sprite = pygame.image.load(path).convert_alpha()
+                # Scale to match master_oak size
+                original_size = sprite.get_size()
+                scaled_size = (int(original_size[0] * _PLAYER_SCALE), int(original_size[1] * _PLAYER_SCALE))
+                sprite = pygame.transform.smoothscale(sprite, scaled_size)
+                _PLAYER_SPRITE = sprite
+                _PLAYER_GENDER = player_gender
+                print(f"✅ Loaded {filename}")
+                return sprite
+            except Exception as e:
+                print(f"⚠️ Failed to load {filename}: {e}")
+    
+    print(f"⚠️ {filename} not found")
+    return None
+
+def _load_campfire_music() -> str | None:
+    """Get path to campfire music."""
+    global _CAMPFIRE_MUSIC
+    if _CAMPFIRE_MUSIC is not None:
+        return _CAMPFIRE_MUSIC
+    
+    candidates = [
+        os.path.join("Assets", "Music", "Sounds", "Campfire.mp3"),
+        r"C:\Users\Frederik\Desktop\SummonersLedger\Main\Assets\Music\Sounds\Campfire.mp3",
+    ]
+    
+    for path in candidates:
+        if os.path.exists(path):
+            _CAMPFIRE_MUSIC = path
+            return path
+    
+    print(f"⚠️ Campfire.mp3 not found")
+    return None
+
+def _load_longrest_sound() -> pygame.mixer.Sound | None:
+    """Load LongRest.mp3 sound."""
+    global _LONGREST_SOUND
+    if _LONGREST_SOUND is not None:
+        return _LONGREST_SOUND
+    
+    candidates = [
+        os.path.join("Assets", "Music", "Sounds", "LongRest.mp3"),
+        r"C:\Users\Frederik\Desktop\SummonersLedger\Main\Assets\Music\Sounds\LongRest.mp3",
+    ]
+    
+    for path in candidates:
+        if os.path.exists(path):
+            try:
+                sound = pygame.mixer.Sound(path)
+                _LONGREST_SOUND = sound
+                print(f"✅ Loaded LongRest.mp3")
+                return sound
+            except Exception as e:
+                print(f"⚠️ Failed to load LongRest.mp3: {e}")
+    
+    print(f"⚠️ LongRest.mp3 not found")
+    return None
 
 # ---------- Textbox helpers ----------
 def _wrap_text(text: str, font: pygame.font.Font, max_width: int) -> list[str]:
     """Wrap text to fit within max_width."""
     words = text.split()
     lines = []
-    current_line = ""
+    current_line = []
+    current_width = 0
     
     for word in words:
-        test_line = (current_line + " " + word).strip()
-        if not current_line or font.size(test_line)[0] <= max_width:
-            current_line = test_line
+        test_line = " ".join(current_line + [word])
+        test_surf = font.render(test_line, False, (0, 0, 0))
+        if test_surf.get_width() <= max_width or not current_line:
+            current_line.append(word)
+            current_width = test_surf.get_width()
         else:
-            if current_line:
-                lines.append(current_line)
-            current_line = word
+            lines.append(" ".join(current_line))
+            current_line = [word]
+            current_width = font.render(word, False, (0, 0, 0)).get_width()
     
     if current_line:
-        lines.append(current_line)
+        lines.append(" ".join(current_line))
     
     return lines
 
-def _draw_textbox(screen: pygame.Surface, text: str, dt: float, blink_t: float):
+def _draw_textbox(screen: pygame.Surface, text: str, blink_t: float):
     """Draw the textbox."""
     sw, sh = screen.get_size()
     box_h = 120
@@ -216,122 +237,138 @@ def _draw_textbox(screen: pygame.Surface, text: str, dt: float, blink_t: float):
         screen.blit(shadow, (px - 1, py - 1))
         screen.blit(psurf, (px, py))
 
-# ---------- Item consumption ----------
-def _has_item(gs, item_id: str) -> bool:
-    """Check if player has the item."""
-    inv = getattr(gs, "inventory", None)
-    if not inv:
-        return False
+# ---------- PP restoration ----------
+def _get_moves_for_vessel(gs, vessel_idx: int):
+    """Get available moves for a specific vessel by index."""
+    from combat.moves import _MOVE_REGISTRY, _normalize_class
     
-    if isinstance(inv, dict):
-        return inv.get(item_id, 0) > 0
+    party_stats = getattr(gs, "party_vessel_stats", None) or [None] * 6
+    if vessel_idx < 0 or vessel_idx >= len(party_stats):
+        return []
     
-    if isinstance(inv, (list, tuple)):
-        for rec in inv:
-            if isinstance(rec, dict):
-                rid = rec.get("id") or _snake_from_name(rec.get("name", ""))
-                if rid == item_id:
-                    return int(rec.get("qty", 0)) > 0
-            elif isinstance(rec, (list, tuple)) and len(rec) >= 1:
-                rid = str(rec[0])
-                if rid == item_id:
-                    return int(rec[1]) > 0 if len(rec) > 1 else False
+    stats = party_stats[vessel_idx]
+    if not isinstance(stats, dict):
+        return []
     
-    return False
+    norm = _normalize_class(stats)
+    if not norm:
+        return []
+    
+    # Get vessel level
+    level = 1
+    try:
+        level = int(stats.get("level", 1))
+    except Exception:
+        level = 1
+    
+    # Filter moves by level requirement
+    all_moves = _MOVE_REGISTRY.get(norm, [])
+    available = []
+    for move in all_moves:
+        if "_l1_" in move.id:
+            available.append(move)
+        elif "_l10_" in move.id and level >= 10:
+            available.append(move)
+        elif "_l20_" in move.id and level >= 20:
+            available.append(move)
+        elif "_l40_" in move.id and level >= 40:
+            available.append(move)
+        elif "_l50_" in move.id and level >= 50:
+            available.append(move)
+    
+    return available
 
-def _snake_from_name(s: str) -> str:
-    """Convert item name to snake_case ID."""
-    return s.lower().replace(" ", "_")
+def _restore_pp_full(gs):
+    """Restore all PP to full for all party members."""
+    party_names = getattr(gs, "party_slots_names", None) or [None] * 6
+    
+    for idx in range(6):
+        if not party_names[idx]:
+            continue
+        
+        vessel_name = str(party_names[idx])
+        moves = _get_moves_for_vessel(gs, idx)
+        
+        for move in moves:
+            _pp_set_full(gs, vessel_name, move)
 
-def _consume_item(gs, item_id: str) -> bool:
-    """Consume one item from inventory. Returns True if consumed."""
-    decrement_inventory(gs, item_id)
-    return True
-
-def _stop_campfire_sound(st):
-    """Stop the campfire sound channel reliably (only stops campfire, not other channels)."""
-    global _CAMPFIRE_CHANNEL
+def _restore_pp_half(gs):
+    """Restore PP to half for all party members."""
+    party_names = getattr(gs, "party_slots_names", None) or [None] * 6
     
-    # Stop via stored channel references - use fadeout for smooth transition
-    if st.get("campfire_channel"):
-        try:
-            ch = st["campfire_channel"]
-            # Use fadeout for smoother transition (100ms)
-            ch.fadeout(100)
-            # The channel will stop automatically after fadeout
-            # We don't need to force stop immediately
-        except:
-            pass
-        st["campfire_channel"] = None
-    
-    if _CAMPFIRE_CHANNEL:
-        try:
-            # Use fadeout for smoother transition
-            _CAMPFIRE_CHANNEL.fadeout(100)
-        except:
-            pass
-        _CAMPFIRE_CHANNEL = None
-    
-    # Mark that we've stopped
-    st["campfire_stopped"] = True
+    for idx in range(6):
+        if not party_names[idx]:
+            continue
+        
+        vessel_name = str(party_names[idx])
+        moves = _get_moves_for_vessel(gs, idx)
+        
+        for move in moves:
+            # Get current PP and max PP
+            current_pp = _pp_get(gs, vessel_name, move)
+            
+            # Get effective max_pp (base + bonuses)
+            base_max_pp = move.max_pp
+            if hasattr(gs, "move_pp_max_bonuses"):
+                key = f"{vessel_name}:{move.id}"
+                bonus = gs.move_pp_max_bonuses.get(key, 0)
+                effective_max_pp = base_max_pp + bonus
+            else:
+                effective_max_pp = base_max_pp
+            
+            # Restore to half (at least current + half of remaining)
+            half_pp = effective_max_pp // 2
+            new_pp = max(current_pp, half_pp)
+            
+            store = _pp_store(gs)
+            store.setdefault(vessel_name, {})[move.id] = new_pp
 
 # ---------- Screen lifecycle ----------
-def enter(gs, rest_type="long", **_):
-    """Initialize the rest screen state. rest_type should be 'long' or 'short'."""
-    # Pre-load audio bank synchronously to avoid lag when playing sounds
-    # This ensures it's loaded before first sound plays
-    try:
-        _get_cached_bank()
-    except Exception:
-        pass
-    
+def enter(gs, rest_type: str = "long", **_):
+    """Initialize the rest screen state."""
     if not hasattr(gs, "_rest_state"):
         gs._rest_state = {}
     
     st = gs._rest_state
-    st["phase"] = "resting"  # "resting", "fading"
-    st["rest_type"] = str(rest_type).lower()  # "long" or "short" - ensure it's a lowercase string
+    st["rest_type"] = rest_type  # "long" or "short"
+    st["text_displayed"] = False
     st["blink_t"] = 0.0
     st["fade_alpha"] = 0.0
-    st["fade_speed"] = 0.0
+    st["fade_started"] = False
     st["fade_timer"] = 0.0
-    st["campfire_channel"] = None
-    st["longrest_channel"] = None
-    st["item_consumed"] = False
-    st["vessels_healed"] = False
-    st["textbox_active"] = True
-    st["campfire_stopped"] = False  # Track if we've stopped the campfire sound
+    st["sound_played"] = False
     
-    # Consume item based on rest type
+    # Preserve current volume settings before entering rest
+    try:
+        st["saved_music_vol"] = pygame.mixer.music.get_volume()
+        st["saved_sfx_vol"] = audio_sys.get_sfx_volume()
+    except Exception:
+        st["saved_music_vol"] = getattr(S, "MUSIC_VOLUME", 0.6)
+        st["saved_sfx_vol"] = getattr(S, "SFX_VOLUME", 0.8)
+    
+    # Set text message based on rest type
     if rest_type == "long":
-        _consume_item(gs, "rations")
-    elif rest_type == "short":
-        _consume_item(gs, "alcohol")
+        st["message"] = "You drift off to the sound of crackling wood and a faint, with a full stomach."
+    else:
+        st["message"] = "The mug's empty, your head spins. Perfect time to get back up!"
     
-    # Stop music
-    audio_sys.stop_music()
+    # Load assets
+    _load_background()
+    _load_player_sprite(gs)
     
-    # Play campfire sound at lower volume using audio system
-    global _CAMPFIRE_SFX
-    sfx = _load_campfire_sfx()
-    if sfx:
-        # Stop any existing campfire sound first
-        _stop_campfire_sound(st)
-        
-        # Use a dedicated channel and set volume
-        channel = pygame.mixer.find_channel(True)
-        if channel:
-            # Set volume to 40% of SFX volume (ambient sound)
-            ambient_volume = audio_sys.get_sfx_volume() * 0.4
-            channel.set_volume(ambient_volume)
-            channel.play(sfx, loops=-1)
-            st["campfire_channel"] = channel
-            _CAMPFIRE_CHANNEL = channel  # Store globally as backup
+    # Play campfire music
+    music_path = _load_campfire_music()
+    if music_path:
+        audio_sys.play_music(audio_sys.get_global_bank(), music_path, loop=True, fade_ms=500)
+    
+    # Load longrest sound (will play during fade)
+    _load_longrest_sound()
 
 def draw(screen: pygame.Surface, gs, dt: float, **_):
     """Draw the rest screen."""
-    global _CAMPFIRE_CHANNEL
     st = gs._rest_state
+    
+    # Update blink timer
     st["blink_t"] += dt
     
     # Draw background
@@ -341,144 +378,118 @@ def draw(screen: pygame.Surface, gs, dt: float, **_):
     else:
         screen.fill((20, 10, 10))
     
-    # Draw character sitting on log (same position and size as Master Oak, but more to the left)
-    char_img = _load_character_log_image(gs)
-    if char_img:
-        # Position: further to the left, at 15% of screen height (same vertical as Master Oak)
-        # Use logical dimensions to match the rest of the rest screen
-        char_x = int(S.LOGICAL_WIDTH * 0.15)  # 15% from left edge
-        char_y = int(S.LOGICAL_HEIGHT * 0.15)
-        screen.blit(char_img, (char_x, char_y))
+    # Draw player sprite (same position as master_oak)
+    sprite = _load_player_sprite(gs)
+    if sprite:
+        sprite_x = (S.LOGICAL_WIDTH - sprite.get_width()) // 2 + _SPRITE_X_OFFSET
+        sprite_y = int(S.LOGICAL_HEIGHT * 0.15)
+        screen.blit(sprite, (sprite_x, sprite_y))
     
-    # Resting phase (show textbox)
-    if st["phase"] == "resting":
-        if st["textbox_active"]:
-            if st["rest_type"] == "long":
-                text = "Your belly is full, and you sleep through the night"
-            elif st["rest_type"] == "short":
-                text = "You drink a cup of mead and feel good"
-            else:
-                # Fallback (shouldn't happen, but just in case)
-                text = "You rest and feel refreshed"
-            _draw_textbox(screen, text, dt, st["blink_t"])
-        
-        # Draw fade overlay if fading
-        if st["fade_alpha"] > 0:
-            fade_overlay = pygame.Surface((S.LOGICAL_WIDTH, S.LOGICAL_HEIGHT), pygame.SRCALPHA)
-            fade_overlay.fill((0, 0, 0, int(st["fade_alpha"])))
-            screen.blit(fade_overlay, (0, 0))
-        
-        # Update fade during resting phase
-        if st["fade_speed"] > 0:
-            st["fade_alpha"] = min(255.0, st["fade_alpha"] + st["fade_speed"] * dt)
-            st["fade_timer"] += dt
-            
-            # Fade out campfire sound during the fade (start fading at 2.5 seconds)
-            if st.get("campfire_channel") and st["fade_timer"] >= 2.5:
-                # Fade out over the last 0.5 seconds
-                base_volume = audio_sys.get_sfx_volume() * 0.4  # 40% of SFX volume
-                fade_progress = (st["fade_timer"] - 2.5) / 0.5
-                volume = max(0.0, base_volume * (1.0 - fade_progress))
-                try:
-                    st["campfire_channel"].set_volume(volume)
-                except:
-                    pass
-            elif st.get("campfire_channel") and st["campfire_channel"].get_busy():
-                # Update volume continuously to respect SFX volume settings (when not fading)
-                ambient_volume = audio_sys.get_sfx_volume() * 0.4
-                try:
-                    st["campfire_channel"].set_volume(ambient_volume)
-                except:
-                    pass
-            
-            # Stop campfire sound at 3.0 seconds (when fade completes) using fadeout
-            if st["fade_timer"] >= 3.0:
-                _stop_campfire_sound(st)
-            
-            # When fade is complete, transition to fading phase (completely black)
-            if st["fade_alpha"] >= 255.0:
-                # Stop campfire sound immediately when fade completes
-                _stop_campfire_sound(st)
-                st["phase"] = "fading"
-                st["textbox_active"] = False
+    # Draw textbox if not fading
+    if not st.get("fade_started", False):
+        _draw_textbox(screen, st["message"], st["blink_t"])
     
-    # Fading phase (completely black)
-    elif st["phase"] == "fading":
-        screen.fill((0, 0, 0))
-        # Update fade timer during fading phase
-        st["fade_timer"] += dt
-        
-        # Stop campfire sound immediately when entering fading phase (fade is complete)
-        if not st.get("campfire_stopped", False):
-            _stop_campfire_sound(st)
-        
-        # Continuously ensure it's stopped during fading phase
-        if st.get("campfire_channel") or _CAMPFIRE_CHANNEL:
-            _stop_campfire_sound(st)
+    # Draw fade overlay if fading
+    if st.get("fade_started", False):
+        fade_alpha = int(st["fade_alpha"])
+        if fade_alpha > 0:
+            overlay = pygame.Surface((S.LOGICAL_WIDTH, S.LOGICAL_HEIGHT))
+            overlay.set_alpha(fade_alpha)
+            overlay.fill((0, 0, 0))
+            screen.blit(overlay, (0, 0))
 
 def handle(events, gs, dt: float, **_):
     """Handle events for the rest screen."""
     st = gs._rest_state
     
-    # Resting phase (textbox visible)
-    if st["phase"] == "resting" and st["textbox_active"]:
-        # Heal vessels when textbox first appears
-        if not st.get("vessels_healed", False):
-            stats_list = getattr(gs, "party_vessel_stats", None) or [None] * 6
-            for idx in range(len(stats_list)):
-                if isinstance(stats_list[idx], dict):
-                    if st["rest_type"] == "long":
-                        heal_to_full(gs, idx)
-                    else:  # short
-                        heal_to_half(gs, idx)
-            st["vessels_healed"] = True
+    # Handle fade phase
+    if st.get("fade_started", False):
+        st["fade_timer"] += dt
         
-        for event in events:
-            if event.type == pygame.KEYDOWN:
-                if event.key in (pygame.K_RETURN, pygame.K_SPACE, pygame.K_KP_ENTER):
-                    # Start fade out (fade starts during resting phase, then transitions to black)
-                    st["fade_alpha"] = 0.0
-                    st["fade_speed"] = 255.0 / 3.0  # 3 second fade
-                    st["fade_timer"] = 0.0
-                    # Play long rest sound (respects SFX volume)
-                    sfx = _load_longrest_sfx()
-                    if sfx:
-                        # Get channel and set volume based on SFX volume settings
-                        channel = pygame.mixer.find_channel(True)
-                        if channel:
-                            channel.set_volume(audio_sys.get_sfx_volume())
-                            channel.play(sfx)
-                            st["longrest_channel"] = channel
-                    audio_sys.play_click(_get_cached_bank())
+        # Fade out over 3 seconds (LongRest.mp3 is 3 seconds)
+        fade_duration = 3.0
+        if st["fade_timer"] < fade_duration:
+            st["fade_alpha"] = min(255.0, (st["fade_timer"] / fade_duration) * 255.0)
+            return None
+        else:
+            # Fade complete - apply healing and return
+            st["fade_alpha"] = 255.0
             
-            elif event.type == pygame.MOUSEBUTTONDOWN and event.button == 1:
-                # Start fade out (fade starts during resting phase, then transitions to black)
-                st["fade_alpha"] = 0.0
-                st["fade_speed"] = 255.0 / 3.0  # 3 second fade
-                st["fade_timer"] = 0.0
-                # Play long rest sound (respects SFX volume)
-                sfx = _load_longrest_sfx()
-                if sfx:
-                    # Get channel and set volume based on SFX volume settings
-                    channel = pygame.mixer.find_channel(True)
-                    if channel:
-                        channel.set_volume(audio_sys.get_sfx_volume())
-                        channel.play(sfx)
-                        st["longrest_channel"] = channel
-                audio_sys.play_click(audio_sys.get_global_bank())
-        
-        return None
+            # Apply healing and PP restoration
+            party_stats = getattr(gs, "party_vessel_stats", None) or [None] * 6
+            
+            if st["rest_type"] == "long":
+                # Long rest: fully heal all party members and restore all PP
+                for idx in range(6):
+                    if party_stats[idx]:
+                        heal_to_full(gs, idx)
+                _restore_pp_full(gs)
+            else:
+                # Short rest: half HP and half PP
+                for idx in range(6):
+                    if party_stats[idx]:
+                        heal_to_half(gs, idx)
+                _restore_pp_half(gs)
+            
+            # Determine return mode
+            if hasattr(gs, "_rest_return_to"):
+                return_mode = gs._rest_return_to
+                delattr(gs, "_rest_return_to")
+            else:
+                # Default to overworld
+                return_mode = S.MODE_GAME
+            
+            # Stop campfire music before returning
+            audio_sys.stop_music(fade_ms=0)
+            
+            # Restore volumes to what they were before entering rest
+            try:
+                saved_music_vol = st.get("saved_music_vol")
+                saved_sfx_vol = st.get("saved_sfx_vol")
+                
+                if saved_music_vol is not None:
+                    pygame.mixer.music.set_volume(saved_music_vol)
+                
+                if saved_sfx_vol is not None:
+                    audio_sys.set_sfx_volume(saved_sfx_vol, audio_sys.get_global_bank())
+            except Exception as e:
+                print(f"⚠️ Failed to restore volumes: {e}")
+                pass
+            
+            return return_mode
     
-    # Fading phase
-    if st["phase"] == "fading":
-        # Wait for fade to complete (3 seconds) + 0.2 seconds of black
-        if st["fade_timer"] >= 3.2:
-            # Ensure campfire sound is stopped (final safety check)
-            _stop_campfire_sound(st)
-            # Return to game
-            return "GAME"
+    # Handle textbox dismissal
+    for event in events:
+        if event.type == pygame.KEYDOWN:
+            if event.key in (pygame.K_RETURN, pygame.K_SPACE, pygame.K_KP_ENTER):
+                # Start fade
+                st["fade_started"] = True
+                st["fade_timer"] = 0.0
+                st["fade_alpha"] = 0.0
+                
+                # Play LongRest sound
+                if not st.get("sound_played", False):
+                    sound = _load_longrest_sound()
+                    if sound:
+                        audio_sys.play_sound(sound)
+                    st["sound_played"] = True
+                
+                return None
         
-        return None
+        elif event.type == pygame.MOUSEBUTTONDOWN and event.button == 1:
+            # Start fade
+            st["fade_started"] = True
+            st["fade_timer"] = 0.0
+            st["fade_alpha"] = 0.0
+            
+            # Play LongRest sound
+            if not st.get("sound_played", False):
+                sound = _load_longrest_sound()
+                if sound:
+                    audio_sys.play_sound(sound)
+                st["sound_played"] = True
+            
+            return None
     
     return None
 

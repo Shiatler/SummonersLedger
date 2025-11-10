@@ -12,9 +12,13 @@ from typing import Dict, Tuple
 
 # ---------- Grid Configuration ----------
 BUTTON_SCALE = 0.3  # Scale factor for buttons (30% of original size)
-BUTTON_SIZE = 100  # Target size for buttons in grid (will scale images to this)
+# Match party UI slot size - slots are calculated from portrait height
+from systems import party_ui
+portrait_h = party_ui.PORTRAIT_SIZE[1]  # 180
+slot_size, slot_gap, _ = party_ui._compute_slot_metrics(portrait_h)
+BUTTON_SIZE = slot_size  # Match slot size (approximately 90x90)
 GRID_COLS = 4  # Number of columns in grid (horizontal layout) - expanded from 3 to fit 2 more buttons
-GRID_GAP = 6  # Gap between buttons
+GRID_GAP = slot_gap  # Match slot gap
 BOTTOM_PADDING = 12  # Padding from bottom edge
 RIGHT_PADDING = 12  # Padding from right edge
 HOVER_GLOW_ALPHA = 48  # Alpha value for hover glow effect

@@ -1,14 +1,14 @@
 # ============================================================
 # systems/bottom_right_hud.py — Bottom Right HUD Panel
-# - Displays information in a textbox-styled panel
+# - Displays information in a panel with parchment-style background
+# - Simple, non-intrusive medieval design
 # - Positioned near the HUD buttons in bottom right
-# - Matches the textbox aesthetic (cream/beige, rounded corners)
 # ============================================================
 
 import os
 import pygame
 import settings as S
-from systems import hud_buttons
+from systems import hud_buttons, hud_style
 
 # ---------- Font helpers ----------
 _DH_FONT_PATH = None
@@ -49,20 +49,26 @@ def _get_dh_font(size: int, bold: bool = False) -> pygame.font.Font:
 
 # ---------- HUD Configuration ----------
 # Size based on button grid (2 columns, ~2 rows)
-HUD_PADDING = 12  # Padding inside the HUD panel
+HUD_PADDING = 12  # Reduced padding for less intrusive UI
 HUD_MARGIN_RIGHT = 12  # Distance from right edge
 HUD_MARGIN_BOTTOM = 12  # Distance from bottom edge
 
 # Button grid configuration (should match hud_buttons.py)
-BUTTON_SIZE = 100  # Target size for buttons in grid
+# Match party UI slot size - slots are calculated from portrait height
+from systems import party_ui
+portrait_h = party_ui.PORTRAIT_SIZE[1]  # 140 (reduced)
+slot_size, slot_gap, _ = party_ui._compute_slot_metrics(portrait_h)
+BUTTON_SIZE = slot_size  # Match slot size (smaller now)
 GRID_COLS = 4  # Number of columns in grid (horizontal layout) - expanded from 3 to fit 2 more buttons
-GRID_GAP = 6  # Gap between buttons
+GRID_GAP = slot_gap  # Match slot gap
 
-# Calculate HUD size based on button grid
-# We need space for 4 columns of buttons plus padding
-HUD_WIDTH = (GRID_COLS * BUTTON_SIZE) + ((GRID_COLS - 1) * GRID_GAP) + (HUD_PADDING * 2)
-# Height: enough for 2 rows of buttons (8 buttons total, 2 rows)
-HUD_HEIGHT = (2 * BUTTON_SIZE) + (1 * GRID_GAP) + (HUD_PADDING * 2)
+# Calculate base HUD size based on button grid
+base_hud_width = (GRID_COLS * BUTTON_SIZE) + ((GRID_COLS - 1) * GRID_GAP) + (HUD_PADDING * 2)
+base_hud_height = (2 * BUTTON_SIZE) + (1 * GRID_GAP) + (HUD_PADDING * 2)
+
+# Use base size directly (no scaling) - keep it minimal
+HUD_WIDTH = base_hud_width
+HUD_HEIGHT = base_hud_height
 
 # ---------- HUD State ----------
 _ENABLED = True
@@ -86,7 +92,7 @@ def get_hud_rect() -> pygame.Rect | None:
 def draw(screen: pygame.Surface, gs):
     """
     Draw the bottom right HUD panel with buttons inside it.
-    Matches the textbox style: cream/beige background, black border, inner grey border.
+    Uses hud1.png background image, scaled to fit.
     """
     global _HUD_RECT
     
@@ -99,19 +105,40 @@ def draw(screen: pygame.Surface, gs):
     
     _HUD_RECT = pygame.Rect(hud_x, hud_y, HUD_WIDTH, HUD_HEIGHT)
     
-    # Draw textbox-styled panel (matches rest.py and master_oak.py textboxes)
-    # Outer box (cream/beige background)
-    pygame.draw.rect(screen, (245, 245, 245), _HUD_RECT, border_radius=8)
-    # Outer border (black)
-    pygame.draw.rect(screen, (0, 0, 0), _HUD_RECT, 4, border_radius=8)
-    # Inner border (dark grey)
-    inner_rect = _HUD_RECT.inflate(-8, -8)
-    pygame.draw.rect(screen, (60, 60, 60), inner_rect, 2, border_radius=6)
+    # Draw parchment-style HUD background
+    hud_style.draw_parchment_panel(screen, _HUD_RECT)
     
     # Draw buttons inside the HUD panel
-    # Calculate button positions relative to HUD panel
-    button_area_x = _HUD_RECT.x + HUD_PADDING
-    button_area_y = _HUD_RECT.y + HUD_PADDING
+    # Position buttons to match party UI slot grid vertical position
+    # Get party UI position to align buttons vertically with slots
+    try:
+        from systems import left_hud
+        hud_rect = left_hud.get_hud_rect()
+        if hud_rect:
+            # Get portrait position (same as party_ui uses)
+            px = hud_rect.x + HUD_PADDING
+            py = hud_rect.y + (hud_rect.height - portrait_h) // 2
+            
+            # Calculate slot grid vertical position (same as party_ui)
+            portrait_w = party_ui.PORTRAIT_SIZE[0]
+            total_grid_h = 2 * slot_size + 1 * slot_gap  # 2 rows
+            grid_top = py + (portrait_h - total_grid_h) // 2
+            
+            # Position buttons: right-aligned but vertically matching slots
+            # Calculate button grid width
+            button_grid_width = (GRID_COLS * BUTTON_SIZE) + ((GRID_COLS - 1) * GRID_GAP)
+            button_area_x = S.LOGICAL_WIDTH - button_grid_width - HUD_MARGIN_RIGHT
+            button_area_y = grid_top  # Match slot grid top position
+        else:
+            # Fallback: use original positioning
+            original_hud_x = S.LOGICAL_WIDTH - base_hud_width - HUD_MARGIN_RIGHT
+            button_area_x = original_hud_x + HUD_PADDING
+            button_area_y = _HUD_RECT.y + HUD_PADDING
+    except:
+        # Fallback: use original positioning
+        original_hud_x = S.LOGICAL_WIDTH - base_hud_width - HUD_MARGIN_RIGHT
+        button_area_x = original_hud_x + HUD_PADDING
+        button_area_y = _HUD_RECT.y + HUD_PADDING
     
     # Get button images and draw them inside the panel
     # Use the public API to load buttons

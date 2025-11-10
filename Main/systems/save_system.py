@@ -312,7 +312,66 @@ def save_game(gs, *, force: bool = False):
         "active_buffs": getattr(gs, "active_buffs", []),
         "buffs_history": getattr(gs, "buffs_history", []),
         "first_overworld_blessing_given": getattr(gs, "first_overworld_blessing_given", False),
+        
+        # 🍺 Tavern state (if in tavern or paused from tavern)
+        "saved_in_tavern": False,
+        "tavern_state": {},
+        "overworld_player_pos": None,
     }
+    
+    # Check if we're in tavern mode or paused from tavern
+    # Store tavern state if we have it
+    tavern_state = getattr(gs, "_tavern_state", None)
+    pause_return_to = getattr(gs, "_pause_return_to", None)
+    is_in_tavern = (pause_return_to == "TAVERN" or tavern_state is not None)
+    
+    if is_in_tavern and tavern_state:
+        # Save tavern state (but exclude non-serializable objects like sprites)
+        saved_tavern_state = {}
+        for key, value in tavern_state.items():
+            # Skip sprite objects and other non-serializable data
+            if key in ("whore_sprite", "summoner_sprite", "barkeeper_sprite", "gambler_sprite"):
+                continue  # Don't save sprites - they'll be reloaded
+            if key == "overworld_player_pos" and value is not None:
+                # Save overworld position separately
+                data["overworld_player_pos"] = {"x": float(value.x), "y": float(value.y)}
+                continue
+            if key == "spawn_pos" and value is not None:
+                saved_tavern_state["spawn_pos"] = {"x": float(value.x), "y": float(value.y)}
+                continue
+            if key == "barkeeper_pos" and value is not None:
+                saved_tavern_state["barkeeper_pos"] = {"x": float(value.x), "y": float(value.y)}
+                continue
+            if key == "gambler_pos" and value is not None:
+                saved_tavern_state["gambler_pos"] = {"x": float(value.x), "y": float(value.y)}
+                continue
+            if key == "whore_pos" and value is not None:
+                saved_tavern_state["whore_pos"] = {"x": float(value.x), "y": float(value.y)}
+                continue
+            if key == "summoner_pos" and value is not None:
+                saved_tavern_state["summoner_pos"] = {"x": float(value.x), "y": float(value.y)}
+                continue
+            if key == "camera" and value is not None:
+                saved_tavern_state["camera"] = {"x": float(value.x), "y": float(value.y)}
+                continue
+            if key == "tavern_player_pos" and value is not None:
+                saved_tavern_state["tavern_player_pos"] = {"x": float(value.x), "y": float(value.y)}
+                continue
+            # Save other simple values
+            if isinstance(value, (str, int, float, bool, type(None))):
+                saved_tavern_state[key] = value
+            elif isinstance(value, list):
+                # Save lists if they contain serializable data
+                saved_tavern_state[key] = value
+        
+        # Save current player position as tavern_player_pos if not already saved
+        if "tavern_player_pos" not in saved_tavern_state:
+            saved_tavern_state["tavern_player_pos"] = {"x": float(player_pos.x), "y": float(player_pos.y)}
+            print(f"💾 Saving current tavern player position: ({player_pos.x:.1f}, {player_pos.y:.1f})")
+        
+        data["saved_in_tavern"] = True
+        data["tavern_state"] = saved_tavern_state
+        print(f"💾 Saving tavern state: {len(saved_tavern_state)} keys")
 
     # --- dedupe identical snapshots (skip when forced) ---
     now = _now_ms()
@@ -581,6 +640,43 @@ def load_game(gs, summoner_sprites: dict[str, object] | None = None, merchant_fr
             f"party={sum(1 for n in names if n)}, stats={sum(1 for s in gs.party_vessel_stats if s)}, "
             f"inventory_items={len(gs.inventory) if gs.inventory else 0})"
         )
+        
+        # 🍺 Load tavern state if saved in tavern
+        saved_in_tavern = data.get("saved_in_tavern", False)
+        if saved_in_tavern:
+            tavern_state_data = data.get("tavern_state", {})
+            overworld_pos_data = data.get("overworld_player_pos")
+            
+            # Initialize tavern state
+            if not hasattr(gs, "_tavern_state"):
+                gs._tavern_state = {}
+            
+            # Restore tavern state
+            for key, value in tavern_state_data.items():
+                if key.endswith("_pos") and isinstance(value, dict):
+                    # Restore Vector2 positions
+                    gs._tavern_state[key] = Vector2(float(value["x"]), float(value["y"]))
+                elif key == "camera" and isinstance(value, dict):
+                    gs._tavern_state[key] = Vector2(float(value["x"]), float(value["y"]))
+                else:
+                    gs._tavern_state[key] = value
+            
+            # Restore overworld position
+            if overworld_pos_data:
+                gs._tavern_state["overworld_player_pos"] = Vector2(
+                    float(overworld_pos_data["x"]), 
+                    float(overworld_pos_data["y"])
+                )
+            
+            # Mark that we should restore to tavern mode
+            gs._restore_to_tavern = True
+            print(f"🍺 Loaded tavern state: {len(tavern_state_data)} keys, overworld_pos={overworld_pos_data}")
+        else:
+            # Clear tavern state if not saved in tavern
+            if hasattr(gs, "_tavern_state"):
+                gs._tavern_state = {}
+            gs._restore_to_tavern = False
+        
         return True
 
     except Exception as e:

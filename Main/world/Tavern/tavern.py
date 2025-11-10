@@ -12,6 +12,14 @@ import pygame
 from pygame.math import Vector2
 import settings as S
 
+from systems import shop
+from systems import audio
+
+# Import modal modules for blocking checks
+from combat.btn import bag_action as bag_ui
+from screens import party_manager, ledger
+from systems import currency_display, rest_popup
+
 # ===================== Constants =====================
 TAVERN_MAP_PATH = os.path.join("Assets", "Tavern", "TavernMap.png")
 BARKEEPER_SPRITE_PATH = os.path.join("Assets", "Tavern", "BarkeeperDwarf.png")
@@ -446,45 +454,111 @@ def enter(gs, rival_summoners=None, **_):
         gs._tavern_state = {}
     
     st = gs._tavern_state
+
+    # Ensure whore confirmation state keys exist
+    st.setdefault("whore_confirm_active", False)
+    st.setdefault("whore_confirm_buttons", [])
+    st.setdefault("whore_confirm_error", "")
+    st.setdefault("whore_confirm_price", 0)
     
-    # Store overworld player position ONLY on first entry (not when returning from battle)
-    # If it already exists, preserve it (we're returning from battle)
-    if "overworld_player_pos" not in st:
+    # Store overworld player position when entering a NEW tavern
+    # Check if this is a NEW tavern (different from the one we were in before)
+    current_tavern = getattr(gs, "near_tavern", None)
+    previous_tavern = st.get("overworld_tavern", None)
+    is_new_tavern = (current_tavern != previous_tavern)
+    
+    if is_new_tavern:
+        # New tavern - always update overworld position to current position
+        st["overworld_player_pos"] = Vector2(gs.player_pos.x, gs.player_pos.y)
+        print(f"💾 Stored overworld position for NEW tavern: ({gs.player_pos.x:.1f}, {gs.player_pos.y:.1f})")
+        # Reset NPC initialization so they get rolled again
+        if "npc_initialized" in st:
+            del st["npc_initialized"]
+        print(f"🆕 Entering NEW tavern - will roll new NPCs")
+    elif "overworld_player_pos" not in st:
+        # First tavern ever - store position
         st["overworld_player_pos"] = Vector2(gs.player_pos.x, gs.player_pos.y)
         print(f"💾 Stored overworld position on first tavern entry: ({gs.player_pos.x:.1f}, {gs.player_pos.y:.1f})")
     else:
-        print(f"💾 Preserved overworld position (returning from battle): ({st['overworld_player_pos'].x:.1f}, {st['overworld_player_pos'].y:.1f})")
+        # Same tavern - preserve existing overworld position (we're returning from battle/interaction)
+        print(f"💾 Preserved overworld position (same tavern): ({st['overworld_player_pos'].x:.1f}, {st['overworld_player_pos'].y:.1f})")
     
     # Store the tavern object from overworld (so we can remove it when kicked out)
-    # Only store it on first entry, preserve it if already stored
-    if "overworld_tavern" not in st:
-        st["overworld_tavern"] = getattr(gs, "near_tavern", None)
+    # Only store it on first entry to THIS tavern, preserve it if already stored
+    if "overworld_tavern" not in st or is_new_tavern:
+        st["overworld_tavern"] = current_tavern
     
-    # Load NPC sprites
-    _load_barkeeper_sprite()
-    _load_gambler_sprite()
+    # Only roll NPCs on first entry to this tavern (check if they're already set)
+    is_first_entry = "npc_initialized" not in st
     
-    # Randomly select and load a whore NPC (100% chance one spawns)
-    whore_number = _select_whore()
-    whore_sprite = _load_whore_sprite(whore_number)
-    st["whore_number"] = whore_number
-    st["whore_sprite"] = whore_sprite
-    print(f"💋 Selected Whore{whore_number} ({whore_number}/9)")
-    
-    # Randomly select and spawn a summoner (like overworld)
-    if rival_summoners and len(rival_summoners) > 0:
-        from systems.name_generator import generate_summoner_name
-        summoner_name, summoner_sprite = random.choice(rival_summoners)
-        display_name = generate_summoner_name(summoner_name)
-        st["summoner_name"] = display_name
-        st["summoner_filename"] = summoner_name
-        st["summoner_sprite"] = summoner_sprite
-        print(f"⚔️ Selected summoner: {display_name} (filename: {summoner_name})")
+    if is_first_entry:
+        # Load NPC sprites
+        _load_barkeeper_sprite()
+        _load_gambler_sprite()
+        
+        # Randomly select and load a whore NPC (100% chance one spawns unless consumed)
+        if not st.get("whore_consumed", False):
+            whore_number = _select_whore()
+            whore_sprite = _load_whore_sprite(whore_number)
+            st["whore_number"] = whore_number
+            st["whore_sprite"] = whore_sprite
+            print(f"💋 Selected Whore{whore_number} ({whore_number}/9)")
+        else:
+            st["whore_number"] = None
+            st["whore_sprite"] = None
+            st["whore_pos"] = None
+            print("💋 Whore already satisfied - none present in tavern")
+        
+        # Randomly select and spawn a summoner (like overworld)
+        if rival_summoners and len(rival_summoners) > 0:
+            from systems.name_generator import generate_summoner_name
+            summoner_name, summoner_sprite = random.choice(rival_summoners)
+            display_name = generate_summoner_name(summoner_name)
+            st["summoner_name"] = display_name
+            st["summoner_filename"] = summoner_name
+            st["summoner_sprite"] = summoner_sprite
+            print(f"⚔️ Selected summoner: {display_name} (filename: {summoner_name})")
+        else:
+            st["summoner_name"] = None
+            st["summoner_filename"] = None
+            st["summoner_sprite"] = None
+            print("⚠️ No summoners available to spawn in tavern")
+        
+        # Mark NPCs as initialized for this tavern instance
+        st["npc_initialized"] = True
     else:
-        st["summoner_name"] = None
-        st["summoner_filename"] = None
-        st["summoner_sprite"] = None
-        print("⚠️ No summoners available to spawn in tavern")
+        # Preserve existing NPCs - don't re-roll
+        # BUT reload sprites if they're missing (e.g., after loading from save)
+        print(f"💾 Preserving existing NPCs (whore={st.get('whore_number')}, summoner={st.get('summoner_name')})")
+        
+        # Reload sprites if data exists but sprites are missing (e.g., after loading from save)
+        if st.get("whore_number") and st.get("whore_sprite") is None:
+            whore_number = st["whore_number"]
+            whore_sprite = _load_whore_sprite(whore_number)
+            st["whore_sprite"] = whore_sprite
+            print(f"🔄 Reloaded Whore{whore_number} sprite from save")
+        
+        if st.get("summoner_filename") and st.get("summoner_sprite") is None and rival_summoners:
+            summoner_filename = st["summoner_filename"]
+            # rival_summoners is a list of (name, sprite) tuples, not a dict
+            summoner_sprite = None
+            for name, sprite in rival_summoners:
+                if name == summoner_filename:
+                    summoner_sprite = sprite
+                    break
+            if summoner_sprite:
+                st["summoner_sprite"] = summoner_sprite
+                # Regenerate display name if missing
+                if not st.get("summoner_name"):
+                    from systems.name_generator import generate_summoner_name
+                    st["summoner_name"] = generate_summoner_name(summoner_filename)
+                print(f"🔄 Reloaded summoner '{st['summoner_name']}' sprite from save (filename: {summoner_filename})")
+            else:
+                print(f"⚠️ Could not find summoner sprite for filename: {summoner_filename}")
+        
+        # Always reload barkeeper and gambler sprites (they're static)
+        _load_barkeeper_sprite()
+        _load_gambler_sprite()
     
     # Set player position (center horizontally, at a fixed Y position on the map)
     # Match overworld: player starts at center of world horizontally
@@ -499,26 +573,58 @@ def enter(gs, rival_summoners=None, **_):
         screen_w = getattr(S, "LOGICAL_WIDTH", S.WIDTH)
         screen_h = getattr(S, "LOGICAL_HEIGHT", S.HEIGHT)
         
-        # Check if we're returning from battle - if so, restore the stored position and show kicked out textbox
+        # Check if we're returning from an interaction - restore position if stored
         stored_tavern_pos = st.get("tavern_player_pos", None)
+        returning_from_battle = st.get("returning_from_battle", False)
+        
         if stored_tavern_pos:
-            # Restore position from before battle
+            # Restore position from before interaction
             gs.player_pos.x = stored_tavern_pos.x
             gs.player_pos.y = stored_tavern_pos.y
-            print(f"✅ Restored tavern position from battle: ({gs.player_pos.x:.1f}, {gs.player_pos.y:.1f})")
-            # Store spawn position for exit popup (use the same position)
-            st["spawn_pos"] = Vector2(gs.player_pos.x, gs.player_pos.y)
+            print(f"✅ Restored tavern position: ({gs.player_pos.x:.1f}, {gs.player_pos.y:.1f})")
+            # DON'T overwrite spawn_pos - it should remain at the original exit location
             
-            # Remove summoner sprite (they're gone after the barfight)
-            st["summoner_sprite"] = None
-            st["summoner_name"] = None
-            st["summoner_filename"] = None
-            st["summoner_pos"] = None
+            # Only show kicked out textbox if returning from battle
+            if returning_from_battle:
+                # Remove summoner sprite (they're gone after the barfight)
+                st["summoner_sprite"] = None
+                st["summoner_name"] = None
+                st["summoner_filename"] = None
+                st["summoner_pos"] = None
+                
+                # Show "kicked out" textbox
+                st["kicked_out_textbox_active"] = True
+                st["kicked_out_blink_t"] = 0.0
+                print("🚪 Player has been kicked out of the tavern!")
             
-            # Show "kicked out" textbox
-            st["kicked_out_textbox_active"] = True
-            st["kicked_out_blink_t"] = 0.0
-            print("🚪 Player has been kicked out of the tavern!")
+            # Clear the flags after restoring position
+            del st["tavern_player_pos"]
+            if returning_from_battle:
+                del st["returning_from_battle"]
+            
+            # Skip NPC spawning and positioning - preserve existing ones
+            # Just ensure positions are set if they don't exist (shouldn't happen, but safety check)
+            if "barkeeper_pos" not in st or st["barkeeper_pos"] is None:
+                barkeeper_map_x = map_w * 0.19
+                barkeeper_map_y = map_h * 0.40
+                st["barkeeper_pos"] = Vector2(map_anchor_x + barkeeper_map_x, barkeeper_map_y)
+            if "gambler_pos" not in st or st["gambler_pos"] is None:
+                gambler_map_x = map_w * 0.75
+                gambler_map_y = map_h * 0.35
+                st["gambler_pos"] = Vector2(map_anchor_x + gambler_map_x, gambler_map_y)
+            if "spawn_pos" not in st or st["spawn_pos"] is None:
+                # Fallback: use current player position if spawn_pos somehow missing
+                st["spawn_pos"] = Vector2(gs.player_pos.x, gs.player_pos.y)
+                print(f"⚠️ spawn_pos was missing, using current position as fallback")
+            
+            # Calculate camera offset
+            cam = get_camera_offset_locked(gs.player_pos, screen_w, screen_h, player_half, map_w, map_h, map_anchor_x)
+            st["camera"] = Vector2(cam.x, cam.y)
+            st["locked_cam_x"] = cam.x
+            st["locked_cam_y"] = cam.y
+            
+            print(f"🍺 Returned to tavern at player position ({gs.player_pos.x:.1f}, {gs.player_pos.y:.1f}), camera=({st['camera'].x:.1f}, {st['camera'].y:.1f})")
+            return  # Skip the rest of the initialization
         else:
             # First time entering tavern or returning from overworld - use spawn logic
             # Set player starting position to bottom-left area (on the stairs/platform)
@@ -601,32 +707,40 @@ def enter(gs, rival_summoners=None, **_):
         st["locked_cam_x"] = cam.x  # Store locked X position
         st["locked_cam_y"] = cam.y  # Store locked Y position
         
-        # Set barkeeper position (behind the bar counter)
-        # Bar counter is at x: 0.08-0.3, y: 0.50
-        # Position barkeeper at center of bar counter, further up
-        barkeeper_map_x = map_w * 0.19  # Center of bar counter (0.08 + 0.3) / 2
-        barkeeper_map_y = map_h * 0.40  # Further up from the bar counter
-        st["barkeeper_pos"] = Vector2(map_anchor_x + barkeeper_map_x, barkeeper_map_y)
-        print(f"🍺 Barkeeper positioned at map coords ({barkeeper_map_x:.1f}, {barkeeper_map_y:.1f}), world ({st['barkeeper_pos'].x:.1f}, {st['barkeeper_pos'].y:.1f})")
-        
-        # Set gambler position (top right corner)
-        gambler_map_x = map_w * 0.75  # Right side of map
-        gambler_map_y = map_h * 0.35  # Top area of map
-        st["gambler_pos"] = Vector2(map_anchor_x + gambler_map_x, gambler_map_y)
-        print(f"🎲 Gambler positioned at map coords ({gambler_map_x:.1f}, {gambler_map_y:.1f}), world ({st['gambler_pos'].x:.1f}, {st['gambler_pos'].y:.1f})")
-        
-        # Set whore position (bottom right corner)
-        whore_map_x = map_w * 0.81  # Right side of map
-        whore_map_y = map_h * 0.70  # Bottom area of map
-        st["whore_pos"] = Vector2(map_anchor_x + whore_map_x, whore_map_y)
-        print(f"💋 Whore{st['whore_number']} positioned at map coords ({whore_map_x:.1f}, {whore_map_y:.1f}), world ({st['whore_pos'].x:.1f}, {st['whore_pos'].y:.1f})")
-        
-        # Set summoner position (center-left area of main room)
-        summoner_map_x = map_w * 0.35  # Left-center area
-        summoner_map_y = map_h * 0.55  # Middle area
-        st["summoner_pos"] = Vector2(map_anchor_x + summoner_map_x, summoner_map_y)
-        if st.get("summoner_name"):
-            print(f"⚔️ Summoner '{st['summoner_name']}' positioned at map coords ({summoner_map_x:.1f}, {summoner_map_y:.1f}), world ({st['summoner_pos'].x:.1f}, {st['summoner_pos'].y:.1f})")
+        # Only set NPC positions on first entry (preserve them when returning from interactions)
+        if is_first_entry:
+            # Set barkeeper position (behind the bar counter)
+            # Bar counter is at x: 0.08-0.3, y: 0.50
+            # Position barkeeper at center of bar counter, further up
+            barkeeper_map_x = map_w * 0.19  # Center of bar counter (0.08 + 0.3) / 2
+            barkeeper_map_y = map_h * 0.40  # Further up from the bar counter
+            st["barkeeper_pos"] = Vector2(map_anchor_x + barkeeper_map_x, barkeeper_map_y)
+            print(f"🍺 Barkeeper positioned at map coords ({barkeeper_map_x:.1f}, {barkeeper_map_y:.1f}), world ({st['barkeeper_pos'].x:.1f}, {st['barkeeper_pos'].y:.1f})")
+            
+            # Set gambler position (top right corner)
+            gambler_map_x = map_w * 0.75  # Right side of map
+            gambler_map_y = map_h * 0.35  # Top area of map
+            st["gambler_pos"] = Vector2(map_anchor_x + gambler_map_x, gambler_map_y)
+            print(f"🎲 Gambler positioned at map coords ({gambler_map_x:.1f}, {gambler_map_y:.1f}), world ({st['gambler_pos'].x:.1f}, {st['gambler_pos'].y:.1f})")
+            
+            # Set whore position (bottom right corner) if present
+            if st.get("whore_number") and st.get("whore_sprite") is not None:
+                whore_map_x = map_w * 0.81  # Right side of map
+                whore_map_y = map_h * 0.70  # Bottom area of map
+                st["whore_pos"] = Vector2(map_anchor_x + whore_map_x, whore_map_y)
+                print(f"💋 Whore{st['whore_number']} positioned at map coords ({whore_map_x:.1f}, {whore_map_y:.1f}), world ({st['whore_pos'].x:.1f}, {st['whore_pos'].y:.1f})")
+            else:
+                st["whore_pos"] = None
+            
+            # Set summoner position (center-left area of main room)
+            summoner_map_x = map_w * 0.35  # Left-center area
+            summoner_map_y = map_h * 0.55  # Middle area
+            st["summoner_pos"] = Vector2(map_anchor_x + summoner_map_x, summoner_map_y)
+            if st.get("summoner_name"):
+                print(f"⚔️ Summoner '{st['summoner_name']}' positioned at map coords ({summoner_map_x:.1f}, {summoner_map_y:.1f}), world ({st['summoner_pos'].x:.1f}, {st['summoner_pos'].y:.1f})")
+        else:
+            # Preserve existing positions - don't reset them
+            print(f"💾 Preserving existing NPC positions")
     else:
         # Fallback: use current player position
         st["camera"] = Vector2(0, 0)
@@ -886,6 +1000,26 @@ def _get_whore_popup_text(whore_number: int) -> str:
     else:
         return "Press E To Interact"
 
+def _whore_price(whore_number: int) -> int:
+    """Return the price in gold for the selected whore."""
+    if 1 <= whore_number <= 5:
+        return 10
+    if 6 <= whore_number <= 8:
+        return 20
+    if whore_number == 9:
+        return 50
+    return 10
+
+def _whore_description(whore_number: int) -> str:
+    """Return a short description of the whore group for UI text."""
+    if 1 <= whore_number <= 5:
+        return "the tavern maiden"
+    if 6 <= whore_number <= 8:
+        return "the twin sisters"
+    if whore_number == 9:
+        return "the harem of five"
+    return "the tavern maiden"
+
 def _draw_whore_popup(screen, gs, whore_pos: Vector2, whore_number: int, map_anchor_x: int, map_src_x: int, map_src_y: int, 
                       map_dst_x: int, map_dst_y: int, player_half: Vector2, screen_w: int, screen_h: int, 
                       map_w: int, map_h: int):
@@ -1014,6 +1148,108 @@ def _play_laugh_sound():
             print(f"⚠️ Laugh sound not found at {sound_path}")
     except Exception as e:
         print(f"⚠️ Failed to play laugh sound: {e}")
+
+def _play_barkeeper_sound():
+    """Play a random barkeeper greeting sound."""
+    try:
+        choices = [
+            os.path.join("Assets", "Tavern Barkeeper1.mp3"),
+            os.path.join("Assets", "Tavern Barkeeper2.mp3"),
+            os.path.join("Assets", "Tavern Barkeeper3.mp3"),
+            os.path.join("Assets", "Tavern Barkeeper4.mp3"),
+        ]
+        existing = [p for p in choices if os.path.exists(p)]
+        if not existing:
+            # Try legacy paths inside Assets/Tavern
+            fallback = [
+                os.path.join("Assets", "Tavern", "Barkeeper1.mp3"),
+                os.path.join("Assets", "Tavern", "Barkeeper2.mp3"),
+                os.path.join("Assets", "Tavern", "Barkeeper3.mp3"),
+                os.path.join("Assets", "Tavern", "Barkeeper4.mp3"),
+            ]
+            existing = [p for p in fallback if os.path.exists(p)]
+        if not existing:
+            print("⚠️ Barkeeper sounds not found")
+            return
+        sound_path = random.choice(existing)
+        sfx = pygame.mixer.Sound(sound_path)
+        ch = pygame.mixer.find_channel(True)
+        ch.play(sfx)
+        print(f"🎵 Playing barkeeper sound ({os.path.basename(sound_path)})")
+    except Exception as e:
+        print(f"⚠️ Failed to play barkeeper sound: {e}")
+
+def _draw_game_selection_popup(screen, gs, dt: float, screen_w: int, screen_h: int):
+    """Draw game selection popup (Doom Roll vs Twenty-One)."""
+    st = gs._tavern_state
+    
+    # Popup dimensions
+    popup_w = 500
+    popup_h = 300
+    popup_x = (screen_w - popup_w) // 2
+    popup_y = (screen_h - popup_h) // 2
+    
+    # Draw semi-transparent overlay
+    overlay = pygame.Surface((screen_w, screen_h), pygame.SRCALPHA)
+    overlay.fill((0, 0, 0, 180))
+    screen.blit(overlay, (0, 0))
+    
+    # Popup box (match whore confirmation styling)
+    popup_rect = pygame.Rect(popup_x, popup_y, popup_w, popup_h)
+    pygame.draw.rect(screen, (40, 35, 30), popup_rect)
+    pygame.draw.rect(screen, (80, 70, 60), popup_rect, 3)
+    inner = popup_rect.inflate(-8, -8)
+    pygame.draw.rect(screen, (60, 50, 40), inner, 2)
+    
+    # Title
+    font = _get_dh_font(32)
+    title_text = "Choose a Game"
+    title_surf = font.render(title_text, True, (235, 225, 210))
+    title_x = popup_x + (popup_w - title_surf.get_width()) // 2
+    title_y = popup_y + 20
+    screen.blit(title_surf, (title_x, title_y))
+    
+    # Game buttons
+    button_font = _get_dh_font(24)
+    button_h = 48
+    button_spacing = 20
+    button_w = popup_w - 80
+    button_y_start = title_y + title_surf.get_height() + 40
+    
+    # Mouse position in logical coordinates
+    mouse_x, mouse_y = pygame.mouse.get_pos()
+    screen_surface = pygame.display.get_surface()
+    logical_mouse_x = mouse_x * screen_w // screen_surface.get_width() if screen_surface and screen_surface.get_width() != screen_w else mouse_x
+    logical_mouse_y = mouse_y * screen_h // screen_surface.get_height() if screen_surface and screen_surface.get_height() != screen_h else mouse_y
+    
+    button_specs = [
+        ("doom_roll", "Doom Roll", (230, 228, 220), (60, 60, 60)),
+        ("twenty_one", "Twenty-One", (230, 228, 220), (60, 60, 60)),
+        ("nevermind", "Nevermind", (120, 70, 70), (20, 20, 20)),
+    ]
+    
+    st["game_selection_buttons"] = []
+    
+    for idx, (game_key, label, base_color, border_color) in enumerate(button_specs):
+        button_y = button_y_start + idx * (button_h + button_spacing)
+        button_rect = pygame.Rect(popup_x + 40, button_y, button_w, button_h)
+        st["game_selection_buttons"].append((button_rect, game_key))
+        
+        hover = button_rect.collidepoint(logical_mouse_x, logical_mouse_y)
+        if game_key == "nevermind":
+            color = (140, 90, 90) if hover else base_color
+            text_color = (255, 255, 255)
+        else:
+            color = (240, 238, 232) if not hover else (230, 228, 220)
+            text_color = (16, 16, 16)
+        pygame.draw.rect(screen, color, button_rect)
+        pygame.draw.rect(screen, border_color, button_rect, 2)
+        
+        text_surf = button_font.render(label, True, text_color)
+        text_x = button_rect.x + (button_rect.w - text_surf.get_width()) // 2
+        text_y = button_rect.y + (button_rect.h - text_surf.get_height()) // 2
+        screen.blit(text_surf, (text_x, text_y))
+    
 
 def _draw_bet_selection_popup(screen, gs, dt: float, screen_w: int, screen_h: int):
     """Draw bet selection popup (centered, modal style matching popup style)."""
@@ -1162,6 +1398,142 @@ def _draw_kicked_out_textbox(screen, gs, dt: float, screen_w: int, screen_h: int
         py = rect.bottom - psurf.get_height() - 12
         screen.blit(psurf, (px, py))
 
+def _draw_whore_confirm_popup(screen, gs, dt: float, screen_w: int, screen_h: int):
+    """Draw confirmation popup for whore interaction."""
+    st = gs._tavern_state
+    
+    price = int(st.get("whore_confirm_price", 0))
+    whore_number = st.get("whore_number", 0)
+    player_gold = max(0, int(getattr(gs, "gold", 0)))
+    can_afford = player_gold >= price and price > 0
+    
+    # Popup dimensions
+    popup_w = 440
+    popup_h = 230
+    popup_x = (screen_w - popup_w) // 2
+    popup_y = (screen_h - popup_h) // 2
+    
+    # Overlay
+    overlay = pygame.Surface((screen_w, screen_h), pygame.SRCALPHA)
+    overlay.fill((0, 0, 0, 180))
+    screen.blit(overlay, (0, 0))
+    
+    # Popup background
+    popup_rect = pygame.Rect(popup_x, popup_y, popup_w, popup_h)
+    pygame.draw.rect(screen, (40, 35, 30), popup_rect)
+    pygame.draw.rect(screen, (80, 70, 60), popup_rect, 3)
+    inner = popup_rect.inflate(-8, -8)
+    pygame.draw.rect(screen, (60, 50, 40), inner, 2)
+    
+    # Title
+    title_font = _get_dh_font(32)
+    title_text = "Spend The Night?"
+    title_surf = title_font.render(title_text, True, (235, 225, 210))
+    title_x = popup_x + (popup_w - title_surf.get_width()) // 2
+    title_y = popup_y + 20
+    screen.blit(title_surf, (title_x, title_y))
+    
+    body_font = _get_dh_font(24)
+    cost_text = f"Cost: {price} Gold"
+    cost_surf = body_font.render(cost_text, True, (220, 210, 190))
+    cost_x = popup_x + (popup_w - cost_surf.get_width()) // 2
+    cost_y = title_y + title_surf.get_height() + 24
+    screen.blit(cost_surf, (cost_x, cost_y))
+    
+    # Player gold
+    gold_font = _get_dh_font(20)
+    gold_text = f"Your gold: {player_gold}"
+    gold_color = (200, 200, 150) if can_afford else (200, 80, 80)
+    gold_surf = gold_font.render(gold_text, True, gold_color)
+    gold_x = popup_x + (popup_w - gold_surf.get_width()) // 2
+    gold_y = cost_y + cost_surf.get_height() + 12
+    screen.blit(gold_surf, (gold_x, gold_y))
+    
+    # Error message if set
+    error_text = st.get("whore_confirm_error", "")
+    if error_text:
+        error_font = _get_dh_font(18)
+        error_surf = error_font.render(error_text, True, (220, 100, 100))
+        screen.blit(error_surf, (popup_x + (popup_w - error_surf.get_width()) // 2, gold_y + gold_surf.get_height() + 4))
+    
+    # Buttons
+    button_font = _get_dh_font(24)
+    button_w = 170
+    button_h = 44
+    button_gap = 30
+    buttons_y = popup_y + popup_h - button_h - 32
+    
+    accept_rect = pygame.Rect(popup_x + popup_w // 2 - button_gap // 2 - button_w, buttons_y, button_w, button_h)
+    decline_rect = pygame.Rect(popup_x + popup_w // 2 + button_gap // 2, buttons_y, button_w, button_h)
+    
+    st["whore_confirm_buttons"] = [
+        (accept_rect, "accept"),
+        (decline_rect, "decline"),
+    ]
+    
+    # Mouse position in logical coordinates
+    mouse_x, mouse_y = pygame.mouse.get_pos()
+    screen_surface = pygame.display.get_surface()
+    logical_mouse_x = mouse_x * screen_w // screen_surface.get_width() if screen_surface and screen_surface.get_width() != screen_w else mouse_x
+    logical_mouse_y = mouse_y * screen_h // screen_surface.get_height() if screen_surface and screen_surface.get_height() != screen_h else mouse_y
+    
+    # Draw Accept button
+    accept_hover = accept_rect.collidepoint(logical_mouse_x, logical_mouse_y)
+    accept_enabled = can_afford
+    if accept_enabled:
+        accept_color = (70, 120, 80) if not accept_hover else (90, 150, 100)
+        accept_text_color = (255, 255, 255)
+    else:
+        accept_color = (70, 70, 70)
+        accept_text_color = (160, 160, 160)
+        accept_hover = False
+    pygame.draw.rect(screen, accept_color, accept_rect, border_radius=6)
+    pygame.draw.rect(screen, (20, 20, 20), accept_rect, 2, border_radius=6)
+    accept_label = "Accept"
+    accept_surf = button_font.render(accept_label, True, accept_text_color)
+    screen.blit(accept_surf, (accept_rect.centerx - accept_surf.get_width() // 2, accept_rect.centery - accept_surf.get_height() // 2))
+    
+    # Draw Decline button
+    decline_hover = decline_rect.collidepoint(logical_mouse_x, logical_mouse_y)
+    decline_color = (120, 70, 70) if decline_hover else (100, 60, 60)
+    pygame.draw.rect(screen, decline_color, decline_rect)
+    pygame.draw.rect(screen, (20, 20, 20), decline_rect, 2)
+    decline_surf = button_font.render("Decline", True, (255, 255, 255))
+    screen.blit(decline_surf, (decline_rect.centerx - decline_surf.get_width() // 2, decline_rect.centery - decline_surf.get_height() // 2))
+
+def _attempt_whore_purchase(gs, st) -> bool:
+    """Deduct gold for whore interaction if possible."""
+    price = int(st.get("whore_confirm_price", 0))
+    player_gold = max(0, int(getattr(gs, "gold", 0)))
+    
+    if price <= 0:
+        st["whore_confirm_active"] = False
+        st["whore_confirm_buttons"] = []
+        st["whore_confirm_error"] = ""
+        return True
+    
+    if player_gold < price:
+        st["whore_confirm_error"] = "You do not have enough gold."
+        return False
+    
+    gs.gold = player_gold - price
+    st["whore_confirm_active"] = False
+    st["whore_confirm_buttons"] = []
+    st["whore_confirm_error"] = ""
+    print(f"💰 Paid {price} gold for the whore. Remaining gold: {gs.gold}")
+    
+    # Stop tavern walking sound before transition
+    if hasattr(gs, "tavern_walking_channel") and gs.tavern_walking_channel:
+        try:
+            gs.tavern_walking_channel.stop()
+        except Exception:
+            pass
+    if hasattr(gs, "tavern_is_walking"):
+        gs.tavern_is_walking = False
+        gs.tavern_walking_channel = None
+    
+    return True
+
 def _draw_summoner_popup(screen, gs, summoner_pos: Vector2, map_anchor_x: int, map_src_x: int, map_src_y: int, 
                          map_dst_x: int, map_dst_y: int, player_half: Vector2, screen_w: int, screen_h: int, 
                          map_w: int, map_h: int):
@@ -1222,8 +1594,68 @@ def _draw_summoner_popup(screen, gs, summoner_pos: Vector2, map_anchor_x: int, m
 def handle(events, gs, dt: float, **_):
     """Handle events for the tavern screen."""
     st = gs._tavern_state
+    if st.get("barkeeper_shop_active") and not gs.shop_open:
+        st["barkeeper_shop_active"] = False
     
-    # Handle gambler intro textbox first (modal - blocks all other input)
+    # Handle game selection popup first (modal - blocks all other input)
+    if st.get("show_game_selection", False):
+        for event in events:
+            if event.type == pygame.KEYDOWN:
+                if event.key == pygame.K_ESCAPE:
+                    # Cancel game selection
+                    st["show_game_selection"] = False
+                    st["game_selection_buttons"] = []
+                    st["selected_game"] = None
+                    print("🎲 Game selection cancelled")
+                elif event.key == pygame.K_1:
+                    # Select Doom Roll
+                    st["selected_game"] = "doom_roll"
+                    st["show_game_selection"] = False
+                    st["game_selection_buttons"] = []
+                    st["show_bet_selection"] = True
+                    st["bet_selection_active"] = True
+                    print("🎲 Selected Doom Roll")
+                elif event.key == pygame.K_2:
+                    # Select Twenty-One
+                    st["selected_game"] = "twenty_one"
+                    st["show_game_selection"] = False
+                    st["game_selection_buttons"] = []
+                    st["show_bet_selection"] = True
+                    st["bet_selection_active"] = True
+                    print("🎲 Selected Twenty-One")
+                elif event.key == pygame.K_3:
+                    st["selected_game"] = None
+                    st["show_game_selection"] = False
+                    st["game_selection_buttons"] = []
+                    print("🎲 Game selection cancelled")
+            elif event.type == pygame.MOUSEBUTTONDOWN and event.button == 1:
+                # Check if clicked on a button
+                mouse_x, mouse_y = pygame.mouse.get_pos()
+                screen_w = getattr(S, "LOGICAL_WIDTH", S.WIDTH)
+                screen_h = getattr(S, "LOGICAL_HEIGHT", S.HEIGHT)
+                screen_surface = pygame.display.get_surface()
+                logical_mouse_x = mouse_x * screen_w // screen_surface.get_width() if screen_surface and screen_surface.get_width() != screen_w else mouse_x
+                logical_mouse_y = mouse_y * screen_h // screen_surface.get_height() if screen_surface and screen_surface.get_height() != screen_h else mouse_y
+                
+                buttons = st.get("game_selection_buttons", [])
+                for button_rect, game_type in buttons:
+                    if button_rect.collidepoint(logical_mouse_x, logical_mouse_y):
+                        st["show_game_selection"] = False
+                        st["game_selection_buttons"] = []
+                        if game_type == "nevermind":
+                            st["selected_game"] = None
+                            print("🎲 Game selection cancelled")
+                        else:
+                            st["selected_game"] = game_type
+                            st["show_bet_selection"] = True
+                            st["bet_selection_active"] = True
+                            print(f"🎲 Selected {game_type}")
+                        break
+        # Block all other input while game selection is active
+        return None
+    
+    # Handle gambler intro textbox (modal - blocks all other input)
+    # NOTE: This is now skipped if game selection is used, but kept for backwards compatibility
     if st.get("show_gambler_intro", False) or st.get("gambler_intro_active", False):
         for event in events:
             if event.type == pygame.KEYDOWN:
@@ -1234,21 +1666,19 @@ def handle(events, gs, dt: float, **_):
                     st["gambler_intro_active"] = False
                     print("🎲 Intro cancelled")
                 elif event.key in (pygame.K_RETURN, pygame.K_KP_ENTER, pygame.K_SPACE):
-                    # Dismiss intro textbox, play laugh sound, show bet selection
+                    # Dismiss intro textbox, play laugh sound, show game selection
                     st["show_gambler_intro"] = False
                     st["gambler_intro_active"] = False
                     _play_laugh_sound()
-                    st["show_bet_selection"] = True
-                    st["bet_selection_active"] = True
-                    print("🎲 Intro dismissed, showing bet selection")
+                    st["show_game_selection"] = True
+                    print("🎲 Intro dismissed, showing game selection")
             elif event.type == pygame.MOUSEBUTTONDOWN and event.button == 1:
-                # Dismiss intro textbox, play laugh sound, show bet selection
+                # Dismiss intro textbox, play laugh sound, show game selection
                 st["show_gambler_intro"] = False
                 st["gambler_intro_active"] = False
                 _play_laugh_sound()
-                st["show_bet_selection"] = True
-                st["bet_selection_active"] = True
-                print("🎲 Intro dismissed, showing bet selection")
+                st["show_game_selection"] = True
+                print("🎲 Intro dismissed, showing game selection")
         # Block all other input while intro is active
         return None
     
@@ -1269,6 +1699,9 @@ def handle(events, gs, dt: float, **_):
                         st["selected_bet"] = 1
                         st["show_bet_selection"] = False
                         st["bet_selection_active"] = False
+                        # Store current position before transitioning to gambling
+                        st["tavern_player_pos"] = Vector2(gs.player_pos.x, gs.player_pos.y)
+                        print(f"💾 Stored tavern position before gambling: ({gs.player_pos.x:.1f}, {gs.player_pos.y:.1f})")
                         print(f"🎲 Selected bet: 1 gold")
                         return "GAMBLING"
                 elif event.key == pygame.K_2:
@@ -1278,6 +1711,9 @@ def handle(events, gs, dt: float, **_):
                         st["selected_bet"] = 5
                         st["show_bet_selection"] = False
                         st["bet_selection_active"] = False
+                        # Store current position before transitioning to gambling
+                        st["tavern_player_pos"] = Vector2(gs.player_pos.x, gs.player_pos.y)
+                        print(f"💾 Stored tavern position before gambling: ({gs.player_pos.x:.1f}, {gs.player_pos.y:.1f})")
                         print(f"🎲 Selected bet: 5 gold")
                         return "GAMBLING"
                 elif event.key == pygame.K_3:
@@ -1287,6 +1723,9 @@ def handle(events, gs, dt: float, **_):
                         st["selected_bet"] = 10
                         st["show_bet_selection"] = False
                         st["bet_selection_active"] = False
+                        # Store current position before transitioning to gambling
+                        st["tavern_player_pos"] = Vector2(gs.player_pos.x, gs.player_pos.y)
+                        print(f"💾 Stored tavern position before gambling: ({gs.player_pos.x:.1f}, {gs.player_pos.y:.1f})")
                         print(f"🎲 Selected bet: 10 gold")
                         return "GAMBLING"
                 elif event.key == pygame.K_4:
@@ -1296,6 +1735,9 @@ def handle(events, gs, dt: float, **_):
                         st["selected_bet"] = 20
                         st["show_bet_selection"] = False
                         st["bet_selection_active"] = False
+                        # Store current position before transitioning to gambling
+                        st["tavern_player_pos"] = Vector2(gs.player_pos.x, gs.player_pos.y)
+                        print(f"💾 Stored tavern position before gambling: ({gs.player_pos.x:.1f}, {gs.player_pos.y:.1f})")
                         print(f"🎲 Selected bet: 20 gold")
                         return "GAMBLING"
                 elif event.key == pygame.K_5:
@@ -1305,6 +1747,9 @@ def handle(events, gs, dt: float, **_):
                         st["selected_bet"] = player_gold  # Store actual gold amount for "all in"
                         st["show_bet_selection"] = False
                         st["bet_selection_active"] = False
+                        # Store current position before transitioning to gambling
+                        st["tavern_player_pos"] = Vector2(gs.player_pos.x, gs.player_pos.y)
+                        print(f"💾 Stored tavern position before gambling: ({gs.player_pos.x:.1f}, {gs.player_pos.y:.1f})")
                         print(f"🎲 Selected bet: All in ({player_gold} gold)")
                         return "GAMBLING"
             elif event.type == pygame.MOUSEBUTTONDOWN and event.button == 1:
@@ -1333,9 +1778,44 @@ def handle(events, gs, dt: float, **_):
                             st["show_bet_selection"] = False
                             st["bet_selection_active"] = False
                             st["bet_buttons"] = []
+                            # Store current position before transitioning to gambling
+                            st["tavern_player_pos"] = Vector2(gs.player_pos.x, gs.player_pos.y)
+                            print(f"💾 Stored tavern position before gambling: ({gs.player_pos.x:.1f}, {gs.player_pos.y:.1f})")
                             print(f"🎲 Selected bet: {bet_amount} gold")
                             return "GAMBLING"
         # Block all other input while bet selection is active
+        return None
+    
+    # Handle whore confirmation popup (modal)
+    if st.get("whore_confirm_active", False):
+        for event in events:
+            if event.type == pygame.KEYDOWN:
+                if event.key == pygame.K_ESCAPE:
+                    st["whore_confirm_active"] = False
+                    st["whore_confirm_buttons"] = []
+                    st["whore_confirm_error"] = ""
+                elif event.key in (pygame.K_RETURN, pygame.K_KP_ENTER, pygame.K_SPACE):
+                    if _attempt_whore_purchase(gs, st):
+                        # Store current position before transitioning to whore
+                        st["tavern_player_pos"] = Vector2(gs.player_pos.x, gs.player_pos.y)
+                        print(f"💾 Stored tavern position before whore: ({gs.player_pos.x:.1f}, {gs.player_pos.y:.1f})")
+                        return "WHORE"
+            elif event.type == pygame.MOUSEBUTTONDOWN and event.button == 1:
+                logical_mouse_x, logical_mouse_y = event.pos
+                for rect, action in st.get("whore_confirm_buttons", []):
+                    if rect.collidepoint(logical_mouse_x, logical_mouse_y):
+                        if action == "accept":
+                            if _attempt_whore_purchase(gs, st):
+                                # Store current position before transitioning to whore
+                                st["tavern_player_pos"] = Vector2(gs.player_pos.x, gs.player_pos.y)
+                                print(f"💾 Stored tavern position before whore: ({gs.player_pos.x:.1f}, {gs.player_pos.y:.1f})")
+                                return "WHORE"
+                        elif action == "decline":
+                            st["whore_confirm_active"] = False
+                            st["whore_confirm_buttons"] = []
+                            st["whore_confirm_error"] = ""
+                        break
+        # Block all other input while confirmation is active
         return None
     
     # Handle "kicked out" textbox (modal - blocks all other input)
@@ -1374,30 +1854,99 @@ def handle(events, gs, dt: float, **_):
     
     for event in events:
         if event.type == pygame.KEYDOWN:
-            # ESC is handled in main.py for pause menu (not here)
-            # Don't handle ESC here - let main.py handle it
             if event.key == pygame.K_ESCAPE:
-                # ESC is handled in main.py, ignore it here
-                pass
+                if gs.shop_open:
+                    gs.shop_open = False
+                    shop.reset_scroll()
+                    shop.clear_shop_override()
+                    st["barkeeper_shop_active"] = False
+                    try:
+                        bank = audio.get_global_bank()
+                        if bank:
+                            audio.play_click(bank)
+                    except Exception:
+                        pass
+                    # Stop any pending shop music timers (reuse overworld logic)
+                    gs._shop_music_playing = False
+                    gs._waiting_for_shop_music = False
+                    if hasattr(gs, "_shop_music_timer"):
+                        delattr(gs, "_shop_music_timer")
+                # Skip further handling of ESC within tavern
+                continue
             elif event.key == pygame.K_e:
                 if near_spawn:
                     # Return to game mode (only when near spawn)
                     return "GAME"
                 elif near_barkeeper:
-                    # TODO: Handle barkeeper interaction (order a drink, etc.)
-                    print("🍺 Player interacted with barkeeper!")
-                    # For now, just print - can be extended later
+                    # Toggle barkeeper shop (limited inventory: rations & alcohol)
+                    if st.get("show_gambler_intro") or st.get("show_bet_selection") or st.get("kicked_out_textbox_active"):
+                        # Block barkeeper interaction while other modals are active
+                        continue
+
+                    if not gs.shop_open:
+                        shop.configure_shop_override(
+                            item_ids=["rations", "alcohol"],
+                            categories=["food"],
+                            title="Barkeep's Provisions",
+                        )
+                        gs.shop_open = True
+                        st["barkeeper_shop_active"] = True
+                        try:
+                            _play_barkeeper_sound()
+                            bank = audio.get_global_bank()
+                            if bank:
+                                audio.play_click(bank)
+                        except Exception:
+                            pass
+                    else:
+                        gs.shop_open = False
+                        shop.clear_shop_override()
+                        st["barkeeper_shop_active"] = False
+                        try:
+                            _play_barkeeper_sound()
+                            bank = audio.get_global_bank()
+                            if bank:
+                                audio.play_click(bank)
+                        except Exception:
+                            pass
                 elif near_gambler:
-                    # Show intro textbox first
-                    st["show_gambler_intro"] = True
-                    st["gambler_intro_active"] = True
-                    st["gambler_intro_blink_t"] = 0.0
-                    print("🎲 Player wants to gamble - showing intro textbox")
+                    # Show game selection popup first (skip intro textbox)
+                    st["show_game_selection"] = True
+                    st["game_selection_buttons"] = []
+                    print("🎲 Player wants to gamble - showing game selection")
                 elif near_whore:
-                    # TODO: Handle whore interaction (sleep with whore/whores/harem, etc.)
+                    # Transition to whore screen
+                    # Check for any blocking modals
+                    blocking_modals = (
+                        st.get("show_game_selection") or
+                        st.get("show_gambler_intro") or 
+                        st.get("show_bet_selection") or 
+                        st.get("kicked_out_textbox_active") or 
+                        st.get("whore_confirm_active") or
+                        gs.shop_open or
+                        bag_ui.is_open() or
+                        party_manager.is_open() or
+                        ledger.is_open() or
+                        currency_display.is_open() or
+                        rest_popup.is_open()
+                    )
+                    
+                    if blocking_modals:
+                        # Block whore interaction while other modals are active or shop is open
+                        print(f"💋 Whore interaction blocked - shop_open={gs.shop_open}, bag={bag_ui.is_open()}, party={party_manager.is_open()}, ledger={ledger.is_open()}, currency={currency_display.is_open()}, rest={rest_popup.is_open()}")
+                        continue
+                    
                     whore_number = st.get("whore_number", 0)
-                    print(f"💋 Player interacted with Whore{whore_number}!")
-                    # For now, just print - can be extended later
+                    whore_sprite = st.get("whore_sprite", None)
+                    print(f"💋 Attempting whore interaction - whore_number={whore_number}, whore_sprite={whore_sprite is not None}")
+                    if whore_number and whore_sprite is not None:
+                        st["whore_confirm_active"] = True
+                        st["whore_confirm_price"] = _whore_price(whore_number)
+                        st["whore_confirm_error"] = ""
+                        st["whore_confirm_buttons"] = []
+                        print(f"💰 Whore price set to {st['whore_confirm_price']} gold")
+                    else:
+                        print(f"⚠️ Whore number is invalid or sprite missing!")
                 elif near_summoner:
                     # Trigger summoner battle (same logic as overworld)
                     summoner_name = st.get("summoner_name", None)
@@ -1416,6 +1965,8 @@ def handle(events, gs, dt: float, **_):
                         
                         # Store current tavern position BEFORE battle (so we can restore it after)
                         st["tavern_player_pos"] = Vector2(gs.player_pos.x, gs.player_pos.y)
+                        # Mark that we're returning from battle (so enter() knows to show kicked out textbox)
+                        st["returning_from_battle"] = True
                         print(f"💾 Stored tavern position before battle: ({gs.player_pos.x:.1f}, {gs.player_pos.y:.1f})")
                         
                         # Set up encounter data (same as overworld)
@@ -1446,8 +1997,16 @@ def update(gs, dt, **_):
     # Get player half size
     player_half = getattr(gs, "player_half", Vector2(S.PLAYER_SIZE[0] / 2, S.PLAYER_SIZE[1] / 2))
     
-    # Block player movement if intro textbox or bet selection is active
-    if not st.get("show_gambler_intro", False) and not st.get("show_bet_selection", False):
+    # Block player movement if any modal textbox/popup is active
+    blocking_modals = (
+        st.get("show_gambler_intro", False) or 
+        st.get("show_bet_selection", False) or 
+        st.get("kicked_out_textbox_active", False) or 
+        st.get("whore_confirm_active", False) or
+        st.get("show_game_selection", False)
+    )
+    
+    if not blocking_modals:
         # Update player position (horizontal and vertical movement allowed)
         update_player_tavern(gs, dt, player_half, map_w, map_h, map_anchor_x)
     else:
@@ -1682,7 +2241,8 @@ def draw(screen: pygame.Surface, gs, dt: float, **_):
     near_whore = st.get("near_whore", False)
     whore_number = st.get("whore_number", None)
     
-    if whore_pos and near_whore and whore_number and not near_spawn and not near_barkeeper and not near_gambler:
+    if (whore_pos and near_whore and whore_number and not near_spawn and not near_barkeeper
+            and not near_gambler and not st.get("whore_confirm_active", False)):
         _draw_whore_popup(screen, gs, whore_pos, whore_number, map_anchor_x, map_src_x, map_src_y, map_dst_x, map_dst_y, player_half, screen_w, screen_h, map_w, map_h)
     
     # Draw summoner popup when near summoner (but not when near other NPCs to avoid overlap)

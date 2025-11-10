@@ -11,7 +11,7 @@ from systems import coords
 
 # ---------- Layout ----------
 PADDING         = 16
-PORTRAIT_SIZE   = (180, 180)
+PORTRAIT_SIZE   = (140, 140)  # Reduced from 180x180 for less intrusive UI
 SLOTS_COUNT     = 6
 EMPTY_FILL      = (255, 255, 255, 26)
 
@@ -233,10 +233,10 @@ def draw_party_hud(screen: pygame.Surface, gs):
         from systems import left_hud
         hud_rect = left_hud.get_hud_rect()
         if hud_rect:
-            # Center portrait vertically within the HUD
-            # Portrait x stays at PADDING (which is HUD x + HUD_PADDING)
-            px = PADDING
-            # Portrait y should be centered vertically in the HUD
+            # Position portrait relative to HUD rect, accounting for HUD padding
+            # Portrait x: HUD left edge + HUD padding
+            px = hud_rect.x + left_hud.HUD_PADDING
+            # Portrait y: centered vertically within the HUD
             py = hud_rect.y + (hud_rect.height - portrait_h) // 2
         else:
             # Fallback: use original positioning
@@ -250,10 +250,7 @@ def draw_party_hud(screen: pygame.Surface, gs):
     # --- Portrait ---
     if gs.player_token:
         screen.blit(gs.player_token, (px, py))
-    else:
-        temp = pygame.Surface(PORTRAIT_SIZE, pygame.SRCALPHA)
-        temp.fill((255, 255, 255, 18))
-        screen.blit(temp, (px, py))
+    # Empty portrait is transparent - no placeholder drawn
 
     # --- Name inside portrait ---
     raw_name = (getattr(gs, "player_name", "") or "")[:NAME_MAX_LEN]
@@ -288,7 +285,7 @@ def draw_party_hud(screen: pygame.Surface, gs):
 
     # --- Slots in 2 rows x 3 columns ---
     cols, rows = 3, 2
-    grid_left = px + portrait_w + 16
+    grid_left = px + portrait_w + 12  # Reduced gap for less intrusive UI
     total_grid_h = rows * slot_size + (rows - 1) * slot_gap
     grid_top = py + (portrait_h - total_grid_h) // 2
 
@@ -390,28 +387,15 @@ def draw_party_hud(screen: pygame.Surface, gs):
         has_content = bool(token) or bool(token_name)
         is_hovered = has_content and r.collidepoint(mx, my)
 
-        # Background for empty slot (textbox style - cream/beige)
-        if token is None or not isinstance(token, pygame.Surface):
-            slot_bg = pygame.Surface((r.w, r.h), pygame.SRCALPHA)
-            slot_bg.fill((245, 245, 245))  # Cream/beige background like textbox
-            screen.blit(slot_bg, r.topleft)
-        else:
-            # filled: normalized token centered in the slot
+        # Draw slot background using medieval style
+        from systems import hud_style
+        hud_style.draw_slot_panel(screen, r, hovered=is_hovered, filled=bool(token))
+        
+        # Draw token if present
+        if token and isinstance(token, pygame.Surface):
             inner = _normalize_token_for_slot(token, slot_size, inner_margin)
             if inner:
                 screen.blit(inner, inner.get_rect(center=r.center))
-            
-            # Glow on top of the token if hovered (draw after token so it's visible)
-            if is_hovered:
-                glow = _get_hover_glow_slot((r.w, r.h), alpha=60, radius=8)
-                screen.blit(glow, r.topleft)
-
-        # Border (textbox style - black outer, dark grey inner)
-        # Outer border (black, 4px)
-        pygame.draw.rect(screen, (0, 0, 0), r, width=4, border_radius=8)
-        # Inner border (dark grey, 2px)
-        inner_border_rect = r.inflate(-8, -8)
-        pygame.draw.rect(screen, (60, 60, 60), inner_border_rect, width=2, border_radius=6)
 
     # Ledger modal overlay
     if ledger.is_open():

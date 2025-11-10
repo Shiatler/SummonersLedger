@@ -138,8 +138,8 @@ def handle_event(e, gs) -> str | None:
         
         # Check if clicking on buttons
         if _LONG_BTN_RECT and _LONG_BTN_RECT.collidepoint(mx, my):
-            # Check if player has rations
             if _has_item(gs, "rations"):
+                _consume_item(gs, "rations")
                 close_popup()
                 audio_sys.play_click(audio_sys.get_global_bank())
                 return "long"
@@ -148,8 +148,8 @@ def handle_event(e, gs) -> str | None:
                 return None
         
         elif _SHORT_BTN_RECT and _SHORT_BTN_RECT.collidepoint(mx, my):
-            # Check if player has alcohol
             if _has_item(gs, "alcohol"):
+                _consume_item(gs, "alcohol")
                 close_popup()
                 audio_sys.play_click(audio_sys.get_global_bank())
                 return "short"
@@ -221,52 +221,114 @@ def draw(screen: pygame.Surface, gs):
     
     # Long rest button
     if _LONG_BTN_RECT:
-        hover_long = _LONG_BTN_RECT.collidepoint(mx, my)
         has_rations = _has_item(gs, "rations")
-        color = (100, 150, 100) if (hover_long and has_rations) else (80, 80, 80) if not has_rations else (80, 120, 80)
+        hover_long = has_rations and _LONG_BTN_RECT.collidepoint(mx, my)
+        if has_rations:
+            color = (100, 150, 100) if hover_long else (80, 120, 80)
+            text_color = (255, 255, 255)
+        else:
+            color = (70, 70, 70)
+            text_color = (160, 160, 160)
         pygame.draw.rect(screen, color, _LONG_BTN_RECT, border_radius=8)
         pygame.draw.rect(screen, (255, 255, 255), _LONG_BTN_RECT, 2, border_radius=8)
-        long_text = btn_font.render("Long Rest (Rations)", True, (255, 255, 255))
+        long_text = btn_font.render("Long Rest (Rations)", True, text_color)
         long_text_x = _LONG_BTN_RECT.centerx - long_text.get_width() // 2
         long_text_y = _LONG_BTN_RECT.centery - long_text.get_height() // 2
         screen.blit(long_text, (long_text_x, long_text_y))
     
     # Short rest button
     if _SHORT_BTN_RECT:
-        hover_short = _SHORT_BTN_RECT.collidepoint(mx, my)
         has_alcohol = _has_item(gs, "alcohol")
-        color = (100, 150, 100) if (hover_short and has_alcohol) else (80, 80, 80) if not has_alcohol else (80, 120, 80)
+        hover_short = has_alcohol and _SHORT_BTN_RECT.collidepoint(mx, my)
+        if has_alcohol:
+            color = (100, 150, 100) if hover_short else (80, 120, 80)
+            text_color = (255, 255, 255)
+        else:
+            color = (70, 70, 70)
+            text_color = (160, 160, 160)
         pygame.draw.rect(screen, color, _SHORT_BTN_RECT, border_radius=8)
         pygame.draw.rect(screen, (255, 255, 255), _SHORT_BTN_RECT, 2, border_radius=8)
-        short_text = btn_font.render("Short Rest (Alcohol)", True, (255, 255, 255))
+        short_text = btn_font.render("Short Rest (Alcohol)", True, text_color)
         short_text_x = _SHORT_BTN_RECT.centerx - short_text.get_width() // 2
         short_text_y = _SHORT_BTN_RECT.centery - short_text.get_height() // 2
         screen.blit(short_text, (short_text_x, short_text_y))
 
-# ---------- Item checking ----------
+
+# ---------- Inventory helpers ----------
 def _has_item(gs, item_id: str) -> bool:
-    """Check if player has the item."""
+    """Check if player has at least one of the specified item."""
     inv = getattr(gs, "inventory", None)
     if not inv:
         return False
     
     if isinstance(inv, dict):
-        return inv.get(item_id, 0) > 0
+        return int(inv.get(item_id, 0)) > 0
     
     if isinstance(inv, (list, tuple)):
         for rec in inv:
             if isinstance(rec, dict):
                 rid = rec.get("id") or _snake_from_name(rec.get("name", ""))
-                if rid == item_id:
-                    return int(rec.get("qty", 0)) > 0
-            elif isinstance(rec, (list, tuple)) and len(rec) >= 1:
+                if rid == item_id and int(rec.get("qty", 0)) > 0:
+                    return True
+            elif isinstance(rec, (list, tuple)) and rec:
                 rid = str(rec[0])
-                if rid == item_id:
-                    return int(rec[1]) > 0 if len(rec) > 1 else False
-    
+                qty = int(rec[1]) if len(rec) > 1 else 0
+                if rid == item_id and qty > 0:
+                    return True
     return False
 
-def _snake_from_name(s: str) -> str:
-    """Convert item name to snake_case ID."""
-    return s.lower().replace(" ", "_")
+
+def _consume_item(gs, item_id: str) -> bool:
+    """Consume one of the specified item from inventory. Returns True if consumed."""
+    inv = getattr(gs, "inventory", None)
+    if not inv:
+        return False
+    
+    if isinstance(inv, dict):
+        if item_id in inv and int(inv[item_id]) > 0:
+            inv[item_id] = max(0, int(inv[item_id]) - 1)
+            if inv[item_id] <= 0:
+                try:
+                    del inv[item_id]
+                except Exception:
+                    pass
+            gs.inventory = inv
+            return True
+        return False
+    
+    if isinstance(inv, (list, tuple)):
+        new_list = []
+        consumed = False
+        for rec in inv:
+            if isinstance(rec, dict):
+                rid = rec.get("id") or _snake_from_name(rec.get("name", ""))
+                if rid == item_id and not consumed:
+                    qty = max(0, int(rec.get("qty", 0)) - 1)
+                    consumed = True
+                    if qty > 0:
+                        rec["qty"] = qty
+                        new_list.append(rec)
+                else:
+                    new_list.append(rec)
+            elif isinstance(rec, (list, tuple)) and rec:
+                rid = str(rec[0])
+                if rid == item_id and not consumed:
+                    qty = int(rec[1]) if len(rec) > 1 else 0
+                    qty = max(0, qty - 1)
+                    consumed = True
+                    if qty > 0:
+                        new_list.append([rid, qty])
+                else:
+                    new_list.append(rec)
+            else:
+                new_list.append(rec)
+        if consumed:
+            gs.inventory = new_list
+        return consumed
+    return False
+
+
+def _snake_from_name(name: str) -> str:
+    return str(name or "").lower().replace(" ", "_")
+
 

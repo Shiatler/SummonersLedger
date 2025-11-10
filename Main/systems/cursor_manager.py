@@ -511,19 +511,19 @@ def _is_hovering_clickable(mouse_pos, gs=None, mode=None):
                     # Check shop item rows first (most common interaction)
                     if shop.is_hovering_shop_item(mouse_pos):
                         return True
-                    # Check purchase selector buttons (these use screen coordinates, not panel coordinates)
+                    # Check purchase selector buttons (stored in logical coordinates)
                     if hasattr(shop, '_PURCHASE_SELECTOR_ACTIVE') and shop._PURCHASE_SELECTOR_ACTIVE:
                         if hasattr(shop, '_PURCHASE_CONFIRM_RECT') and shop._PURCHASE_CONFIRM_RECT:
-                            if shop._PURCHASE_CONFIRM_RECT.collidepoint(mouse_pos):
+                            if shop._PURCHASE_CONFIRM_RECT.collidepoint(logical_pos):
                                 return True
                         if hasattr(shop, '_PURCHASE_CANCEL_RECT') and shop._PURCHASE_CANCEL_RECT:
-                            if shop._PURCHASE_CANCEL_RECT.collidepoint(mouse_pos):
+                            if shop._PURCHASE_CANCEL_RECT.collidepoint(logical_pos):
                                 return True
                         if hasattr(shop, '_PURCHASE_UP_ARROW_RECT') and shop._PURCHASE_UP_ARROW_RECT:
-                            if shop._PURCHASE_UP_ARROW_RECT.collidepoint(mouse_pos):
+                            if shop._PURCHASE_UP_ARROW_RECT.collidepoint(logical_pos):
                                 return True
                         if hasattr(shop, '_PURCHASE_DOWN_ARROW_RECT') and shop._PURCHASE_DOWN_ARROW_RECT:
-                            if shop._PURCHASE_DOWN_ARROW_RECT.collidepoint(mouse_pos):
+                            if shop._PURCHASE_DOWN_ARROW_RECT.collidepoint(logical_pos):
                                 return True
                 except Exception as e:
                     pass

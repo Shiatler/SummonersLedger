@@ -35,7 +35,6 @@ from combat.btn import bag_action as bag_ui
 from screens import party_manager, ledger
 from screens import death_saves as death_saves_screen
 from screens import death as death_screen
-from screens import rest as rest_screen
 from screens import book_of_bound, archives
 from systems import hells_deck_popup
 
@@ -44,8 +43,10 @@ from screens import (
     menu_screen, char_select, name_entry,
     black_screen, intro_video, settings_screen, pause_screen, master_oak
 )
+from screens import rest as rest_screen
 from world.Tavern import tavern as tavern_screen
 from world.Tavern import gambling as gambling_screen
+from world.Tavern import whore as whore_screen
 
 def _try_load(path: str | None):
     if not path:
@@ -132,11 +133,12 @@ MODE_SUMMONER_BATTLE = "SUMMONER_BATTLE"
 MODE_BATTLE = getattr(S, "MODE_BATTLE", "BATTLE")
 MODE_DEATH_SAVES = getattr(S, "MODE_DEATH_SAVES", "DEATH_SAVES")
 MODE_DEATH = getattr(S, "MODE_DEATH", "DEATH")
-MODE_REST = "REST"
 MODE_BOOK_OF_BOUND = "BOOK_OF_BOUND"
 MODE_ARCHIVES = "ARCHIVES"
 MODE_TAVERN = "TAVERN"
 MODE_GAMBLING = "GAMBLING"
+MODE_WHORE = "WHORE"
+MODE_REST = "REST"
 
 
 
@@ -295,30 +297,23 @@ def try_trigger_encounter(gs, summoners, merchant_frames, tavern_sprite=None):
             print(f"⚠️ Force merchant check passed but merchant_frames is missing! merchant_frames: {merchant_frames}")
         else:
             # Normal chance-based spawning
-            # Merchant chance: 10% (configurable)
+            # Merchant chance: 10%
             merchant_chance = 0.10
-            # TESTING: Tavern chance set to 100% for testing purposes
-            # OLD VALUE: tavern_chance = 0.05  # Original: 5% (taken from vessels)
-            tavern_chance = 1.0  # 100% for testing - REMOVE THIS AND RESTORE OLD VALUE WHEN DONE TESTING
-            # Vessel chance: 55% (reduced from 60%)
+            # Tavern chance: 5%
+            tavern_chance = 0.05
+            # Vessel chance: 55%
             vessel_chance = 0.55
-            # Summoner chance: 30% (unchanged)
+            # Summoner chance: 30%
             summoner_chance = 0.30
             
-            # TESTING MODE: Tavern spawns 100% of the time
-            # When testing is done, restore old percentages: Merchant 10%, Tavern 5%, Vessel 55%, Summoner 30%
-            if tavern_sprite and tavern_chance >= 1.0:
-                # TESTING: Always spawn tavern (100%)
-                actors.spawn_tavern_ahead(gs, gs.start_x, tavern_sprite)
-            elif merchant_frames and len(merchant_frames) > 0 and roll < merchant_chance:
+            if merchant_frames and len(merchant_frames) > 0 and roll < merchant_chance:
                 # Spawn merchant (0.0 to 0.10)
                 actors.spawn_merchant_ahead(gs, gs.start_x, merchant_frames)
                 if not gs.first_merchant_spawned:
                     gs.first_merchant_spawned = True  # Mark first merchant as spawned
                     gs.encounters_since_merchant = 0  # Reset counter (no longer needed)
             elif roll < merchant_chance + tavern_chance:
-                # Spawn tavern (0.10 to 0.15) - OLD LOGIC (when tavern_chance = 0.05)
-                # This branch only executes when tavern_chance < 1.0
+                # Spawn tavern (merchant_chance to merchant_chance + tavern_chance)
                 if tavern_sprite:
                     actors.spawn_tavern_ahead(gs, gs.start_x, tavern_sprite)
             elif roll < merchant_chance + tavern_chance + vessel_chance:
@@ -613,6 +608,19 @@ def continue_game(gs):
     gs._game_was_loaded_from_save = True
     gs.first_overworld_blessing_given = True
     
+    # 🍺 Check if we should restore to tavern mode
+    restore_to_tavern = getattr(gs, "_restore_to_tavern", False)
+    if restore_to_tavern:
+        # Restore overworld position from tavern state (for when exiting tavern)
+        if hasattr(gs, "_tavern_state") and gs._tavern_state.get("overworld_player_pos"):
+            overworld_pos = gs._tavern_state["overworld_player_pos"]
+            # Store it for later restoration when exiting tavern
+            print(f"💾 Restored overworld position from save: ({overworld_pos.x:.1f}, {overworld_pos.y:.1f})")
+        
+        # Mark that we should start in tavern mode
+        gs._start_in_tavern = True
+        print(f"🍺 Will restore to tavern mode on continue")
+    
     # Ensure Book of Bound discoveries are preserved (should already be loaded, but double-check)
     if preserved_book_of_bound:
         if not hasattr(gs, "book_of_bound_discovered"):
@@ -649,8 +657,6 @@ def enter_mode(mode, gs, deps):
         death_saves_screen.enter(gs, **deps)    
     elif mode == MODE_DEATH:
         death_screen.enter(gs, **deps) 
-    elif mode == MODE_REST:
-        rest_screen.enter(gs, **deps)
     elif mode == MODE_BOOK_OF_BOUND:
         # Note: enter() may already be called when mode is set (in button handler)
         # to capture previous screen for fade transition
@@ -667,11 +673,26 @@ def enter_mode(mode, gs, deps):
         tavern_deps = dict(deps, rival_summoners=RIVAL_SUMMONERS)
         tavern_screen.enter(gs, **tavern_deps)
     elif mode == MODE_GAMBLING:
-        # Get bet amount from tavern state
+        # Get bet amount and game type from tavern state
         bet_amount = 0
+        game_type = "doom_roll"  # Default to doom roll for backwards compatibility
         if hasattr(gs, "_tavern_state"):
             bet_amount = gs._tavern_state.get("selected_bet", 0)
-        gambling_screen.enter(gs, bet_amount=bet_amount, **deps)
+            game_type = gs._tavern_state.get("selected_game", "doom_roll")
+        gambling_screen.enter(gs, bet_amount=bet_amount, game_type=game_type, **deps)
+    elif mode == MODE_WHORE:
+        # Get whore number and sprite from tavern state
+        whore_number = 1
+        whore_sprite = None
+        if hasattr(gs, "_tavern_state"):
+            st = gs._tavern_state
+            whore_number = st.get("whore_number", 1)
+            whore_sprite = st.get("whore_sprite", None)
+        whore_screen.enter(gs, whore_number=whore_number, whore_sprite=whore_sprite, **deps)
+    elif mode == MODE_REST:
+        # Get rest type from gs._rest_state
+        rest_type = getattr(gs, "_rest_type", "long")
+        rest_screen.enter(gs, rest_type=rest_type, **deps)
     elif mode == S.MODE_GAME:
         # Initialize world state (important for camera initialization on loaded games)
         world.enter(gs, **deps)
@@ -1330,7 +1351,12 @@ while running:
                     mode = MODE_DEATH
                 else:
                     # Vessels are alive - can continue playing
-                    mode = next_mode[1]  # Set mode to MODE_GAME
+                    # Check if we should restore to tavern mode
+                    if getattr(gs, "_start_in_tavern", False):
+                        mode = MODE_TAVERN
+                        print(f"🍺 Restoring to tavern mode from save")
+                    else:
+                        mode = next_mode[1]  # Set mode to MODE_GAME
             else:
                 mode = next_mode
 
@@ -1515,6 +1541,55 @@ while running:
             else:
                 mode = next_mode
     
+    # ===================== Whore =====================
+    elif mode == MODE_WHORE:
+        # Update whore screen
+        whore_screen.update(gs, dt, **deps)
+        # Handle whore events
+        next_mode = whore_screen.handle(events, gs, dt, **deps)
+        # Draw whore screen
+        whore_screen.draw(virtual_screen, gs, dt, **deps)
+        blit_virtual_to_screen(virtual_screen, screen)
+        mouse_pos = pygame.mouse.get_pos()
+        cursor_manager.draw_cursor(screen, mouse_pos, gs, mode)
+        pygame.display.flip()
+        
+        if next_mode:
+            if next_mode == "TAVERN":
+                # Return to tavern
+                mode = MODE_TAVERN
+            else:
+                mode = next_mode
+    
+    # ===================== Rest =====================
+    elif mode == MODE_REST:
+        # Handle rest events
+        next_mode = rest_screen.handle(events, gs, dt, **deps)
+        # Draw rest screen
+        rest_screen.draw(virtual_screen, gs, dt, **deps)
+        blit_virtual_to_screen(virtual_screen, screen)
+        mouse_pos = pygame.mouse.get_pos()
+        cursor_manager.draw_cursor(screen, mouse_pos, gs, mode)
+        pygame.display.flip()
+        
+        if next_mode:
+            # Restore music based on return mode
+            if next_mode == MODE_TAVERN:
+                # Restart tavern music
+                audio.stop_music(fade_ms=500)
+                tavern_music_path = os.path.join("Assets", "Music", "Tavern.mp3")
+                if not os.path.exists(tavern_music_path):
+                    tavern_music_path = r"C:\Users\Frederik\Desktop\SummonersLedger\Main\Assets\Music\Tavern.mp3"
+                if os.path.exists(tavern_music_path):
+                    audio.play_music(AUDIO, tavern_music_path, loop=True, fade_ms=800)
+            elif next_mode == S.MODE_GAME:
+                # Restart overworld music
+                audio.stop_music(fade_ms=500)
+                # Reset flag so main loop picks next track
+                gs.overworld_music_started = False
+            
+            mode = next_mode
+    
     # ===================== Death Saves ==========================
     elif mode == MODE_DEATH_SAVES:
         next_mode = death_saves_screen.handle(events, gs, **deps)
@@ -1538,48 +1613,35 @@ while running:
         if next_mode:
             mode = next_mode
 
-    # ===================== Rest ==========================
-    elif mode == MODE_REST:
-        next_mode = rest_screen.handle(events, gs, dt, **deps)
-        rest_screen.draw(virtual_screen, gs, dt, **deps)
-        blit_virtual_to_screen(virtual_screen, screen)
-        mouse_pos = pygame.mouse.get_pos()
-        cursor_manager.draw_cursor(screen, mouse_pos, gs, mode)
-        pygame.display.flip()
-        if next_mode:
-            if next_mode == "GAME":
-                # The campfire sound should already be stopped by the rest screen's draw function
-                # Just ensure it's cleaned up if somehow it wasn't
-                if hasattr(gs, "_rest_state") and gs._rest_state.get("campfire_channel"):
-                    try:
-                        ch = gs._rest_state["campfire_channel"]
-                        if ch.get_busy():
-                            ch.fadeout(50)
-                    except:
-                        pass
-                    gs._rest_state["campfire_channel"] = None
-                
-                # Save game after rest completes (long rest or short rest)
-                try:
-                    rest_type = getattr(gs, "_rest_state", {}).get("rest_type", "rest")
-                    saves.save_game(gs, force=True)
-                    print(f"💾 Game saved after {rest_type} rest")
-                except Exception as e:
-                    print(f"⚠️ Save after rest failed: {e}")
-                
-                mode = S.MODE_GAME
-                # Reset overworld music state so it restarts in the game mode loop
-                gs.overworld_music_started = False
-            else:
-                mode = next_mode
-
     # ===================== Tavern ==========================
     elif mode == MODE_TAVERN:
         # Track modal states for HUD button handling
-        any_modal_open_tavern = buff_popup.is_active() or bag_ui.is_open() or party_manager.is_open() or ledger.is_open() or gs.shop_open or currency_display.is_open() or rest_popup.is_open()
-        tavern_state = getattr(gs, "_tavern_state", {})
-        if tavern_state.get("kicked_out_textbox_active", False) or tavern_state.get("show_gambler_intro", False) or tavern_state.get("show_bet_selection", False):
+        any_modal_open_tavern = (buff_popup.is_active() or bag_ui.is_open() or party_manager.is_open()
+                                 or ledger.is_open() or gs.shop_open or currency_display.is_open()
+                                 or rest_popup.is_open())
+        tavern_state = getattr(gs, "_tavern_state", None)
+        if tavern_state is None:
+            tavern_state = {}
+            gs._tavern_state = tavern_state
+        if (tavern_state.get("kicked_out_textbox_active", False)
+                or tavern_state.get("show_gambler_intro", False)
+                or tavern_state.get("show_bet_selection", False)
+                or tavern_state.get("whore_confirm_active", False)):
             any_modal_open_tavern = True
+
+        # Route input to shop first (so clicks don't leak through)
+        consumed_event_ids = set()
+        if gs.shop_open:
+            for e in events:
+                purchase_result = shop.handle_event(e, gs)
+                if purchase_result:
+                    consumed_event_ids.add(id(e))
+
+        # Sync barkeeper shop state if it was closed externally
+        if tavern_state.get("barkeeper_shop_active") and not gs.shop_open:
+            tavern_state["barkeeper_shop_active"] = False
+
+        tavern_events = events if not consumed_event_ids else [e for e in events if id(e) not in consumed_event_ids]
         
         # Track HUD button clicks to prevent event propagation
         hud_button_click_positions_tavern = set()
@@ -1589,7 +1651,7 @@ while running:
             cursor_manager.handle_mouse_event(e)
         
         # --- Handle HUD button clicks FIRST (before other UI) ---
-        for e in events:
+        for e in tavern_events:
             if e.type == pygame.MOUSEBUTTONDOWN and e.button == 1:
                 # Convert click position to logical coordinates (button rects are in logical coords)
                 logical_pos = coords.screen_to_logical(e.pos)
@@ -1624,18 +1686,59 @@ while running:
                     hud_button_click_positions_tavern.add(e.pos)
                 elif button_clicked == 'rest':
                     if not bag_ui.is_open() and not party_manager.is_open() and not ledger.is_open() and not currency_display.is_open() and not gs.shop_open and not rest_popup.is_open():
-                        rest_popup.toggle()
+                        rest_popup.open_popup()
                         hud_button_click_positions_tavern.add(e.pos)
                         audio.play_click(AUDIO)
+                elif button_clicked == 'book_of_bound':
+                    # Switch to Book of the Bound screen
+                    # Store tavern position before leaving
+                    if hasattr(gs, "_tavern_state"):
+                        st = gs._tavern_state
+                        st["tavern_player_pos"] = Vector2(gs.player_pos.x, gs.player_pos.y)
+                        print(f"💾 Stored tavern position before book of bound: ({gs.player_pos.x:.1f}, {gs.player_pos.y:.1f})")
+                    # Capture current screen for fade transition
+                    previous_screen = virtual_screen.copy()
+                    # Store that we came from tavern so we can return to it
+                    gs._book_of_bound_return_to = MODE_TAVERN
+                    mode = MODE_BOOK_OF_BOUND
+                    # Pass previous screen to enter() for fade transition
+                    book_of_bound.enter(gs, previous_screen_surface=previous_screen, **deps)
+                    gs._book_of_bound_entered = True
+                    hud_button_click_positions_tavern.add(e.pos)
+                    audio.play_click(AUDIO)
+                elif button_clicked == 'archives':
+                    # Switch to Archives screen
+                    # Store tavern position before leaving
+                    if hasattr(gs, "_tavern_state"):
+                        st = gs._tavern_state
+                        st["tavern_player_pos"] = Vector2(gs.player_pos.x, gs.player_pos.y)
+                        print(f"💾 Stored tavern position before archives: ({gs.player_pos.x:.1f}, {gs.player_pos.y:.1f})")
+                    # Store that we came from tavern so we can return to it
+                    gs._archives_return_to = MODE_TAVERN
+                    mode = MODE_ARCHIVES
+                    archives.enter(gs, **deps)
+                    gs._archives_entered = True
+                    hud_button_click_positions_tavern.add(e.pos)
+                    audio.play_click(AUDIO)
+                elif button_clicked == 'hells_deck':
+                    # Open Hell's Deck popup
+                    hells_deck_popup.open_popup(gs)
+                    hud_button_click_positions_tavern.add(e.pos)
+                    audio.play_click(AUDIO)
         
         # --- Handle ESC key for pause menu FIRST (before tavern handles events) ---
         esc_pressed_for_pause = False
-        for event in events:
+        for event in tavern_events:
             if event.type == pygame.KEYDOWN and event.key == pygame.K_ESCAPE:
                 # Don't open pause if any modal is open
                 if not any_modal_open_tavern:
                     # Store previous mode (tavern) so pause can return to it
                     gs._pause_return_to = MODE_TAVERN
+                    # Store current position before opening pause menu
+                    if hasattr(gs, "_tavern_state"):
+                        st = gs._tavern_state
+                        st["tavern_player_pos"] = Vector2(gs.player_pos.x, gs.player_pos.y)
+                        print(f"💾 Stored tavern position before pause: ({gs.player_pos.x:.1f}, {gs.player_pos.y:.1f})")
                     # Open pause menu
                     audio.play_click(AUDIO)
                     mode = MODE_PAUSE
@@ -1648,7 +1751,7 @@ while running:
         # Handle tavern events FIRST (before modals) so tavern interactions (E key) work properly
         # Only if not opening pause menu
         if not esc_pressed_for_pause:
-            next_mode = tavern_screen.handle(events, gs, dt, **deps)
+            next_mode = tavern_screen.handle(tavern_events, gs, dt, **deps)
         else:
             next_mode = None
         
@@ -1687,6 +1790,17 @@ while running:
                         # Clear the flag
                         gs._tavern_state["remove_tavern_on_exit"] = False
                         
+                if gs.shop_open:
+                    gs.shop_open = False
+                    shop.reset_scroll()
+                    shop.clear_shop_override()
+                    if tavern_state:
+                        tavern_state["barkeeper_shop_active"] = False
+                    gs._shop_music_playing = False
+                    gs._waiting_for_shop_music = False
+                    if hasattr(gs, "_shop_music_timer"):
+                        delattr(gs, "_shop_music_timer")
+
                 mode = S.MODE_GAME
                 # Reset overworld music state so it restarts in the game mode loop
                 gs.overworld_music_started = False
@@ -1698,24 +1812,63 @@ while running:
                 mode = MODE_SUMMONER_BATTLE
                 # Call enter_mode to initialize the summoner battle screen
                 enter_mode(mode, gs, deps)
+            else:
+                # Handle other mode transitions (e.g., whore screen)
+                mode = next_mode
             # Continue to next iteration of main loop with new mode
             continue
         
         # --- Let HUD handle clicks in tavern mode (party UI can open Ledger) ---
         # Only if we didn't click a HUD button (to avoid conflicts) and not opening pause
+        just_opened_ledger_tavern = False  # Initialize flag
         if not esc_pressed_for_pause and not hud_button_click_positions_tavern and not bag_ui.is_open() and not party_manager.is_open() and not ledger.is_open() and not currency_display.is_open():
             was_ledger_open_tavern = ledger.is_open()  # should be False, safety check
-            for e in events:
+            for e in tavern_events:
                 party_ui.handle_event(e, gs)
             if not was_ledger_open_tavern and ledger.is_open():
-                # Ledger was just opened from party UI
-                pass
+                just_opened_ledger_tavern = True  # Track that ledger was just opened
         
-        # --- Handle modal events (bag, party manager, ledger, currency, rest) ---
-        # Route events to modals (priority: Bag → Party Manager → Ledger → Currency → Rest)
+        # --- Global hotkeys for tavern mode ---
+        just_toggled_bag_tavern = False
+        just_toggled_pm_tavern = False
+        for e in tavern_events:
+            # Bag toggle (B or I)
+            if e.type == pygame.KEYDOWN and (e.key == pygame.K_b or e.key == pygame.K_i):
+                if not gs.shop_open:
+                    bag_ui.toggle_popup()
+                    just_toggled_bag_tavern = True
+            
+            # Party Manager toggle (Tab) — only if no other modal is open
+            if e.type == pygame.KEYDOWN and e.key == pygame.K_TAB:
+                if not bag_ui.is_open() and not ledger.is_open() and not gs.shop_open:
+                    party_manager.toggle()
+                    just_toggled_pm_tavern = True
+            
+            # Currency display toggle (C)
+            if e.type == pygame.KEYDOWN and e.key == pygame.K_c:
+                if not currency_display.is_open() and not bag_ui.is_open() and not party_manager.is_open() and not ledger.is_open() and not gs.shop_open:
+                    currency_display.toggle()
+                    # Play Coin.mp3 sound
+                    coin_sound = AUDIO.sfx.get("Coin") or AUDIO.sfx.get("coin")
+                    if coin_sound:
+                        coin_sound.play()
+                    else:
+                        # Try to load from the path
+                        coin_path = os.path.join("Assets", "Music", "Sounds", "Coin.mp3")
+                        if os.path.exists(coin_path):
+                            try:
+                                coin_sfx = pygame.mixer.Sound(coin_path)
+                                coin_sfx.play()
+                            except:
+                                pass
+                elif currency_display.is_open():
+                    currency_display.close()
+        
+        # --- Handle modal events (bag, party manager, ledger, currency, rest, hells deck) ---
+        # Route events to modals (priority: Bag → Party Manager → Ledger → Currency → Rest → Hells Deck)
         # Only process if not opening pause menu
         if not esc_pressed_for_pause:
-            for e in events:
+            for e in tavern_events:
                 # Skip mouse clicks that were HUD button clicks (prevent immediate close)
                 if e.type == pygame.MOUSEBUTTONDOWN and e.button == 1:
                     if e.pos in hud_button_click_positions_tavern:
@@ -1723,14 +1876,21 @@ while running:
                 
                 # Handle modals (only if they're open)
                 if bag_ui.is_open():
-                    if bag_ui.handle_event(e, gs, virtual_screen):
-                        continue
+                    # Ignore the exact key that toggled bag this frame to avoid double-handling
+                    if not (just_toggled_bag_tavern and e.type == pygame.KEYDOWN and (e.key == pygame.K_b or e.key == pygame.K_i)):
+                        if bag_ui.handle_event(e, gs, virtual_screen):
+                            continue
                 
                 if party_manager.is_open():
-                    if party_manager.handle_event(e, gs):
-                        continue
+                    # Ignore the exact key that toggled party manager this frame to avoid double-handling
+                    if not (just_toggled_pm_tavern and e.type == pygame.KEYDOWN and e.key == pygame.K_TAB):
+                        if party_manager.handle_event(e, gs):
+                            continue
                 
                 if ledger.is_open():
+                    # Suppress the opening mouse event so it doesn't immediately close the ledger
+                    if just_opened_ledger_tavern and e.type in (pygame.MOUSEBUTTONDOWN, pygame.MOUSEBUTTONUP):
+                        continue
                     if ledger.handle_event(e, gs):
                         continue
                 
@@ -1739,7 +1899,17 @@ while running:
                         continue
                 
                 if rest_popup.is_open():
-                    if rest_popup.handle_event(e, gs):
+                    rest_type = rest_popup.handle_event(e, gs)
+                    if rest_type:
+                        # Store return mode (overworld or tavern)
+                        gs._rest_return_to = MODE_TAVERN if mode == MODE_TAVERN else S.MODE_GAME
+                        gs._rest_type = rest_type
+                        mode = MODE_REST
+                        enter_mode(mode, gs, deps)
+                    continue
+                
+                if hells_deck_popup.is_open():
+                    if hells_deck_popup.handle_event(e, gs):
                         continue
         
         # Draw tavern screen
@@ -1764,14 +1934,23 @@ while running:
             if currency_display.is_open():
                 currency_display.draw(virtual_screen, gs)
             if rest_popup.is_open():
-                rest_popup.draw_popup(virtual_screen, gs)
+                rest_popup.draw(virtual_screen, gs)
+            if hells_deck_popup.is_open():
+                hells_deck_popup.draw(virtual_screen, gs)
+            if gs.shop_open:
+                draw_shop_ui(virtual_screen, gs)
             
             # Draw tavern textboxes AFTER HUD (so they appear on top)
             # Import the drawing functions from tavern module
-            from world.Tavern.tavern import _draw_gambler_intro_textbox, _draw_bet_selection_popup, _draw_kicked_out_textbox
-            tavern_state = getattr(gs, "_tavern_state", {})
+            from world.Tavern.tavern import _draw_gambler_intro_textbox, _draw_game_selection_popup, _draw_bet_selection_popup, _draw_kicked_out_textbox, _draw_whore_confirm_popup
+            # Use the same tavern_state reference from earlier in the block
+            # tavern_state was already retrieved at the top of MODE_TAVERN block
             screen_w = getattr(S, "LOGICAL_WIDTH", S.WIDTH)
             screen_h = getattr(S, "LOGICAL_HEIGHT", S.HEIGHT)
+            
+            # Draw game selection popup (modal, blocks other input, drawn on top of HUD)
+            if tavern_state.get("show_game_selection", False):
+                _draw_game_selection_popup(virtual_screen, gs, dt, screen_w, screen_h)
             
             # Draw gambler intro textbox (modal, blocks other input, drawn on top of HUD)
             if tavern_state.get("show_gambler_intro", False):
@@ -1780,6 +1959,10 @@ while running:
             # Draw bet selection popup (modal, blocks other input, drawn on top of HUD)
             if tavern_state.get("show_bet_selection", False):
                 _draw_bet_selection_popup(virtual_screen, gs, dt, screen_w, screen_h)
+            
+            # Draw whore confirmation popup
+            if tavern_state.get("whore_confirm_active", False):
+                _draw_whore_confirm_popup(virtual_screen, gs, dt, screen_w, screen_h)
             
             # Draw "kicked out" textbox (drawn on top of everything, modal)
             if tavern_state.get("kicked_out_textbox_active", False):
@@ -1799,7 +1982,10 @@ while running:
         # Check if any modal is open (block walking sounds if modal is open)
         any_modal_open_walking = buff_popup.is_active() or bag_ui.is_open() or party_manager.is_open() or ledger.is_open() or gs.shop_open or currency_display.is_open() or rest_popup.is_open()
         # Check if kicked out textbox is active (block walking sounds)
-        if tavern_state.get("kicked_out_textbox_active", False) or tavern_state.get("show_gambler_intro", False) or tavern_state.get("show_bet_selection", False):
+        if (tavern_state.get("kicked_out_textbox_active", False)
+                or tavern_state.get("show_gambler_intro", False)
+                or tavern_state.get("show_bet_selection", False)
+                or tavern_state.get("whore_confirm_active", False)):
             any_modal_open_walking = True
         
         keys = pygame.key.get_pressed()
@@ -1835,7 +2021,22 @@ while running:
             # Clear the entered flag when exiting
             if hasattr(gs, '_book_of_bound_entered'):
                 delattr(gs, '_book_of_bound_entered')
-            mode = next_mode
+            # Check if we should return to tavern instead of overworld
+            if next_mode == S.MODE_GAME and hasattr(gs, "_book_of_bound_return_to"):
+                mode = gs._book_of_bound_return_to
+                del gs._book_of_bound_return_to
+                # Stop any overworld music that was started (book_of_bound starts it)
+                # Tavern music should continue playing
+                if mode == MODE_TAVERN:
+                    audio.stop_music(fade_ms=0)  # Stop overworld music immediately
+                    # Tavern music should already be playing, but ensure it continues
+                    tavern_music_path = os.path.join("Assets", "Tavern", "Tavern.mp3")
+                    if os.path.exists(tavern_music_path):
+                        audio.play_music(AUDIO, tavern_music_path, loop=True, fade_ms=0)
+                    else:
+                        audio.play_music(AUDIO, "tavern", loop=True, fade_ms=0)
+            else:
+                mode = next_mode
     elif mode == MODE_ARCHIVES:
         # Handle party manager events if it's open (for vessel picker)
         try:
@@ -1865,7 +2066,22 @@ while running:
             # Clear the entered flag when exiting
             if hasattr(gs, '_archives_entered'):
                 delattr(gs, '_archives_entered')
-            mode = next_mode
+            # Check if we should return to tavern instead of overworld
+            if next_mode == S.MODE_GAME and hasattr(gs, "_archives_return_to"):
+                mode = gs._archives_return_to
+                del gs._archives_return_to
+                # Stop any overworld music that was started (archives starts it)
+                # Tavern music should continue playing
+                if mode == MODE_TAVERN:
+                    audio.stop_music(fade_ms=0)  # Stop overworld music immediately
+                    # Tavern music should already be playing, but ensure it continues
+                    tavern_music_path = os.path.join("Assets", "Tavern", "Tavern.mp3")
+                    if os.path.exists(tavern_music_path):
+                        audio.play_music(AUDIO, tavern_music_path, loop=True, fade_ms=0)
+                    else:
+                        audio.play_music(AUDIO, "tavern", loop=True, fade_ms=0)
+            else:
+                mode = next_mode
             continue  # Skip to next iteration to process mode change
 
 
@@ -2091,15 +2307,12 @@ while running:
             if rest_popup.is_open():
                 rest_type = rest_popup.handle_event(e, gs)
                 if rest_type:
-                    # Transition to rest screen with selected type
+                    # Store return mode (overworld or tavern)
+                    gs._rest_return_to = MODE_TAVERN if mode == MODE_TAVERN else S.MODE_GAME
+                    gs._rest_type = rest_type
                     mode = MODE_REST
-                    # Pass rest_type to enter function directly (don't call enter_mode first)
-                    rest_screen.enter(gs, rest_type=rest_type, **deps)
-                    # Set prev_mode to prevent enter_mode from being called and overwriting rest_type
-                    prev_mode = MODE_REST
-                elif rest_type is None and e.type in (pygame.MOUSEBUTTONDOWN, pygame.KEYDOWN):
-                    # Popup was closed
-                    continue
+                    enter_mode(mode, gs, deps)
+                continue
             
             # Handle Hell's Deck popup
             if hells_deck_popup.is_open():
@@ -2145,6 +2358,7 @@ while running:
                     if gs.shop_open:
                         gs.shop_open = False
                         shop.reset_scroll()
+                        shop.clear_shop_override()
                         # Restore overworld music
                         audio.stop_music(fade_ms=600)
                         gs._shop_music_playing = False
@@ -2228,6 +2442,7 @@ while running:
                     elif not gs.shop_open and was_open:
                         # Closing shop - restore overworld music
                         audio.stop_music(fade_ms=600)
+                        shop.clear_shop_override()
                         gs._shop_music_playing = False
                         gs._waiting_for_shop_music = False
                         # Restart overworld music after fade
