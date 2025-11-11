@@ -384,6 +384,27 @@ def _is_hovering_clickable(mouse_pos, gs=None, mode=None):
         # ==================== MENU SCREEN ====================
         if mode == S.MODE_MENU or (mode and "MENU" in mode_str):
             try:
+                # Check menu popup buttons (yes/no for new game and delete save)
+                if gs:
+                    # Delete save popup buttons
+                    if getattr(gs, "_delete_save_popup_active", False):
+                        yes_rect = getattr(gs, "_delete_confirm_yes_rect", None)
+                        no_rect = getattr(gs, "_delete_confirm_no_rect", None)
+                        if yes_rect and yes_rect.collidepoint(logical_pos):
+                            return True
+                        if no_rect and no_rect.collidepoint(logical_pos):
+                            return True
+                    
+                    # New game popup buttons
+                    if getattr(gs, "_new_game_popup_active", False):
+                        yes_rect = getattr(gs, "_new_game_confirm_yes_rect", None)
+                        no_rect = getattr(gs, "_new_game_confirm_no_rect", None)
+                        if yes_rect and yes_rect.collidepoint(logical_pos):
+                            return True
+                        if no_rect and no_rect.collidepoint(logical_pos):
+                            return True
+                
+                # Check regular menu buttons
                 if gs and hasattr(gs, '_menu_buttons'):
                     for button in gs._menu_buttons:
                         if button.enabled and button.rect.collidepoint(logical_pos):
@@ -493,6 +514,39 @@ def _is_hovering_clickable(mouse_pos, gs=None, mode=None):
                 pass
         
         # ==================== REST SCREEN ====================
+        
+        # ==================== TAVERN SCREEN ====================
+        if mode and "TAVERN" in mode_str:
+            try:
+                if gs and hasattr(gs, '_tavern_state'):
+                    st = gs._tavern_state
+                    # Check game selection popup buttons
+                    if st.get("show_game_selection", False):
+                        buttons = st.get("game_selection_buttons", [])
+                        for button_rect, game_key in buttons:
+                            if button_rect and button_rect.collidepoint(logical_pos):
+                                return True
+                    # Check bet selection popup buttons
+                    if st.get("show_bet_selection", False):
+                        buttons = st.get("bet_buttons", [])
+                        for button_rect, amount in buttons:
+                            if button_rect and button_rect.collidepoint(logical_pos):
+                                return True
+            except:
+                pass
+        
+        # ==================== GAMBLING SCREEN ====================
+        if mode and "GAMBLING" in mode_str:
+            try:
+                if gs and hasattr(gs, '_gambling_state'):
+                    game_state = gs._gambling_state
+                    # Check Twenty-One game buttons (Roll/Stand)
+                    buttons = game_state.get("twenty_one_buttons", [])
+                    for button_rect, action in buttons:
+                        if button_rect and button_rect.collidepoint(logical_pos):
+                            return True
+            except:
+                pass
         
         # ==================== SHOP ====================
         # OPTIMIZATION: Only check if shop is open (early exit)

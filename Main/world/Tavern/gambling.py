@@ -249,10 +249,10 @@ def _load_player_gambling_image(gs) -> pygame.Surface | None:
 # ---------- Doom Roll Game State ----------
 def _init_doom_roll_game(gs, bet_amount: int = 0):
     """Initialize Doom Roll game state."""
-    if not hasattr(gs, "_gambling_state"):
-        gs._gambling_state = {}
-    
+    # Clear any previous state and create fresh dictionary
+    gs._gambling_state = {}
     game_state = gs._gambling_state
+    
     game_state["game_type"] = "doom_roll"
     game_state["current_die"] = 100  # Start with d100
     game_state["turn"] = "player"  # "player" or "ai"
@@ -270,10 +270,10 @@ def _init_doom_roll_game(gs, bet_amount: int = 0):
 # ---------- Twenty-One Game State ----------
 def _init_twenty_one_game(gs, bet_amount: int = 0):
     """Initialize Twenty-One game state."""
-    if not hasattr(gs, "_gambling_state"):
-        gs._gambling_state = {}
-    
+    # Clear any previous state and create fresh dictionary
+    gs._gambling_state = {}
     game_state = gs._gambling_state
+    
     game_state["game_type"] = "twenty_one"
     game_state["bet_amount"] = bet_amount
     game_state["player_total"] = 0
@@ -288,26 +288,35 @@ def _init_twenty_one_game(gs, bet_amount: int = 0):
     game_state["waiting_for_result_dismiss"] = False
     game_state["winner"] = None  # "player" | "gambler" | "tie"
     game_state["gold_updated"] = False
+    game_state["twenty_one_buttons"] = []  # Clear any leftover buttons
     
     # Start with player's initial roll
-    from rolling.roller import roll_dice
-    from rolling.sfx import play_dice
-    player_name = _get_player_display_name(gs)
-    
-    # Player rolls 2d10
-    total, rolls = roll_dice(2, 10)
-    game_state["player_dice"] = rolls if rolls else [total // 2, total - (total // 2)]
-    game_state["player_total"] = sum(game_state["player_dice"])
-    play_dice()
-    
-    # Show result card
-    game_state["result_card_active"] = True
-    game_state["result_card_title"] = f"{player_name} rolled 2d10"
-    game_state["result_card_subtitle"] = f"Result: {game_state['player_dice'][0]}, {game_state['player_dice'][1]} = {game_state['player_total']}"
-    game_state["waiting_for_result_dismiss"] = True
-    game_state["current_turn"] = "gambler"  # Next will be gambler's initial roll
-    
-    print(f"🎲 Twenty-One game initialized - {player_name} rolled {game_state['player_dice']} = {game_state['player_total']}, betting {bet_amount} gold")
+    try:
+        from rolling.roller import roll_dice
+        from rolling.sfx import play_dice
+        player_name = _get_player_display_name(gs)
+        
+        # Player rolls 2d10
+        total, rolls = roll_dice(2, 10)
+        game_state["player_dice"] = rolls if rolls else [total // 2, total - (total // 2)]
+        game_state["player_total"] = sum(game_state["player_dice"])
+        play_dice()
+        
+        # Show result card
+        game_state["result_card_active"] = True
+        game_state["result_card_title"] = f"{player_name} rolled 2d10"
+        game_state["result_card_subtitle"] = f"Result: {game_state['player_dice'][0]}, {game_state['player_dice'][1]} = {game_state['player_total']}"
+        game_state["waiting_for_result_dismiss"] = True
+        game_state["current_turn"] = "gambler"  # Next will be gambler's initial roll
+        
+        print(f"🎲 Twenty-One game initialized - {player_name} rolled {game_state['player_dice']} = {game_state['player_total']}, betting {bet_amount} gold")
+    except Exception as e:
+        print(f"⚠️ Error initializing Twenty-One game: {e}")
+        import traceback
+        traceback.print_exc()
+        # Reset to safe state
+        game_state["phase"] = "player_turn"  # Skip initial rolls if they fail
+        game_state["result_card_active"] = False
 
 def _get_dh_font(size: int) -> pygame.font.Font:
     """Get DH font at specified size, fallback to default font."""
@@ -460,11 +469,14 @@ def _draw_twenty_one_player_turn(screen: pygame.Surface, gs, player_total: int, 
         (stand_button_rect, "stand"),
     ]
     
-    # Mouse position for hover
-    mouse_x, mouse_y = pygame.mouse.get_pos()
-    screen_surface = pygame.display.get_surface()
-    logical_mouse_x = mouse_x * sw // screen_surface.get_width() if screen_surface and screen_surface.get_width() != sw else mouse_x
-    logical_mouse_y = mouse_y * sh // screen_surface.get_height() if screen_surface and screen_surface.get_height() != sh else mouse_y
+    # Mouse position for hover - convert to logical coordinates
+    screen_mx, screen_my = pygame.mouse.get_pos()
+    try:
+        from systems import coords
+        logical_mouse_x, logical_mouse_y = coords.screen_to_logical((screen_mx, screen_my))
+    except (ImportError, AttributeError):
+        # Fallback if coords not available
+        logical_mouse_x, logical_mouse_y = screen_mx, screen_my
     
     # Draw Roll button
     roll_enabled = player_total < 21
@@ -675,100 +687,131 @@ def _should_gambler_roll_twenty_one(gambler_total: int, player_total: int) -> bo
 
 def _twenty_one_player_roll(gs):
     """Player rolls 1d10 in Twenty-One."""
-    from rolling.roller import roll_dice
-    from rolling.sfx import play_dice
-    
-    game_state = gs._gambling_state
-    if game_state["player_total"] >= 21:
-        return False  # Can't roll if already at/over 21
-    player_name = _get_player_display_name(gs)
-    
-    # Roll 1d10
-    total, rolls = roll_dice(1, 10)
-    roll_result = rolls[0] if rolls else total
-    
-    play_dice()
-    
-    # Add to player dice and total
-    game_state["player_dice"].append(roll_result)
-    game_state["player_total"] += roll_result
-    
-    # Show result card
-    game_state["result_card_active"] = True
-    game_state["result_card_title"] = f"{player_name} rolled 1d10"
-    game_state["result_card_subtitle"] = f"Result: {roll_result}. New Total: {game_state['player_total']}"
-    game_state["waiting_for_result_dismiss"] = True
-    
-    print(f"🎲 {player_name} rolled 1d10 = {roll_result}, new total: {game_state['player_total']}")
-    
-    # Check for bust
-    if game_state["player_total"] > 21:
-        game_state["game_over"] = True
-        game_state["winner"] = "gambler"
-        game_state["result_card_title"] = f"{player_name} rolled 1d10"
-        game_state["result_card_subtitle"] = f"Result: {roll_result}. Total: {game_state['player_total']} - BUST! You Lose!"
-        _play_lose_sound()
+    try:
+        from rolling.roller import roll_dice
+        from rolling.sfx import play_dice
+    except ImportError as e:
+        print(f"⚠️ Failed to import dice rolling modules: {e}")
         return False
     
-    # If exactly 21, auto-stand
-    if game_state["player_total"] == 21:
-        game_state["phase"] = "gambler_turn"
+    try:
+        game_state = gs._gambling_state
+        if not game_state:
+            print("⚠️ Game state not found")
+            return False
+        
+        if game_state.get("player_total", 0) >= 21:
+            return False  # Can't roll if already at/over 21
+        player_name = _get_player_display_name(gs)
+        
+        # Roll 1d10
+        total, rolls = roll_dice(1, 10)
+        roll_result = rolls[0] if rolls else total
+        
+        play_dice()
+        
+        # Add to player dice and total
+        if "player_dice" not in game_state:
+            game_state["player_dice"] = []
+        game_state["player_dice"].append(roll_result)
+        game_state["player_total"] = game_state.get("player_total", 0) + roll_result
+        
+        # Show result card
+        game_state["result_card_active"] = True
+        game_state["result_card_title"] = f"{player_name} rolled 1d10"
+        game_state["result_card_subtitle"] = f"Result: {roll_result}. New Total: {game_state['player_total']}"
+        game_state["waiting_for_result_dismiss"] = True
+        
+        print(f"🎲 {player_name} rolled 1d10 = {roll_result}, new total: {game_state['player_total']}")
+        
+        # Check for bust
+        if game_state["player_total"] > 21:
+            game_state["game_over"] = True
+            game_state["winner"] = "gambler"
+            game_state["result_card_title"] = f"{player_name} rolled 1d10"
+            game_state["result_card_subtitle"] = f"Result: {roll_result}. Total: {game_state['player_total']} - BUST! You Lose!"
+            _play_lose_sound()
+            return False
+        
+        # If exactly 21, auto-stand
+        if game_state["player_total"] == 21:
+            game_state["phase"] = "gambler_turn"
+            return True
+        
+        # Stay in player turn (can roll again or stand)
         return True
-    
-    # Stay in player turn (can roll again or stand)
-    return True
+    except Exception as e:
+        print(f"⚠️ Error in _twenty_one_player_roll: {e}")
+        import traceback
+        traceback.print_exc()
+        return False
 
 def _twenty_one_gambler_roll(gs):
     """Gambler rolls 1d10 in Twenty-One."""
-    from rolling.roller import roll_dice
-    from rolling.sfx import play_dice
+    try:
+        from rolling.roller import roll_dice
+        from rolling.sfx import play_dice
+    except ImportError as e:
+        print(f"⚠️ Failed to import dice rolling modules: {e}")
+        return False
     
-    game_state = gs._gambling_state
-    
-    # Roll 1d10
-    total, rolls = roll_dice(1, 10)
-    roll_result = rolls[0] if rolls else total
-    
-    play_dice()
-    
-    # Add to gambler dice and total
-    game_state["gambler_dice"].append(roll_result)
-    game_state["gambler_total"] += roll_result
-    
-    # Show result card
-    game_state["result_card_active"] = True
-    game_state["result_card_title"] = "The Orc rolled 1d10"
-    game_state["result_card_subtitle"] = f"Result: {roll_result}. New Total: {game_state['gambler_total']}"
-    game_state["waiting_for_result_dismiss"] = True
-    
-    print(f"🎲 The Orc rolled 1d10 = {roll_result}, new total: {game_state['gambler_total']}")
-    
-    # Check for bust
-    if game_state["gambler_total"] > 21:
-        game_state["game_over"] = True
-        game_state["winner"] = "player"
+    try:
+        game_state = gs._gambling_state
+        if not game_state:
+            print("⚠️ Game state not found")
+            return False
+        
+        # Roll 1d10
+        total, rolls = roll_dice(1, 10)
+        roll_result = rolls[0] if rolls else total
+        
+        play_dice()
+        
+        # Add to gambler dice and total
+        if "gambler_dice" not in game_state:
+            game_state["gambler_dice"] = []
+        game_state["gambler_dice"].append(roll_result)
+        game_state["gambler_total"] = game_state.get("gambler_total", 0) + roll_result
+        
+        # Show result card
+        game_state["result_card_active"] = True
         game_state["result_card_title"] = "The Orc rolled 1d10"
-        game_state["result_card_subtitle"] = f"Result: {roll_result}. Total: {game_state['gambler_total']} - BUST! You Win!"
-        _play_win_sound()
-        # Award double the bet
-        bet_amount = game_state.get("bet_amount", 0)
-        if bet_amount > 0 and not game_state.get("gold_updated", False):
-            if not hasattr(gs, "gold"):
-                gs.gold = 0
-            winnings = bet_amount * 2
-            gs.gold = gs.gold + winnings
-            game_state["gold_updated"] = True
-            print(f"💰 {_get_player_display_name(gs)} won! Awarded {winnings} gold")
+        game_state["result_card_subtitle"] = f"Result: {roll_result}. New Total: {game_state['gambler_total']}"
+        game_state["waiting_for_result_dismiss"] = True
+        
+        print(f"🎲 The Orc rolled 1d10 = {roll_result}, new total: {game_state['gambler_total']}")
+        
+        # Check for bust
+        if game_state["gambler_total"] > 21:
+            game_state["game_over"] = True
+            game_state["winner"] = "player"
+            game_state["result_card_title"] = "The Orc rolled 1d10"
+            game_state["result_card_subtitle"] = f"Result: {roll_result}. Total: {game_state['gambler_total']} - BUST! You Win!"
+            _play_win_sound()
+            # Award double the bet
+            bet_amount = game_state.get("bet_amount", 0)
+            if bet_amount > 0 and not game_state.get("gold_updated", False):
+                if not hasattr(gs, "gold"):
+                    gs.gold = 0
+                winnings = bet_amount * 2
+                gs.gold = gs.gold + winnings
+                game_state["gold_updated"] = True
+                print(f"💰 {_get_player_display_name(gs)} won! Awarded {winnings} gold")
+            return False
+        
+        # If exactly 21, end game
+        if game_state["gambler_total"] == 21:
+            game_state["phase"] = "game_over"
+            _determine_twenty_one_winner(gs)
+            return False
+        
+        # Continue gambler turn (AI decides again)
+        return True
+    except Exception as e:
+        print(f"⚠️ Error in _twenty_one_gambler_roll: {e}")
+        import traceback
+        traceback.print_exc()
         return False
-    
-    # If exactly 21, end game
-    if game_state["gambler_total"] == 21:
-        game_state["phase"] = "game_over"
-        _determine_twenty_one_winner(gs)
-        return False
-    
-    # Continue gambler turn (AI decides again)
-    return True
 
 def _determine_twenty_one_winner(gs):
     """Determine winner of Twenty-One game and handle payouts."""
@@ -847,53 +890,69 @@ def _determine_twenty_one_winner(gs):
 
 def _handle_twenty_one_initial_rolls(gs):
     """Handle initial rolls phase for Twenty-One."""
-    game_state = gs._gambling_state
-    player_name = _get_player_display_name(gs)
-    
-    if game_state["current_turn"] == "gambler":
-        # Gambler's initial roll
-        from rolling.roller import roll_dice
-        from rolling.sfx import play_dice
+    try:
+        game_state = gs._gambling_state
+        if not game_state:
+            print("⚠️ Game state not found in _handle_twenty_one_initial_rolls")
+            return
         
-        total, rolls = roll_dice(2, 10)
-        game_state["gambler_dice"] = rolls if rolls else [total // 2, total - (total // 2)]
-        game_state["gambler_total"] = sum(game_state["gambler_dice"])
-        play_dice()
+        player_name = _get_player_display_name(gs)
         
-        game_state["result_card_active"] = True
-        game_state["result_card_title"] = "The Orc rolled 2d10"
-        game_state["result_card_subtitle"] = f"Result: {game_state['gambler_dice'][0]}, {game_state['gambler_dice'][1]} = {game_state['gambler_total']}"
-        game_state["waiting_for_result_dismiss"] = True
-        
-        print(f"🎲 The Orc rolled {game_state['gambler_dice']} = {game_state['gambler_total']}")
-        
-        # Check for instant losses
-        if game_state["player_total"] > 21 and game_state["gambler_total"] > 21:
-            game_state["phase"] = "game_over"
-            _determine_twenty_one_winner(gs)
-        elif game_state["player_total"] > 21:
-            game_state["phase"] = "game_over"
-            game_state["winner"] = "gambler"
-            _play_lose_sound()
-            game_state["result_card_title"] = "You Lose!"
-            game_state["result_card_subtitle"] = f"{player_name}: {game_state['player_total']} (BUST) | The Orc: {game_state['gambler_total']}"
-        elif game_state["gambler_total"] > 21:
-            game_state["phase"] = "game_over"
-            game_state["winner"] = "player"
-            _play_win_sound()
-            bet_amount = game_state.get("bet_amount", 0)
-            if bet_amount > 0 and not game_state.get("gold_updated", False):
-                if not hasattr(gs, "gold"):
-                    gs.gold = 0
-                winnings = bet_amount * 2
-                gs.gold = gs.gold + winnings
-                game_state["gold_updated"] = True
-            game_state["result_card_title"] = "You Win!"
-            game_state["result_card_subtitle"] = f"{player_name}: {game_state['player_total']} | The Orc: {game_state['gambler_total']} (BUST)"
-        else:
-            # Move to player turn
-            game_state["phase"] = "player_turn"
-            game_state["current_turn"] = "player"
+        if game_state.get("current_turn") == "gambler":
+            # Gambler's initial roll
+            try:
+                from rolling.roller import roll_dice
+                from rolling.sfx import play_dice
+            except ImportError as e:
+                print(f"⚠️ Failed to import dice rolling modules: {e}")
+                return
+            
+            total, rolls = roll_dice(2, 10)
+            game_state["gambler_dice"] = rolls if rolls else [total // 2, total - (total // 2)]
+            game_state["gambler_total"] = sum(game_state["gambler_dice"])
+            play_dice()
+            
+            game_state["result_card_active"] = True
+            game_state["result_card_title"] = "The Orc rolled 2d10"
+            game_state["result_card_subtitle"] = f"Result: {game_state['gambler_dice'][0]}, {game_state['gambler_dice'][1]} = {game_state['gambler_total']}"
+            game_state["waiting_for_result_dismiss"] = True
+            
+            print(f"🎲 The Orc rolled {game_state['gambler_dice']} = {game_state['gambler_total']}")
+            
+            # Check for instant losses
+            player_total = game_state.get("player_total", 0)
+            gambler_total = game_state.get("gambler_total", 0)
+            
+            if player_total > 21 and gambler_total > 21:
+                game_state["phase"] = "game_over"
+                _determine_twenty_one_winner(gs)
+            elif player_total > 21:
+                game_state["phase"] = "game_over"
+                game_state["winner"] = "gambler"
+                _play_lose_sound()
+                game_state["result_card_title"] = "You Lose!"
+                game_state["result_card_subtitle"] = f"{player_name}: {player_total} (BUST) | The Orc: {gambler_total}"
+            elif gambler_total > 21:
+                game_state["phase"] = "game_over"
+                game_state["winner"] = "player"
+                _play_win_sound()
+                bet_amount = game_state.get("bet_amount", 0)
+                if bet_amount > 0 and not game_state.get("gold_updated", False):
+                    if not hasattr(gs, "gold"):
+                        gs.gold = 0
+                    winnings = bet_amount * 2
+                    gs.gold = gs.gold + winnings
+                    game_state["gold_updated"] = True
+                game_state["result_card_title"] = "You Win!"
+                game_state["result_card_subtitle"] = f"{player_name}: {player_total} | The Orc: {gambler_total} (BUST)"
+            else:
+                # Move to player turn
+                game_state["phase"] = "player_turn"
+                game_state["current_turn"] = "player"
+    except Exception as e:
+        print(f"⚠️ Error in _handle_twenty_one_initial_rolls: {e}")
+        import traceback
+        traceback.print_exc()
 
 def _ai_roll(gs):
     """AI rolls the dice. Returns True if game should continue, False if game over."""
@@ -1048,17 +1107,12 @@ def handle(events, gs, dt: float, **_):
                             _determine_twenty_one_winner(gs)
                 
                 elif event.type == pygame.MOUSEBUTTONDOWN and event.button == 1:
-                    # Check button clicks
-                    mouse_x, mouse_y = pygame.mouse.get_pos()
-                    screen_w = S.LOGICAL_WIDTH
-                    screen_h = S.LOGICAL_HEIGHT
-                    screen_surface = pygame.display.get_surface()
-                    logical_mouse_x = mouse_x * screen_w // screen_surface.get_width() if screen_surface and screen_surface.get_width() != screen_w else mouse_x
-                    logical_mouse_y = mouse_y * screen_h // screen_surface.get_height() if screen_surface and screen_surface.get_height() != screen_h else mouse_y
+                    # event.pos is already converted to logical coordinates in main.py
+                    click_pos = event.pos
                     
                     buttons = game_state.get("twenty_one_buttons", [])
                     for button_rect, action in buttons:
-                        if button_rect.collidepoint(logical_mouse_x, logical_mouse_y):
+                        if button_rect.collidepoint(click_pos):
                             if action == "roll" and game_state["player_total"] < 21:
                                 _twenty_one_player_roll(gs)
                             elif action == "stand":
