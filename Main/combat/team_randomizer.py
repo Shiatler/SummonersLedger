@@ -315,3 +315,86 @@ def generate_enemy_team(
         "levels": levels,
         "stats": stats,
     }
+
+
+def generate_enemy_team_fixed_size(
+    gs,
+    team_size: int,
+    *,
+    rng: Optional[Roller] = None,
+    rare_chance: float = 0.12,
+    allow_starters: bool = False,
+    allow_dupes: bool = False,
+) -> Dict[str, object]:
+    """
+    Build a randomized enemy team with a FIXED size (for bosses).
+    Uses same logic as generate_enemy_team but with fixed team_size instead of probabilistic sizing.
+    """
+    # RNG: prefer caller's, else seed -> Roller, else system randomness
+    if rng is None:
+        seed = getattr(gs, "seed", None)
+        rng = Roller(seed) if seed is not None else Roller(random.randrange(1 << 30))
+
+    player_max = highest_party_level(gs)
+    bracket = _bracket_for_level(player_max)
+    # Use fixed team_size instead of probabilistic _enemy_count_for_player_level
+    desired_size = max(1, min(6, int(team_size)))  # Clamp to 1-6
+    print(f"[generate_enemy_team_fixed_size] Requested team size: {team_size}, clamped to: {desired_size}")
+
+    names = _pick_token_names(
+        desired_size,
+        rng,
+        rare_chance=rare_chance,
+        allow_starters=allow_starters,
+        allow_dupes=allow_dupes,
+    )
+
+    if not names:
+        print(f"⚠️ [generate_enemy_team_fixed_size] Failed to pick token names")
+        return {"names": [], "levels": [], "stats": []}
+    
+    print(f"[generate_enemy_team_fixed_size] Picked {len(names)} token names: {names}")
+
+    # Levels per enemy using bracket jitter
+    levels = [_level_for_enemy(player_max, rng, bracket) for _ in range(len(names))]
+    print(f"[generate_enemy_team_fixed_size] Generated {len(levels)} levels: {levels}")
+
+    # Stats per enemy; keep arrays aligned even if one fails
+    stats: List[Dict] = []
+    kept: List[Tuple[str, int]] = []
+    for name, lvl in zip(names, levels):
+        st = None
+        try:
+            st = generate_vessel_stats_from_asset(name, level=lvl, rng=rng)
+        except Exception as e:
+            print(f"⚠️ [generate_enemy_team_fixed_size] Failed to generate stats for {name} (level {lvl}) with RNG: {e}")
+            try:
+                st = generate_vessel_stats_from_asset(name, level=lvl)
+            except Exception as e2:
+                print(f"⚠️ [generate_enemy_team_fixed_size] Failed to generate stats for {name} (level {lvl}) without RNG: {e2}")
+                st = None
+        if st is not None:
+            stats.append(st)
+            kept.append((name, lvl))
+        else:
+            print(f"⚠️ [generate_enemy_team_fixed_size] Skipping {name} (level {lvl}) - stat generation failed")
+
+    if not stats:
+        # If everything failed, return empty team (battle code will handle gracefully)
+        print(f"⚠️ [generate_enemy_team_fixed_size] All stat generation failed for team of {len(names)} vessels!")
+        return {"names": [], "levels": [], "stats": []}
+
+    # Final alignment with only successful entries
+    names  = [n for (n, _) in kept]
+    levels = [l for (_, l) in kept]
+    
+    if len(names) != desired_size:
+        print(f"⚠️ [generate_enemy_team_fixed_size] Warning: Only {len(names)}/{desired_size} vessels generated successfully")
+    else:
+        print(f"✅ [generate_enemy_team_fixed_size] Successfully generated {len(names)}/{desired_size} vessels")
+
+    return {
+        "names": names,
+        "levels": levels,
+        "stats": stats,
+    }

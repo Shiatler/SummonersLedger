@@ -25,7 +25,7 @@ def add_default_on_new_game(gs, *, slot_index: int = 5, token_name: str = "FToke
         return
 
     # =========================================================
-    # Slot 6 → Starter (FTokenBarbarian1)
+    # Slot 6 → (FTokenBarbarian1)
     # =========================================================
     starter_idx = 5  # zero-based index for slot 6
     tok_png = token_name if token_name.lower().endswith(".png") else f"{token_name}.png"

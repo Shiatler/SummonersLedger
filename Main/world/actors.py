@@ -467,3 +467,128 @@ def draw_taverns(screen, cam, gs):
                 (pos.x - cam.x - SIZE_W // 2,
                  pos.y - cam.y - SIZE_H // 2)
             )
+
+
+# ===================== Bosses =================
+def spawn_boss_ahead(gs, start_x, boss_data: dict):
+    """
+    Spawn a boss in the middle of the road, far ahead of the player.
+    boss_data should contain: sprite_path, name, gender, party_size, score_threshold, team_data
+    """
+    if not boss_data:
+        return
+    
+    # Boss spawns in the middle of the road (centered like player)
+    x = start_x  # Center of road (same as player's start_x)
+    
+    # Spawn far ahead (further than normal encounters)
+    spawn_gap = random.randint(800, 1200)  # Much further than normal spawns
+    base_y = gs.player_pos.y - spawn_gap
+    
+    # Ensure vertical separation from ALL existing spawns
+    sep = getattr(S, "OVERWORLD_MIN_SEPARATION_Y", 200)
+    y = _pick_spawn_y(gs, base_y, sep)
+    if y is None:
+        # Force spawn if no clean slot found (bosses are important)
+        y = base_y - 500
+    
+    if not hasattr(gs, "bosses_on_map"):
+        gs.bosses_on_map = []
+    
+    gs.bosses_on_map.append({
+        "sprite_path": boss_data.get("sprite_path"),
+        "sprite": boss_data.get("sprite"),  # Pre-loaded sprite
+        "name": boss_data.get("name"),
+        "gender": boss_data.get("gender"),
+        "party_size": boss_data.get("party_size", 3),
+        "score_threshold": boss_data.get("score_threshold", 0),
+        "team_data": boss_data.get("team_data"),  # Pre-generated team
+        "pos": Vector2(x, y),
+    })
+    print(f"✅ Boss '{boss_data.get('name')}' spawned at position ({x}, {y})")
+
+
+def update_bosses(gs, dt, player_half: Vector2):
+    """Check if player is close to a boss and trigger encounter."""
+    if gs.in_encounter:
+        return
+    
+    if not hasattr(gs, "bosses_on_map"):
+        gs.bosses_on_map = []
+        return
+    
+    SIZE_W, SIZE_H = S.PLAYER_SIZE
+    # Bosses are bigger than player (1.5x multiplier)
+    BOSS_SIZE_MULT = 1.5
+    BOSS_SIZE_W = int(SIZE_W * BOSS_SIZE_MULT)
+    BOSS_SIZE_H = int(SIZE_H * BOSS_SIZE_MULT)
+    
+    # Check proximity (bosses are in center, so use threshold based on boss size)
+    x_threshold = BOSS_SIZE_W // 2 + SIZE_W // 2
+    triggered_index = None
+    
+    player_top = gs.player_pos.y - player_half.y
+    player_bottom = gs.player_pos.y + player_half.y
+    
+    for i, boss in enumerate(gs.bosses_on_map):
+        same_lane = abs(boss["pos"].x - gs.player_pos.x) <= x_threshold
+        
+        boss_top = boss["pos"].y - BOSS_SIZE_H // 2
+        boss_bottom = boss["pos"].y + BOSS_SIZE_H // 2
+        
+        in_front = player_top <= (boss_bottom + S.FRONT_TOLERANCE)
+        overlapping_vertically = player_bottom >= (boss_top - S.FRONT_TOLERANCE)
+        
+        if same_lane and in_front and overlapping_vertically:
+            # Trigger boss encounter - main loop will route to VS screen
+            gs.in_encounter = True
+            gs.encounter_timer = S.ENCOUNTER_SHOW_TIME
+            gs.encounter_name = boss.get("name", "Boss")
+            gs.encounter_sprite = boss.get("sprite")
+            gs.encounter_type = "BOSS"  # Mark as boss encounter
+            gs.encounter_boss_data = boss  # Store full boss data for battle
+            triggered_index = i
+            break
+    
+    if triggered_index is not None:
+        gs.bosses_on_map.pop(triggered_index)
+    
+    # Cull far below player
+    cutoff = gs.player_pos.y + S.HEIGHT * 1.5
+    gs.bosses_on_map[:] = [b for b in gs.bosses_on_map if b["pos"].y < cutoff]
+
+
+def draw_bosses(screen, cam, gs):
+    """Draw boss sprites in the middle of the road, facing the player."""
+    if not hasattr(gs, "bosses_on_map"):
+        return
+    
+    SIZE_W, SIZE_H = S.PLAYER_SIZE
+    # Bosses are bigger than player (1.5x multiplier)
+    BOSS_SIZE_MULT = 1.5
+    BOSS_SIZE_W = int(SIZE_W * BOSS_SIZE_MULT)
+    BOSS_SIZE_H = int(SIZE_H * BOSS_SIZE_MULT)
+    
+    for boss in gs.bosses_on_map:
+        pos = boss["pos"]
+        sprite = boss.get("sprite")
+        
+        if sprite:
+            # Scale sprite to boss size (bigger than player)
+            if sprite.get_width() != BOSS_SIZE_W or sprite.get_height() != BOSS_SIZE_H:
+                sprite = pygame.transform.smoothscale(sprite, (BOSS_SIZE_W, BOSS_SIZE_H))
+            
+            # Boss faces player (flip sprite if needed)
+            # If boss is to the left of player, flip to face right
+            flip_horizontal = pos.x < gs.player_pos.x
+            
+            display_sprite = sprite
+            if flip_horizontal:
+                display_sprite = pygame.transform.flip(sprite, True, False)
+            
+            # Center boss on road (same x as player's start_x)
+            screen.blit(
+                display_sprite,
+                (pos.x - cam.x - BOSS_SIZE_W // 2,
+                 pos.y - cam.y - BOSS_SIZE_H // 2)
+            )

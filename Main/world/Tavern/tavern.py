@@ -1179,17 +1179,26 @@ def _play_barkeeper_sound():
     except Exception as e:
         print(f"⚠️ Failed to play barkeeper sound: {e}")
 
+def _play_ui_click():
+    """Play the standard UI click sound if available."""
+    try:
+        bank = audio.get_global_bank()
+        if bank:
+            audio.play_click(bank)
+    except Exception:
+        pass
+
 def _draw_game_selection_popup(screen, gs, dt: float, screen_w: int, screen_h: int):
     """Draw game selection popup (Doom Roll vs Twenty-One)."""
     st = gs._tavern_state
     
-    # Popup dimensions
+    # Popup dimensions (use logical coordinates)
     popup_w = 500
     popup_h = 300
     popup_x = (screen_w - popup_w) // 2
     popup_y = (screen_h - popup_h) // 2
     
-    # Draw semi-transparent overlay
+    # Draw semi-transparent overlay (use logical size)
     overlay = pygame.Surface((screen_w, screen_h), pygame.SRCALPHA)
     overlay.fill((0, 0, 0, 180))
     screen.blit(overlay, (0, 0))
@@ -1216,11 +1225,14 @@ def _draw_game_selection_popup(screen, gs, dt: float, screen_w: int, screen_h: i
     button_w = popup_w - 80
     button_y_start = title_y + title_surf.get_height() + 40
     
-    # Mouse position in logical coordinates
-    mouse_x, mouse_y = pygame.mouse.get_pos()
-    screen_surface = pygame.display.get_surface()
-    logical_mouse_x = mouse_x * screen_w // screen_surface.get_width() if screen_surface and screen_surface.get_width() != screen_w else mouse_x
-    logical_mouse_y = mouse_y * screen_h // screen_surface.get_height() if screen_surface and screen_surface.get_height() != screen_h else mouse_y
+    # Mouse position in logical coordinates (use coords module)
+    try:
+        from systems import coords
+        screen_mx, screen_my = pygame.mouse.get_pos()
+        logical_mouse_x, logical_mouse_y = coords.screen_to_logical((screen_mx, screen_my))
+    except (ImportError, AttributeError):
+        # Fallback if coords not available
+        logical_mouse_x, logical_mouse_y = pygame.mouse.get_pos()
     
     button_specs = [
         ("doom_roll", "Doom Roll", (230, 228, 220), (60, 60, 60)),
@@ -1323,10 +1335,14 @@ def _draw_bet_selection_popup(screen, gs, dt: float, screen_w: int, screen_h: in
         button_index += 1
         
         # Button styling (hover effect if mouse over)
-        mouse_x, mouse_y = pygame.mouse.get_pos()
-        # Scale mouse position to logical coordinates if needed
-        logical_mouse_x = mouse_x * screen_w // screen.get_width() if screen.get_width() != screen_w else mouse_x
-        logical_mouse_y = mouse_y * screen_h // screen.get_height() if screen.get_height() != screen_h else mouse_y
+        # Get mouse position for hover detection - convert to logical coordinates
+        screen_mx, screen_my = pygame.mouse.get_pos()
+        try:
+            from systems import coords
+            logical_mouse_x, logical_mouse_y = coords.screen_to_logical((screen_mx, screen_my))
+        except (ImportError, AttributeError):
+            # Fallback if coords not available
+            logical_mouse_x, logical_mouse_y = screen_mx, screen_my
         
         hover = button_rect.collidepoint(logical_mouse_x, logical_mouse_y)
         button_color = (60, 50, 40) if hover else (50, 40, 30)
@@ -1602,12 +1618,14 @@ def handle(events, gs, dt: float, **_):
         for event in events:
             if event.type == pygame.KEYDOWN:
                 if event.key == pygame.K_ESCAPE:
+                    _play_ui_click()
                     # Cancel game selection
                     st["show_game_selection"] = False
                     st["game_selection_buttons"] = []
                     st["selected_game"] = None
                     print("🎲 Game selection cancelled")
                 elif event.key == pygame.K_1:
+                    _play_ui_click()
                     # Select Doom Roll
                     st["selected_game"] = "doom_roll"
                     st["show_game_selection"] = False
@@ -1616,6 +1634,7 @@ def handle(events, gs, dt: float, **_):
                     st["bet_selection_active"] = True
                     print("🎲 Selected Doom Roll")
                 elif event.key == pygame.K_2:
+                    _play_ui_click()
                     # Select Twenty-One
                     st["selected_game"] = "twenty_one"
                     st["show_game_selection"] = False
@@ -1624,22 +1643,19 @@ def handle(events, gs, dt: float, **_):
                     st["bet_selection_active"] = True
                     print("🎲 Selected Twenty-One")
                 elif event.key == pygame.K_3:
+                    _play_ui_click()
                     st["selected_game"] = None
                     st["show_game_selection"] = False
                     st["game_selection_buttons"] = []
                     print("🎲 Game selection cancelled")
             elif event.type == pygame.MOUSEBUTTONDOWN and event.button == 1:
-                # Check if clicked on a button
-                mouse_x, mouse_y = pygame.mouse.get_pos()
-                screen_w = getattr(S, "LOGICAL_WIDTH", S.WIDTH)
-                screen_h = getattr(S, "LOGICAL_HEIGHT", S.HEIGHT)
-                screen_surface = pygame.display.get_surface()
-                logical_mouse_x = mouse_x * screen_w // screen_surface.get_width() if screen_surface and screen_surface.get_width() != screen_w else mouse_x
-                logical_mouse_y = mouse_y * screen_h // screen_surface.get_height() if screen_surface and screen_surface.get_height() != screen_h else mouse_y
+                # event.pos is already converted to logical coordinates in main.py
+                click_pos = event.pos
                 
                 buttons = st.get("game_selection_buttons", [])
                 for button_rect, game_type in buttons:
-                    if button_rect.collidepoint(logical_mouse_x, logical_mouse_y):
+                    if button_rect.collidepoint(click_pos):
+                        _play_ui_click()
                         st["show_game_selection"] = False
                         st["game_selection_buttons"] = []
                         if game_type == "nevermind":
@@ -1687,6 +1703,7 @@ def handle(events, gs, dt: float, **_):
         for event in events:
             if event.type == pygame.KEYDOWN:
                 if event.key == pygame.K_ESCAPE:
+                    _play_ui_click()
                     # Cancel bet selection
                     st["show_bet_selection"] = False
                     st["bet_selection_active"] = False
@@ -1696,6 +1713,7 @@ def handle(events, gs, dt: float, **_):
                     # Bet 1 gold
                     player_gold = getattr(gs, "gold", 0)
                     if player_gold >= 1:
+                        _play_ui_click()
                         st["selected_bet"] = 1
                         st["show_bet_selection"] = False
                         st["bet_selection_active"] = False
@@ -1708,6 +1726,7 @@ def handle(events, gs, dt: float, **_):
                     # Bet 5 gold
                     player_gold = getattr(gs, "gold", 0)
                     if player_gold >= 5:
+                        _play_ui_click()
                         st["selected_bet"] = 5
                         st["show_bet_selection"] = False
                         st["bet_selection_active"] = False
@@ -1720,6 +1739,7 @@ def handle(events, gs, dt: float, **_):
                     # Bet 10 gold
                     player_gold = getattr(gs, "gold", 0)
                     if player_gold >= 10:
+                        _play_ui_click()
                         st["selected_bet"] = 10
                         st["show_bet_selection"] = False
                         st["bet_selection_active"] = False
@@ -1732,6 +1752,7 @@ def handle(events, gs, dt: float, **_):
                     # Bet 20 gold
                     player_gold = getattr(gs, "gold", 0)
                     if player_gold >= 20:
+                        _play_ui_click()
                         st["selected_bet"] = 20
                         st["show_bet_selection"] = False
                         st["bet_selection_active"] = False
@@ -1744,6 +1765,7 @@ def handle(events, gs, dt: float, **_):
                     # All in
                     player_gold = getattr(gs, "gold", 0)
                     if player_gold > 0:
+                        _play_ui_click()
                         st["selected_bet"] = player_gold  # Store actual gold amount for "all in"
                         st["show_bet_selection"] = False
                         st["bet_selection_active"] = False
@@ -1753,19 +1775,13 @@ def handle(events, gs, dt: float, **_):
                         print(f"🎲 Selected bet: All in ({player_gold} gold)")
                         return "GAMBLING"
             elif event.type == pygame.MOUSEBUTTONDOWN and event.button == 1:
-                # Check if clicked on a button
-                mouse_x, mouse_y = pygame.mouse.get_pos()
-                screen_w = getattr(S, "LOGICAL_WIDTH", S.WIDTH)
-                screen_h = getattr(S, "LOGICAL_HEIGHT", S.HEIGHT)
-                # Scale mouse position to logical coordinates if needed
-                screen_surface = pygame.display.get_surface()
-                logical_mouse_x = mouse_x * screen_w // screen_surface.get_width() if screen_surface.get_width() != screen_w else mouse_x
-                logical_mouse_y = mouse_y * screen_h // screen_surface.get_height() if screen_surface.get_height() != screen_h else mouse_y
+                # event.pos is already converted to logical coordinates in main.py
+                click_pos = event.pos
                 
                 player_gold = getattr(gs, "gold", 0)
                 buttons = st.get("bet_buttons", [])
                 for button_rect, amount in buttons:
-                    if button_rect.collidepoint(logical_mouse_x, logical_mouse_y):
+                    if button_rect.collidepoint(click_pos):
                         # Determine actual bet amount
                         if amount == -1:  # All in
                             bet_amount = player_gold
@@ -1774,6 +1790,7 @@ def handle(events, gs, dt: float, **_):
                         
                         # Check if player has enough gold
                         if player_gold >= bet_amount and bet_amount > 0:
+                            _play_ui_click()
                             st["selected_bet"] = bet_amount
                             st["show_bet_selection"] = False
                             st["bet_selection_active"] = False
@@ -1791,10 +1808,12 @@ def handle(events, gs, dt: float, **_):
         for event in events:
             if event.type == pygame.KEYDOWN:
                 if event.key == pygame.K_ESCAPE:
+                    _play_ui_click()
                     st["whore_confirm_active"] = False
                     st["whore_confirm_buttons"] = []
                     st["whore_confirm_error"] = ""
                 elif event.key in (pygame.K_RETURN, pygame.K_KP_ENTER, pygame.K_SPACE):
+                    _play_ui_click()
                     if _attempt_whore_purchase(gs, st):
                         # Store current position before transitioning to whore
                         st["tavern_player_pos"] = Vector2(gs.player_pos.x, gs.player_pos.y)
@@ -1804,6 +1823,7 @@ def handle(events, gs, dt: float, **_):
                 logical_mouse_x, logical_mouse_y = event.pos
                 for rect, action in st.get("whore_confirm_buttons", []):
                     if rect.collidepoint(logical_mouse_x, logical_mouse_y):
+                        _play_ui_click()
                         if action == "accept":
                             if _attempt_whore_purchase(gs, st):
                                 # Store current position before transitioning to whore

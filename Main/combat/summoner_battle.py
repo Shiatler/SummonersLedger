@@ -179,6 +179,16 @@ def _pick_summoner_track() -> str | None:
         choices = glob.glob(os.path.join(base, "*.mp3"))
     return random.choice(choices) if choices else None
 
+def _pick_boss_track() -> str | None:
+    """Pick a random boss music track."""
+    base = os.path.join("Assets", "Music", "Boss")
+    choices = [
+        os.path.join(base, "Boss1.mp3"),
+        os.path.join(base, "Boss2.mp3"),
+    ]
+    choices = [p for p in choices if os.path.exists(p)]
+    return random.choice(choices) if choices else None
+
 # --- XP helpers (visuals only) ---
 def _xp_compute(stats: dict) -> tuple[int, int, int, float]:
     try:    lvl = max(1, int(stats.get("level", 1)))
@@ -274,6 +284,31 @@ def _load_summoner_big(name: str | None, encounter_sprite: pygame.Surface | None
 
 # ---------- Scene state ----------
 def enter(gs, **_):
+    # Check if already initialized (prevent double initialization from main loop)
+    # BUT: if coming from boss_vs, force re-initialization to ensure fresh state
+    coming_from_boss_vs = getattr(gs, "_coming_from_boss_vs", False)
+    existing_ui = getattr(gs, "_summ_ui", None)
+    current_mode = getattr(gs, "mode", None)
+    
+    # Verify UI state is complete before skipping (must have bg and phase)
+    ui_is_complete = existing_ui is not None and isinstance(existing_ui, dict) and \
+                     existing_ui.get("bg") is not None and \
+                     "phase" in existing_ui
+    
+    if existing_ui is not None and not coming_from_boss_vs and ui_is_complete and current_mode == "SUMMONER_BATTLE":
+        # Already initialized, complete, and in correct mode - don't reinitialize (preserves music state)
+        print("🎵 summoner_battle.enter() called but already initialized, skipping")
+        return
+    
+    # If coming from boss_vs OR UI state is incomplete, clear stale state and reinitialize
+    if (coming_from_boss_vs or not ui_is_complete) and existing_ui is not None:
+        print(f"🎵 Clearing stale _summ_ui before reinitializing (coming_from_boss_vs={coming_from_boss_vs}, ui_complete={ui_is_complete})")
+        try:
+            delattr(gs, "_summ_ui")
+        except Exception:
+            pass
+        existing_ui = None
+    
     try: battle_action.close_popup()
     except Exception: pass
     try: bag_action.close_popup()
@@ -285,25 +320,86 @@ def enter(gs, **_):
     # Use logical resolution for virtual screen dimensions (not physical screen size)
     sw, sh = S.LOGICAL_WIDTH, S.LOGICAL_HEIGHT
 
-    # Music
-    try:
-        pygame.mixer.music.fadeout(200)
-    except Exception:
-        pass
-    track = _pick_summoner_track()
-    if track:
+    # Music - check if this is a boss encounter
+    is_boss = getattr(gs, "encounter_type", None) == "BOSS"
+    # If coming from VS screen, music is already playing - don't restart it
+    coming_from_vs = getattr(gs, "_coming_from_boss_vs", False) and is_boss
+    print(f"🎵 [summoner_battle.enter] is_boss={is_boss}, coming_from_vs={coming_from_vs}, flag={getattr(gs, '_coming_from_boss_vs', False)}")
+    track = None
+    
+    if not coming_from_vs:
+        # Only change music if not coming from VS screen
         try:
-            pygame.mixer.music.load(track)
-            pygame.mixer.music.play(-1, fade_ms=220)
+            pygame.mixer.music.fadeout(200)
+        except Exception:
+            pass
+        if is_boss:
+            track = _pick_boss_track()
+        else:
+            track = _pick_summoner_track()
+        if track:
+            try:
+                pygame.mixer.music.load(track)
+                pygame.mixer.music.play(-1, fade_ms=220)
+            except Exception as e:
+                print(f"⚠️ Could not play {'boss' if is_boss else 'summoner'} music: {e}")
+    else:
+        # Music already playing from VS screen - continue seamlessly
+        # Don't touch the music at all - it's already playing!
+        print("🎵 Continuing boss music from VS screen (music already playing)")
+        # Verify music is still playing, if not reload it
+        try:
+            if not pygame.mixer.music.get_busy():
+                print("⚠️ Music stopped unexpectedly, reloading...")
+                track_path = getattr(gs, "_boss_music_track", None)
+                if track_path:
+                    try:
+                        pygame.mixer.music.load(track_path)
+                        pygame.mixer.music.play(-1, fade_ms=0)
+                        print(f"✅ Reloaded boss music: {track_path}")
+                    except Exception as e:
+                        print(f"⚠️ Could not reload boss music: {e}")
+                else:
+                    # Fallback: pick a boss track
+                    track = _pick_boss_track()
+                    if track:
+                        try:
+                            pygame.mixer.music.load(track)
+                            pygame.mixer.music.play(-1, fade_ms=0)
+                            print(f"✅ Loaded fallback boss music: {track}")
+                        except Exception as e:
+                            print(f"⚠️ Could not load fallback boss music: {e}")
+            else:
+                print("✅ Boss music is still playing")
         except Exception as e:
-            print(f"⚠️ Could not play summoner music: {e}")
+            print(f"⚠️ Error checking music status: {e}")
+        # Clear the flags
+        if hasattr(gs, "_coming_from_boss_vs"):
+            delattr(gs, "_coming_from_boss_vs")
+        if hasattr(gs, "_boss_music_track"):
+            delattr(gs, "_boss_music_track")
+        if hasattr(gs, "_boss_music_pos"):
+            delattr(gs, "_boss_music_pos")
 
     # Sprites
     ally_img  = _load_player_summoner_big(gs)
-    # Use original filename for sprite lookup, generated name for display
-    summoner_filename = getattr(gs, "encounter_summoner_filename", None) or getattr(gs, "encounter_name", None)
-    enemy_img = _load_summoner_big(summoner_filename,
-                                     getattr(gs, "encounter_sprite", None))
+    # Check if this is a boss encounter - use boss sprite directly
+    is_boss = getattr(gs, "encounter_type", None) == "BOSS"
+    if is_boss:
+        # For bosses, use the sprite directly from encounter_sprite or boss_data
+        boss_data = getattr(gs, "encounter_boss_data", None)
+        if boss_data and boss_data.get("sprite"):
+            enemy_img = boss_data["sprite"]
+        else:
+            enemy_img = getattr(gs, "encounter_sprite", None)
+        # Scale boss sprite to target height if needed
+        if enemy_img:
+            enemy_img = _smooth_scale_to_height(enemy_img, TARGET_ENEMY_H)
+    else:
+        # Regular summoner - use normal sprite loading
+        summoner_filename = getattr(gs, "encounter_summoner_filename", None) or getattr(gs, "encounter_name", None)
+        enemy_img = _load_summoner_big(summoner_filename,
+                                         getattr(gs, "encounter_sprite", None))
     if ally_img is not None:  ally_img  = _smooth_scale(ally_img,  ALLY_SCALE)
     if enemy_img is not None: enemy_img = _smooth_scale(enemy_img, ENEMY_SCALE)
 
@@ -347,12 +443,19 @@ def enter(gs, **_):
     active_idx = getattr(gs, "combat_active_idx", 0)
     ally_stats = party_stats[active_idx] if 0 <= active_idx < len(party_stats) else None
 
-    # Enemy name for the challenge line (use name generator)
-    # Try to get original filename first, then fallback to encounter_name (might be old code)
-    summoner_filename = getattr(gs, "encounter_summoner_filename", None) or getattr(gs, "encounter_name", "MSummoner1")
-    from systems.name_generator import generate_summoner_name
-    enemy_name = generate_summoner_name(summoner_filename)
-    st_text = f"You are challenged by {enemy_name}!"
+    # Enemy name for the challenge line
+    # Check if this is a boss encounter
+    is_boss = getattr(gs, "encounter_type", None) == "BOSS"
+    if is_boss:
+        # Boss name is already set in encounter_name
+        enemy_name = getattr(gs, "encounter_name", "Boss")
+        st_text = f"You are challenged by {enemy_name}!"
+    else:
+        # Regular summoner - use name generator
+        summoner_filename = getattr(gs, "encounter_summoner_filename", None) or getattr(gs, "encounter_name", "MSummoner1")
+        from systems.name_generator import generate_summoner_name
+        enemy_name = generate_summoner_name(summoner_filename)
+        st_text = f"You are challenged by {enemy_name}!"
 
     gs._summ_ui = {
         "bg": bg_img,
@@ -422,9 +525,20 @@ def handle(events, gs, dt=None, **_):
         # (keep music playing seamlessly — no fade/stop here)
 
         # Clear encounter-related flags so overworld can trigger again later
+        # BUT preserve boss data - battle.py needs it for team generation
         gs.in_encounter = False
-        gs.encounter_name = ""
-        gs.encounter_sprite = None
+        # Preserve boss data - battle.py will use it and then clear it
+        is_boss = getattr(gs, "encounter_type", None) == "BOSS"
+        if not is_boss:
+            # Only clear these for regular summoners
+            gs.encounter_name = ""
+            gs.encounter_sprite = None
+            # Clear boss flags if they somehow exist
+            if hasattr(gs, "encounter_type"):
+                delattr(gs, "encounter_type")
+            if hasattr(gs, "encounter_boss_data"):
+                delattr(gs, "encounter_boss_data")
+        # For bosses, keep encounter_type and encounter_boss_data - battle.py will handle them
         setattr(gs, "_went_to_summoner", False)
         setattr(gs, "_went_to_wild", False)
 

@@ -265,12 +265,8 @@ def handle(events, gs, screen=None, fonts=None, audio_bank=None, **kwargs):
                 return None
             
             if event.type == pygame.MOUSEBUTTONDOWN and event.button == 1:
-                # Convert click coordinates to logical coordinates for collision detection
-                try:
-                    from systems import coords
-                    click_pos = coords.screen_to_logical(event.pos)
-                except (ImportError, AttributeError):
-                    click_pos = event.pos
+                # event.pos is already converted to logical coordinates in main.py
+                click_pos = event.pos
                 
                 yes_rect = getattr(gs, "_delete_confirm_yes_rect", None)
                 no_rect = getattr(gs, "_delete_confirm_no_rect", None)
@@ -305,6 +301,22 @@ def handle(events, gs, screen=None, fonts=None, audio_bank=None, **kwargs):
                     if hasattr(gs, "_delete_confirm_no_rect"):
                         delattr(gs, "_delete_confirm_no_rect")
                     return None
+                
+                # Click outside popup - check if click is outside the popup area
+                popup_w, popup_h = 520, 240
+                popup_x = (S.LOGICAL_WIDTH - popup_w) // 2
+                popup_y = (S.LOGICAL_HEIGHT - popup_h) // 2
+                popup_rect = pygame.Rect(popup_x, popup_y, popup_w, popup_h)
+                
+                if not popup_rect.collidepoint(click_pos):
+                    # Clicked outside popup - close it (same as clicking No)
+                    audio_sys.play_click(audio_bank)
+                    gs._delete_save_popup_active = False
+                    if hasattr(gs, "_delete_confirm_yes_rect"):
+                        delattr(gs, "_delete_confirm_yes_rect")
+                    if hasattr(gs, "_delete_confirm_no_rect"):
+                        delattr(gs, "_delete_confirm_no_rect")
+                    return None
         
         # If popup is active, don't process other menu button clicks
         return None
@@ -324,12 +336,8 @@ def handle(events, gs, screen=None, fonts=None, audio_bank=None, **kwargs):
                 return None
             
             if event.type == pygame.MOUSEBUTTONDOWN and event.button == 1:
-                # Convert click coordinates to logical coordinates for collision detection
-                try:
-                    from systems import coords
-                    click_pos = coords.screen_to_logical(event.pos)
-                except (ImportError, AttributeError):
-                    click_pos = event.pos
+                # event.pos is already converted to logical coordinates in main.py
+                click_pos = event.pos
                 
                 yes_rect = getattr(gs, "_new_game_confirm_yes_rect", None)
                 no_rect = getattr(gs, "_new_game_confirm_no_rect", None)
@@ -404,9 +412,22 @@ def handle(events, gs, screen=None, fonts=None, audio_bank=None, **kwargs):
                     if hasattr(gs, "_new_game_confirm_no_rect"):
                         delattr(gs, "_new_game_confirm_no_rect")
                     return None
-        
-        # If popup is active, don't process other menu button clicks
-        return None
+                
+                # Click outside popup - check if click is outside the popup area
+                popup_w, popup_h = 520, 240
+                popup_x = (S.LOGICAL_WIDTH - popup_w) // 2
+                popup_y = (S.LOGICAL_HEIGHT - popup_h) // 2
+                popup_rect = pygame.Rect(popup_x, popup_y, popup_w, popup_h)
+                
+                if not popup_rect.collidepoint(click_pos):
+                    # Clicked outside popup - close it (same as clicking No)
+                    audio_sys.play_click(audio_bank)
+                    gs._new_game_popup_active = False
+                    if hasattr(gs, "_new_game_confirm_yes_rect"):
+                        delattr(gs, "_new_game_confirm_yes_rect")
+                    if hasattr(gs, "_new_game_confirm_no_rect"):
+                        delattr(gs, "_new_game_confirm_no_rect")
+                    return None
 
     b_new, b_cont, b_delete, b_settings, b_quit = gs._menu_buttons
 

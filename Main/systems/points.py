@@ -28,6 +28,7 @@ DIFFICULTY_TIERS = {
 def calculate_battle_points(gs, enemy_team: Dict) -> int:
     """
     Calculate points awarded for defeating a summoner's team.
+    Bosses get 2.5x multiplier.
     
     Args:
         gs: GameState object
@@ -73,6 +74,12 @@ def calculate_battle_points(gs, enemy_team: Dict) -> int:
     
     # Total calculation
     total = base + level_points + difficulty_bonus + team_size_bonus
+    
+    # Boss multiplier (2.5x for bosses)
+    is_boss = getattr(gs, "encounter_type", None) == "BOSS"
+    if is_boss:
+        total = int(total * 2.5)
+        print(f"🎯 Boss battle: Points multiplied by 2.5x = {total}")
     
     return max(BASE_POINTS, total)  # Ensure minimum reward
 

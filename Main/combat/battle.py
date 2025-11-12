@@ -133,7 +133,7 @@ def _award_xp_for_enemy_event(gs, st, ev):
         pretty = re.sub(r"\d+$", "", base_name) or "Ally"
         subtitle = f"{subtitle}   •   {pretty} leveled up! {old_lv} → {new_lv}"
 
-    # Show a quick toast (auto-hides; doesn’t block input)
+    # Show a quick toast (auto-hides; doesn't block input)
     _show_result_screen(
         st,
         f"Defeated {enemy_name or 'Enemy'}",
@@ -149,8 +149,7 @@ def _maybe_show_xp_award(gs, st):
     compute + distribute and show an 'Experience Gained' card.
     We DO NOT exit the battle; the next enemy can already be on screen.
     """
-    print("[battle] maybe_show_xp_award: result=", bool(st.get("result")), 
-          "pending=", bool(st.get("pending_xp_award")))  # DEBUG    
+    # Removed debug spam: print("[battle] maybe_show_xp_award: result=", bool(st.get("result")), "pending=", bool(st.get("pending_xp_award")))
     if st.get("result") or not st.get("pending_xp_award"):
         return
 
@@ -170,8 +169,7 @@ def _maybe_show_xp_award(gs, st):
         pass
 
     base_xp = xp_sys.compute_xp_reward(estats, enemy_name, outcome)
-    print("[battle] awarding XP:", outcome, enemy_name, "base=", base_xp, 
-      "to active idx", active_idx)  # DEBUG
+    # Removed debug spam: print("[battle] awarding XP:", outcome, enemy_name, "base=", base_xp, "to active idx", active_idx)
     active_xp, bench_xp, levelups = xp_sys.distribute_xp(gs, int(active_idx), int(base_xp))
 
     # No autosave - user must manually save via "Save Game" button
@@ -680,6 +678,11 @@ def _clear_encounter_flags(gs):
     gs.encounter_sprite = None
     setattr(gs, "_went_to_summoner", False)
     setattr(gs, "_went_to_wild", False)
+    # Clear boss encounter flags
+    if hasattr(gs, "encounter_type"):
+        delattr(gs, "encounter_type")
+    if hasattr(gs, "encounter_boss_data"):
+        delattr(gs, "encounter_boss_data")
 
 def _nuke_summoner_ui(gs):
     if hasattr(gs, "_summ_ui"):
@@ -691,11 +694,50 @@ def _build_initial_state(gs, preserved_bg=None, preserved_ally_pos=None, preserv
     if st is None:
         gs._battle = st = {}
     if st.get("_built"):
+        print(f"[_build_initial_state] WARNING: State already built! Returning existing state without rebuilding team.")
+        print(f"   Current enemy_team size: {len(st.get('enemy_team', {}).get('names', []))}")
         return st
 
     # Team
-    team = generate_enemy_team(gs)  # {names, levels, stats}
+    # Check if this is a boss encounter - use pre-generated team if available
+    is_boss = getattr(gs, "encounter_type", None) == "BOSS"
+    print(f"[_build_initial_state] Starting build. is_boss={is_boss}, encounter_type={getattr(gs, 'encounter_type', None)}")
+    
+    if is_boss:
+        boss_data = getattr(gs, "encounter_boss_data", None)
+        print(f"[_build_initial_state] boss_data exists: {boss_data is not None}")
+        if boss_data:
+            print(f"[_build_initial_state] boss_data keys: {list(boss_data.keys()) if isinstance(boss_data, dict) else 'not a dict'}")
+            print(f"[_build_initial_state] team_data exists: {boss_data.get('team_data') is not None}")
+            if boss_data.get("team_data"):
+                team_data = boss_data["team_data"]
+                print(f"[_build_initial_state] team_data type: {type(team_data)}")
+                print(f"[_build_initial_state] team_data keys: {list(team_data.keys()) if isinstance(team_data, dict) else 'not a dict'}")
+                if isinstance(team_data, dict):
+                    team = team_data
+                    print(f"🎯 Using pre-generated boss team for {boss_data.get('name', 'Boss')}")
+                    print(f"   Team size: {len(team.get('names', []))} vessels")
+                    print(f"   Team names: {team.get('names', [])}")
+                    print(f"   Team levels: {team.get('levels', [])}")
+                    print(f"   Team stats count: {len(team.get('stats', []))}")
+                else:
+                    team = generate_enemy_team(gs)
+                    print(f"⚠️ Boss team_data is not a dict, generating normal team")
+            else:
+                # Fallback: generate team normally
+                team = generate_enemy_team(gs)
+                print(f"⚠️ Boss team data missing, generating normal team")
+        else:
+            team = generate_enemy_team(gs)
+            print(f"⚠️ No boss_data found, generating normal team")
+    else:
+        team = generate_enemy_team(gs)  # {names, levels, stats}
+        print(f"[_build_initial_state] Regular summoner battle - generated team size: {len(team.get('names', []))}")
+    
     st["enemy_team"] = team
+    print(f"[_build_initial_state] Final enemy_team size: {len(st['enemy_team'].get('names', []))}")
+    print(f"[_build_initial_state] Final enemy_team structure: names={len(team.get('names', []))}, levels={len(team.get('levels', []))}, stats={len(team.get('stats', []))}")
+    print(f"[_build_initial_state] Full team: {team}")
     st["enemy_idx"]  = 0  # current index on field
 
     # Ally - use preserved active_idx if available (from summoner_battle)
@@ -847,8 +889,26 @@ def _label_from_token(token: str | None) -> str:
 
 # ---------------- Entry/Exit ----------------
 def enter(gs, audio_bank=None, **_):
+    # Check if battle is already active - if so, don't rebuild
+    existing_battle = getattr(gs, "_battle", None)
+    if existing_battle and existing_battle.get("_built"):
+        print(f"[battle.enter] Battle already active, skipping rebuild. Enemy team size: {len(existing_battle.get('enemy_team', {}).get('names', []))}")
+        return
+    
     setattr(gs, "mode", MODE_BATTLE)
+    # Don't clear boss data yet - we need it for team generation
+    # We'll clear it after battle state is built
+    temp_boss_type = getattr(gs, "encounter_type", None)
+    temp_boss_data = getattr(gs, "encounter_boss_data", None)
+    print(f"[battle.enter] Before clear: encounter_type={temp_boss_type}, boss_data exists={temp_boss_data is not None}")
     _clear_encounter_flags(gs)
+    # Restore boss data temporarily
+    if temp_boss_type == "BOSS":
+        gs.encounter_type = temp_boss_type
+        gs.encounter_boss_data = temp_boss_data
+        print(f"[battle.enter] Restored boss data: encounter_type={gs.encounter_type}, boss_data keys={list(temp_boss_data.keys()) if temp_boss_data else 'None'}")
+    else:
+        print(f"[battle.enter] Not a boss encounter (type={temp_boss_type})")
 
     # Close popups just in case
     try:
@@ -881,22 +941,40 @@ def enter(gs, audio_bank=None, **_):
             gs._transition_bg = preserved_bg
         # DON'T delete _summ_ui yet - let draw() delete it after first frame to ensure seamless transition
     
+    # Completely clear battle state to ensure fresh build
     if hasattr(gs, "_battle"):
         try:
             delattr(gs, "_battle")
         except Exception:
-            gs._battle = {}
+            pass
+    # Ensure _battle doesn't exist before building
+    if hasattr(gs, "_battle"):
+        delattr(gs, "_battle")
 
     # Dice callback not used here, but keep parity
     set_roll_callback(roll_ui._on_roll)
     bag_action.set_use_item_callback(_on_battle_use_item)  # allow heals, block capture
 
     # Build scene - pass preserved state if available
+    # Boss data is already restored above, so _build_initial_state will use it
+    boss_data_check = getattr(gs, "encounter_boss_data", None)
+    print(f"[battle.enter] About to call _build_initial_state.")
+    print(f"   encounter_type={getattr(gs, 'encounter_type', None)}")
+    print(f"   boss_data exists={boss_data_check is not None}")
+    if boss_data_check:
+        print(f"   boss_data keys={list(boss_data_check.keys()) if isinstance(boss_data_check, dict) else 'not a dict'}")
+        print(f"   boss_data has team_data={boss_data_check.get('team_data') is not None if isinstance(boss_data_check, dict) else 'N/A'}")
     st = _build_initial_state(gs, 
                                preserved_bg=preserved_bg,
                                preserved_ally_pos=preserved_ally_pos,
                                preserved_enemy_pos=preserved_enemy_pos,
                                preserved_active_idx=preserved_active_idx)
+
+    # Now clear boss flags after state is built
+    if hasattr(gs, "encounter_type"):
+        delattr(gs, "encounter_type")
+    if hasattr(gs, "encounter_boss_data"):
+        delattr(gs, "encounter_boss_data")
 
     # 👉 Alias for systems (moves/btn/resolve) that write to gs._wild
     gs._wild = st
@@ -944,10 +1022,17 @@ def _exit_battle(gs):
                 gs.pending_score_target = target_score
                 trigger_animation = False  # Don't start animation now
     
-    try:
-        pygame.mixer.music.fadeout(300)
-    except Exception:
-        pass
+    keep_music = getattr(gs, "_keep_boss_music", False)
+    if keep_music and hasattr(gs, "_keep_boss_music"):
+        try:
+            delattr(gs, "_keep_boss_music")
+        except Exception:
+            pass
+    if not keep_music:
+        try:
+            pygame.mixer.music.fadeout(300)
+        except Exception:
+            pass
 
     pre = getattr(gs, "_precombat_active_idx", None)
     if pre is None:
@@ -1048,7 +1133,7 @@ def _on_battle_use_item(gs, item) -> bool:
     if iid in CAPTURE:
         st = getattr(gs, "_battle", None)
         if st is not None and not st.get("result"):
-            _show_result_screen(st, "Cannot Use", "You can’t bind a Summoner’s Vessel.", kind="fail", auto_dismiss_ms=1100)
+            _show_result_screen(st, "Cannot Use", "You can't bind a Summoner's Vessel.", kind="fail", auto_dismiss_ms=1100)
         bag_action.close_popup()
         return True  # Handled successfully
 
@@ -1330,14 +1415,14 @@ def _finalize_battle_xp(gs, st):
     When the battle ends, ensure any pending XP award is shown first.
     After the XP card is dismissed, show the Victory card and exit.
     """
-    # If there’s an XP award pending and no modal is currently blocking,
+    # If there's an XP award pending and no modal is currently blocking,
     # show XP first and remember to show Victory afterwards.
     if st.get("pending_xp_award") and not st.get("result"):
         st["queued_victory"] = True
         _maybe_show_xp_award(gs, st)
         return
 
-    # If we’re here while an XP result is up, just mark that Victory is next.
+    # If we're here while an XP result is up, just mark that Victory is next.
     if st.get("result") and st.get("pending_xp_award"):
         st["queued_victory"] = True
         return
@@ -1379,6 +1464,17 @@ def _finalize_battle_xp(gs, st):
     
     # Build victory message with points and currency
     victory_msg = f"All enemies defeated.\n\nPoints Earned: {points_earned:,} ({tier_name})\nTotal Points: {total_points:,}\n\nCurrency Earned: {currency_display}"
+    
+    # Mark boss as defeated if this was a boss encounter
+    is_boss = getattr(gs, "encounter_type", None) == "BOSS"
+    if is_boss:
+        boss_data = getattr(gs, "encounter_boss_data", None)
+        if boss_data:
+            score_threshold = boss_data.get("score_threshold", 0)
+            if score_threshold > 0:
+                from world import bosses
+                bosses.mark_boss_defeated(gs, score_threshold)
+                print(f"🏆 Boss at score {score_threshold} marked as defeated")
     
     _show_result_screen(st, "Victory!", victory_msg, kind="success", exit_on_close=True)
     st["pending_exit"] = True
@@ -1833,7 +1929,7 @@ def draw(screen: pygame.Surface, gs, dt: float, **_):
                     dict(gs.encounter_stats or {}),   # snapshot now
                     int(active_idx),
                 )
-                print("[battle] queued XP award:", st["pending_xp_award"])  # DEBUG
+                # Removed debug spam: print("[battle] queued XP award:", st["pending_xp_award"])
                 st["enemy_awarded_this_ko"] = True
     else:
         if e_cur > 0 or moves_busy:
@@ -1859,7 +1955,7 @@ def draw(screen: pygame.Surface, gs, dt: float, **_):
                     estats = dict(getattr(gs, "encounter_stats", {}) or {})
                     enemy_name = gs.encounter_name or "Enemy"
                     st["pending_xp_award"] = ("defeat", enemy_name, estats, int(active_idx))
-                    print("[battle] queued XP award (post-fade safety):", st["pending_xp_award"])
+                    # Removed debug spam: print("[battle] queued XP award (post-fade safety):", st["pending_xp_award"])
                     st["enemy_awarded_this_ko"] = True
 
                 if not suppress_enemy:

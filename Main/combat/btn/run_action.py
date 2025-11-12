@@ -47,9 +47,23 @@ def handle_click(pos, gs) -> bool:
     # Click feedback (master-controlled)
     audio_sys.play_click(audio_sys.get_global_bank())
 
+    # Determine DC based on battle type:
+    # - Boss battles: DC 20
+    # - Normal summoner battles: DC 18
+    # - Wild vessel battles: DC 10
+    is_boss = getattr(gs, "encounter_type", None) == "BOSS"
+    is_summoner_battle = getattr(gs, "_battle", None) is not None
+    
+    if is_boss:
+        run_dc = 20
+    elif is_summoner_battle:
+        run_dc = 18
+    else:
+        run_dc = 10  # Wild vessel battle
+
     dex_score = getattr(gs, "dexterity", 10)
-    result = roller.roll_check(dex_score, dc=10, notify=True)
-    print(f"🏃 Run Attempt: {result.text}")
+    result = roller.roll_check(dex_score, dc=run_dc, notify=True)
+    print(f"🏃 Run Attempt: {result.text} (DC {run_dc})")
     # Check both _wild and _battle (battle.py uses _battle, wild_vessel uses _wild)
     st = getattr(gs, "_wild", None) or getattr(gs, "_battle", None)
     if st is not None:

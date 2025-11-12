@@ -43,6 +43,7 @@ from screens import (
     menu_screen, char_select, name_entry,
     black_screen, intro_video, settings_screen, pause_screen, master_oak
 )
+from screens import boss_vs
 from screens import rest as rest_screen
 from world.Tavern import tavern as tavern_screen
 from world.Tavern import gambling as gambling_screen
@@ -130,6 +131,7 @@ MODE_BLACK_SCREEN = "BLACK_SCREEN"
 MODE_INTRO_VIDEO  = "INTRO_VIDEO"
 MODE_WILD_VESSEL = "WILD_VESSEL"
 MODE_SUMMONER_BATTLE = "SUMMONER_BATTLE"
+MODE_BOSS_VS = "BOSS_VS"
 MODE_BATTLE = getattr(S, "MODE_BATTLE", "BATTLE")
 MODE_DEATH_SAVES = getattr(S, "MODE_DEATH_SAVES", "DEATH_SAVES")
 MODE_DEATH = getattr(S, "MODE_DEATH", "DEATH")
@@ -360,6 +362,7 @@ def update_encounter_popup(screen, dt, gs, mist_frame, width, height, pg_instanc
     actors.draw_rivals(screen, cam, gs)
     actors.draw_merchants(screen, cam, gs)
     actors.draw_taverns(screen, cam, gs)
+    actors.draw_bosses(screen, cam, gs)
 
     # Player sprite
     screen.blit(
@@ -547,6 +550,11 @@ def start_new_game(gs):
     gs.silver = 0
     gs.bronze = 0
     
+    # Initialize score with bootstrap value
+    from systems import points as points_sys
+    points_sys.ensure_points_field(gs)
+    gs.total_points = 51000  # Bootstrap score for testing boss system
+    
     # Reset first overworld blessing flag for new run
     gs.first_overworld_blessing_given = False
     # Mark that this is a NEW game (not loaded from save)
@@ -555,6 +563,11 @@ def start_new_game(gs):
     # Clear buff history and active buffs for new game
     gs.active_buffs = []
     gs.buffs_history = []
+    
+    # Reset boss tracking for new game
+    gs.defeated_boss_scores = []
+    gs.spawned_boss_scores = []
+    gs.bosses_on_map = []
     
     # Restore Book of Bound discoveries (persistent across new games)
     gs.book_of_bound_discovered = preserved_book_of_bound
@@ -649,6 +662,8 @@ def enter_mode(mode, gs, deps):
         pause_screen.enter(gs, **deps)
     elif mode == MODE_WILD_VESSEL:
         wild_vessel.enter(gs, **deps)
+    elif mode == MODE_BOSS_VS:
+        boss_vs.enter(gs, **deps)
     elif mode == MODE_SUMMONER_BATTLE:
         summoner_battle.enter(gs, **deps)
     elif mode == MODE_BATTLE:
@@ -1195,8 +1210,12 @@ while running:
         elif mode == MODE_CHAR_SELECT:
             audio.play_music(AUDIO, "CharacterSelect")
         elif mode == MODE_TAVERN:
+            # Check if we're returning from pause - don't restart music
+            if prev_mode == MODE_PAUSE:
+                # Returning from pause - music should continue playing, don't restart
+                pass
             # Only start tavern music if we're not coming from gambling (where it's already playing)
-            if prev_mode != MODE_GAMBLING:
+            elif prev_mode != MODE_GAMBLING:
                 # Stop overworld music and walking sounds
                 audio.stop_music(fade_ms=600)
                 # Stop overworld walking sound if playing
@@ -1222,13 +1241,18 @@ while running:
             # Just make sure we're not playing overworld music
             pass
         elif mode == S.MODE_GAME:
+            # Check if we're returning from pause - don't restart music
+            if prev_mode == MODE_PAUSE:
+                # Returning from pause - music should continue playing, don't restart
+                pass
             # Check if we're returning from tavern or gambling - restore overworld music
-            if prev_mode == MODE_TAVERN or prev_mode == MODE_GAMBLING:
+            elif prev_mode == MODE_TAVERN or prev_mode == MODE_GAMBLING:
                 # Stop tavern music
                 audio.stop_music(fade_ms=600)
+                gs.overworld_music_started = False
             else:
                 audio.stop_music()
-            gs.overworld_music_started = False
+                gs.overworld_music_started = False
         elif mode == MODE_DEATH:
             audio.stop_music()
 
@@ -1487,6 +1511,36 @@ while running:
             else:
                 mode = next_mode
     
+    # ===================== BOSS VS SCREEN =====================
+    elif mode == MODE_BOSS_VS:
+        # Draw overworld behind the VS popup
+        cam = world.get_camera_offset(gs.player_pos, S.LOGICAL_WIDTH, S.LOGICAL_HEIGHT, gs.player_half)
+        world.draw_repeating_road(virtual_screen, cam.x, cam.y)
+        pg.update_needed(cam.y, S.LOGICAL_HEIGHT)
+        pg.draw_props(virtual_screen, cam.x, cam.y, S.LOGICAL_WIDTH, S.LOGICAL_HEIGHT)
+        actors.draw_vessels(virtual_screen, cam, gs, mist_frame, S.DEBUG_OVERWORLD)
+        actors.draw_rivals(virtual_screen, cam, gs)
+        actors.draw_merchants(virtual_screen, cam, gs)
+        actors.draw_taverns(virtual_screen, cam, gs)
+        actors.draw_bosses(virtual_screen, cam, gs)
+        
+        # Draw player
+        virtual_screen.blit(
+            gs.player_image,
+            (gs.player_pos.x - cam.x - gs.player_half.x,
+            gs.player_pos.y - cam.y - gs.player_half.y)
+        )
+        
+        # Draw VS popup overlay on top
+        next_mode = boss_vs.handle(events, gs, dt, **deps)
+        boss_vs.draw(virtual_screen, gs, dt, **deps)
+        blit_virtual_to_screen(virtual_screen, screen)
+        mouse_pos = pygame.mouse.get_pos()
+        cursor_manager.draw_cursor(screen, mouse_pos, gs, mode)
+        pygame.display.flip()
+        if next_mode:
+            mode = next_mode
+
     # ===================== SUMMONER BATTLE =====================
     elif mode == MODE_SUMMONER_BATTLE:
         next_mode = summoner_battle.handle(events, gs, dt, **deps)
@@ -1625,6 +1679,7 @@ while running:
             gs._tavern_state = tavern_state
         if (tavern_state.get("kicked_out_textbox_active", False)
                 or tavern_state.get("show_gambler_intro", False)
+                or tavern_state.get("show_game_selection", False)
                 or tavern_state.get("show_bet_selection", False)
                 or tavern_state.get("whore_confirm_active", False)):
             any_modal_open_tavern = True
@@ -1653,9 +1708,8 @@ while running:
         # --- Handle HUD button clicks FIRST (before other UI) ---
         for e in tavern_events:
             if e.type == pygame.MOUSEBUTTONDOWN and e.button == 1:
-                # Convert click position to logical coordinates (button rects are in logical coords)
-                logical_pos = coords.screen_to_logical(e.pos)
-                button_clicked = hud_buttons.handle_click(logical_pos)
+                # e.pos is already converted to logical coordinates in main.py
+                button_clicked = hud_buttons.handle_click(e.pos)
                 if button_clicked == 'bag':
                     bag_ui.toggle_popup()
                     hud_button_click_positions_tavern.add(e.pos)
@@ -2152,9 +2206,8 @@ while running:
         # --- Handle HUD button clicks FIRST (before other UI) ---
         for e in events:
             if e.type == pygame.MOUSEBUTTONDOWN and e.button == 1:
-                # Convert click position to logical coordinates (button rects are in logical coords)
-                logical_pos = coords.screen_to_logical(e.pos)
-                button_clicked = hud_buttons.handle_click(logical_pos)
+                # e.pos is already converted to logical coordinates in main.py
+                button_clicked = hud_buttons.handle_click(e.pos)
                 if button_clicked == 'bag':
                     bag_ui.toggle_popup()
                     just_toggled_bag = True
@@ -2439,20 +2492,20 @@ while running:
                                 # If laugh not found, play shop music immediately
                                 audio.play_music(AUDIO, "shopm1", loop=True, fade_ms=800)
                                 gs._shop_music_playing = True
-                    elif not gs.shop_open and was_open:
-                        # Closing shop - restore overworld music
-                        audio.stop_music(fade_ms=600)
-                        shop.clear_shop_override()
-                        gs._shop_music_playing = False
-                        gs._waiting_for_shop_music = False
-                        # Restart overworld music after fade
-                        if hasattr(gs, "_shop_previous_music_track") and gs._shop_previous_music_track:
-                            gs.last_overworld_track = gs._shop_previous_music_track
-                        # Pick next overworld track
-                        nxt = audio.pick_next_track(AUDIO, getattr(gs, "last_overworld_track", None), prefix="music")
-                        if nxt:
-                            audio.play_music(AUDIO, nxt, loop=False, fade_ms=600)
-                            gs.last_overworld_track = nxt
+                        elif not gs.shop_open and was_open:
+                            # Closing shop - restore overworld music
+                            audio.stop_music(fade_ms=600)
+                            shop.clear_shop_override()
+                            gs._shop_music_playing = False
+                            gs._waiting_for_shop_music = False
+                            # Restart overworld music after fade
+                            if hasattr(gs, "_shop_previous_music_track") and gs._shop_previous_music_track:
+                                gs.last_overworld_track = gs._shop_previous_music_track
+                            # Pick next overworld track
+                            nxt = audio.pick_next_track(AUDIO, getattr(gs, "last_overworld_track", None), prefix="music")
+                            if nxt:
+                                audio.play_music(AUDIO, nxt, loop=False, fade_ms=600)
+                                gs.last_overworld_track = nxt
             elif event.type == MUSIC_ENDEVENT:
                 # Don't restart music if shop music is playing (it should loop)
                 if getattr(gs, "_shop_music_playing", False):
@@ -2578,6 +2631,7 @@ while running:
                 mode = MODE_WILD_VESSEL
 
             # NEW: summoner (trainer) encounter – no stats attached
+            # Boss encounters go to VS screen first, then summoner_battle
             elif gs.encounter_sprite is not None and not getattr(gs, "_went_to_summoner", False):
                 try:
                     pygame.mixer.music.fadeout(200)
@@ -2590,7 +2644,12 @@ while running:
                 gs.is_walking = False
                 gs.walking_channel = None
                 gs._went_to_summoner = True
-                mode = MODE_SUMMONER_BATTLE
+                # Check if this is a boss encounter - go to VS screen first
+                is_boss = getattr(gs, "encounter_type", None) == "BOSS"
+                if is_boss:
+                    mode = MODE_BOSS_VS
+                else:
+                    mode = MODE_SUMMONER_BATTLE
 
             else:
                 update_encounter_popup(virtual_screen, dt, gs, mist_frame, S.LOGICAL_WIDTH, S.LOGICAL_HEIGHT, pg)
@@ -2601,6 +2660,10 @@ while running:
             actors.update_vessels(gs, dt, gs.player_half, VESSELS, RARE_VESSELS)
             actors.update_merchants(gs, dt, gs.player_half)
             actors.update_taverns(gs, dt, gs.player_half)
+            actors.update_bosses(gs, dt, gs.player_half)
+            # Check for boss spawns based on score
+            from world import bosses
+            bosses.check_and_spawn_bosses(gs)
             try_trigger_encounter(gs, RIVAL_SUMMONERS, MERCHANT_FRAMES, TAVERN_SPRITE)
 
             cam = world.get_camera_offset(gs.player_pos, S.LOGICAL_WIDTH, S.LOGICAL_HEIGHT, gs.player_half)
@@ -2611,6 +2674,7 @@ while running:
             actors.draw_rivals(virtual_screen, cam, gs)
             actors.draw_merchants(virtual_screen, cam, gs)
             actors.draw_taverns(virtual_screen, cam, gs)
+            actors.draw_bosses(virtual_screen, cam, gs)
 
             virtual_screen.blit(
                 gs.player_image,

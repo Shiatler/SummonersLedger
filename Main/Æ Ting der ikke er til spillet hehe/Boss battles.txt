@@ -1,0 +1,73 @@
+You see how vessels, summoners, tavern and merchants spawn to the side? WOuld it be possible to have bosses spawn in the middle of the road looking down at you? 
+
+They should spawn following your score, so if u hit 5000 points it spawns further ahead (far enough away so you cant see on map)
+
+Then next boss 12500 (Also bosses should give more Score than normal)
+
+So 5000, 10.000 (+5000) and then between 5000-10000 after that, example could spawn after 15.000 could also spawn after 18.000, the 5000 to 10.000 stick for the rest of the game. 
+
+Boss sprites are found here: C:\Users\Frederik\Desktop\SummonersLedger\Main\Assets\SummonersBoss
+
+BSummonerF1-3.png BSummonerM1-8.png Cnythia.png and Master_Oak.png
+
+They will follow same random name logic, if male or female 
+
+Cynthia will be named Cynthia and will spawn after 50.000 points, Master Oak named Master Oak after 100.000 points
+
+The first boss will always have 3 vessels in party (random vessels)
+
+Next boss 5 vessels
+
+Rest of the bosses 6 vessels
+
+Use Summoner_Battle.py + Battle.py for battle logic etc 
+
+Fx (Boss spawns, you walk close, Summoner_Battle.py plays with the boss sprite - screen changes to Battle.py (Same as normal summoner battles) Uses the random team that was generated for set boss. 
+
+Go ahead and write me a plan first, not too long - then after we can see if I implement or not.
+
+Forgot to mention, music for bosses are different than normal summoner battle music C:\Users\Frederik\Desktop\SummonersLedger\Main\Assets\Music\Boss Boss1.mp3 and Boss2.mp3
+
+
+
+Update plan
+
+Boss System Implementation Plan (Updated)
+1. Boss Spawning Logic (world/actors.py or new world/bosses.py)
+Track score milestones: [5000, 12500, 15000-18000 (random), ...] with special at 50000 (Cynthia) and 100000 (Master Oak)
+On milestone: spawn boss ahead (middle of road, far enough to be off-screen)
+Store boss data: sprite path, name, party size, score threshold
+Boss faces player (sprite orientation)
+2. Boss Data Structure (in GameState)
+active_bosses: list[dict] with {pos, sprite_path, name, gender, party_size, score_threshold, team_data}
+Generate team when boss spawns (3/5/6 vessels via existing team randomizer)
+Store team in boss data for battle consistency
+3. Boss Rendering (main.py or world/actors.py)
+Draw bosses centered on road (not offset like merchants)
+Use sprite from Assets/SummonersBoss/ based on gender/name
+Check distance to player; when close, trigger encounter
+4. Encounter Trigger (main.py)
+On proximity: set gs.encounter_type = "BOSS", load boss sprite/name
+Call summoner_battle.py with boss data (reuse existing flow)
+Transition to battle.py with pre-generated boss team
+5. Boss Music (systems/audio.py or combat/summoner_battle.py)
+Boss encounters use Assets/Music/Boss/Boss1.mp3 or Boss2.mp3 (alternate or random)
+Normal summoner battles keep existing music
+Play boss music when boss encounter starts, stop on battle end
+6. Score Rewards (systems/points.py)
+Boss multiplier: boss_points = base_points * 2.5 (or similar)
+Award bonus on boss defeat
+7. Boss Name Generation (systems/name_generator.py)
+Reuse existing name logic for male/female
+Override: "Cynthia" at 50k, "Master Oak" at 100k
+8. Integration Points
+Check score in main loop; spawn bosses when thresholds hit
+Boss proximity detection in overworld update
+Reuse summoner_battle.py → battle.py flow with boss music
+Files to modify/create:
+world/actors.py (or new world/bosses.py) - spawning
+main.py - boss rendering & encounter trigger
+systems/points.py - score milestone tracking
+combat/summoner_battle.py - boss encounter handling & music
+systems/audio.py - boss music loading/playback
+Should I proceed with implementation?
