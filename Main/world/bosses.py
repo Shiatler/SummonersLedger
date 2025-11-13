@@ -31,6 +31,12 @@ def get_next_boss_threshold(current_score: int, defeated_bosses: List[int], spaw
     Calculate the next boss threshold based on current score and defeated/spawned bosses.
     Returns None if no more bosses should spawn.
     """
+    # Check special bosses FIRST (they have priority over deterministic bosses)
+    for threshold, name in SPECIAL_BOSSES.items():
+        if threshold not in defeated_bosses and threshold not in spawned_bosses and current_score >= threshold:
+            print(f"[get_next_boss_threshold] Returning special boss {name} at threshold {threshold}")
+            return threshold
+    
     # First boss at 5000
     if FIRST_BOSS_SCORE not in defeated_bosses and FIRST_BOSS_SCORE not in spawned_bosses and current_score >= FIRST_BOSS_SCORE:
         print(f"[get_next_boss_threshold] Returning FIRST_BOSS_SCORE ({FIRST_BOSS_SCORE})")
@@ -52,14 +58,20 @@ def get_next_boss_threshold(current_score: int, defeated_bosses: List[int], spaw
             _random.seed()  # Reset seed
             next_threshold = last_boss_score + gap
             
-            # Check if this threshold was already spawned
-            if next_threshold not in spawned_bosses and current_score >= next_threshold:
-                return next_threshold
-    
-    # Check special bosses
-    for threshold, name in SPECIAL_BOSSES.items():
-        if threshold not in defeated_bosses and threshold not in spawned_bosses and current_score >= threshold:
-            return threshold
+            # Skip if this deterministic threshold conflicts with a special boss threshold
+            if next_threshold in SPECIAL_BOSSES:
+                # If the special boss hasn't been spawned/defeated, skip this deterministic boss
+                if next_threshold not in defeated_bosses and next_threshold not in spawned_bosses:
+                    # Don't return this threshold - let the special boss spawn instead
+                    pass
+                else:
+                    # Special boss already handled, so this deterministic threshold is valid
+                    if next_threshold not in spawned_bosses and current_score >= next_threshold:
+                        return next_threshold
+            else:
+                # Check if this threshold was already spawned
+                if next_threshold not in spawned_bosses and current_score >= next_threshold:
+                    return next_threshold
     
     return None
 
@@ -70,7 +82,7 @@ def load_boss_sprite(boss_name: str, gender: str) -> Optional[pygame.Surface]:
     if boss_name == "Cynthia":
         path = os.path.join(BOSS_SPRITE_DIR, "Cynthia.png")
     elif boss_name == "Master Oak":
-        path = os.path.join(BOSS_SPRITE_DIR, "Master Oak.png")
+        path = os.path.join(BOSS_SPRITE_DIR, "Master_Oak.png")
     else:
         # Random boss sprite based on gender
         if gender.lower() == "female":

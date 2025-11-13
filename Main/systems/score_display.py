@@ -1,96 +1,31 @@
 # ============================================================
-# systems/score_display.py — Score Display (Top Right Corner)
-# - Only appears after summoner battle victory (4.5 seconds)
-# - Shows animated score rolling up to new value
-# - Plays thunder sound after animation
+# systems/score_display.py — Score Display (Permanent HUD)
+# - Always visible in top right corner
+# - Shows score in a small HUD panel matching other HUDs
+# - Number animation on score updates after battle victory
 # ============================================================
 
 import os
 import pygame
 import settings as S
 from systems import points as points_sys
+from systems import hud_style
 
 # ---------- Constants ----------
-ANIMATION_DURATION = 4.5  # Total animation duration in seconds
+ANIMATION_DURATION = 1.5  # Number roll-up animation duration in seconds (reduced from 4.5)
 
-# ---------- Cache ----------
-_SCORE_FRAMES: list[pygame.Surface] | None = None
-_SCALED_FRAMES: list[pygame.Surface] | None = None
+# ---------- HUD Configuration ----------
+HUD_PADDING = 12  # Padding inside the HUD panel
+HUD_MARGIN_RIGHT = 12  # Distance from right edge
+HUD_MARGIN_TOP = 12  # Distance from top edge
+HUD_MIN_WIDTH = 120  # Minimum width for the score HUD
+HUD_HEIGHT = 50  # Height of the score HUD panel
+
+# ---------- Font Cache ----------
 _FONT_CACHE: dict[int, pygame.font.Font] = {}
-_ANIM_TIMER: float = 0.0
-_ANIM_FPS: float = 8.0  # Animation FPS for the frames
-_THUNDER_SOUND: pygame.mixer.Sound | None = None
 
-# ---------- Load Assets ----------
-
-def _load_score_frames() -> list[pygame.Surface] | None:
-    """Load and cache all Score animation frames (Score1.png - Score5.png)."""
-    global _SCORE_FRAMES
-    if _SCORE_FRAMES is not None:
-        return _SCORE_FRAMES
-    
-    frames = []
-    base_path = os.path.join("Assets", "Animations")
-    
-    for i in range(1, 6):  # Score1.png through Score5.png
-        path = os.path.join(base_path, f"Score{i}.png")
-        if not os.path.exists(path):
-            print(f"⚠️ Score{i}.png not found at {path}")
-            continue
-        
-        try:
-            frame = pygame.image.load(path).convert_alpha()
-            frames.append(frame)
-        except Exception as e:
-            print(f"⚠️ Failed to load Score{i}.png: {e}")
-    
-    if not frames:
-        print("⚠️ No Score frames found!")
-        return None
-    
-    _SCORE_FRAMES = frames
-    return frames
-
-
-def _load_thunder_sound() -> pygame.mixer.Sound | None:
-    """Load and cache the thunder sound."""
-    global _THUNDER_SOUND
-    if _THUNDER_SOUND is not None:
-        return _THUNDER_SOUND
-    
-    sound_path = os.path.join("Assets", "Music", "Sounds", "ScoreThunder.mp3")
-    if not os.path.exists(sound_path):
-        print(f"⚠️ ScoreThunder.mp3 not found at {sound_path}")
-        return None
-    
-    try:
-        _THUNDER_SOUND = pygame.mixer.Sound(sound_path)
-        return _THUNDER_SOUND
-    except Exception as e:
-        print(f"⚠️ Failed to load ScoreThunder.mp3: {e}")
-        return None
-
-
-def _get_scaled_frames(scale_factor: float) -> list[pygame.Surface] | None:
-    """Get scaled versions of the frames, cached."""
-    global _SCALED_FRAMES
-    if _SCALED_FRAMES is not None:
-        return _SCALED_FRAMES
-    
-    frames = _load_score_frames()
-    if frames is None:
-        return None
-    
-    scaled = []
-    for frame in frames:
-        w = int(frame.get_width() * scale_factor)
-        h = int(frame.get_height() * scale_factor)
-        scaled_frame = pygame.transform.smoothscale(frame, (w, h))
-        scaled.append(scaled_frame)
-    
-    _SCALED_FRAMES = scaled
-    return scaled
-
+# ---------- HUD State ----------
+_HUD_RECT = None  # Store the HUD rect
 
 def _get_dh_font(size: int) -> pygame.font.Font:
     """Get DH font with caching."""
@@ -107,15 +42,19 @@ def _get_dh_font(size: int) -> pygame.font.Font:
     return font
 
 
+def get_hud_rect() -> pygame.Rect | None:
+    """Get the score HUD panel rect. Returns None if not calculated yet."""
+    return _HUD_RECT
+
+
 # ---------- Animation Control ----------
 
 def start_score_animation(gs, start_score: int, target_score: int):
-    """Start the score animation after a summoner battle victory."""
+    """Start the score number animation after a summoner battle victory."""
     gs.score_animation_active = True
     gs.score_animation_timer = 0.0
     gs.score_animation_start = start_score
     gs.score_animation_target = target_score
-    gs.score_thunder_played = False
 
 
 def is_animation_active(gs) -> bool:
@@ -127,89 +66,61 @@ def is_animation_active(gs) -> bool:
 
 def draw_score(screen: pygame.Surface, gs, dt: float = 0.016):
     """
-    Draw the animated score display in the top right corner.
-    Only visible during the 4.5 second animation period after summoner battle victory.
+    Draw the permanent score HUD in the top right corner.
+    Always visible, with number animation on score updates.
     """
-    global _ANIM_TIMER
-    
-    # Only draw if animation is active
-    if not getattr(gs, "score_animation_active", False):
-        return
-    
-    # Play thunder sound immediately when animation starts
-    if not gs.score_thunder_played:
-        gs.score_thunder_played = True
-        thunder_sound = _load_thunder_sound()
-        if thunder_sound:
-            try:
-                thunder_sound.play()
-            except Exception as e:
-                print(f"⚠️ Failed to play thunder sound: {e}")
-    
-    # Update animation timer
-    gs.score_animation_timer += dt
-    
-    # Check if animation should end
-    if gs.score_animation_timer >= ANIMATION_DURATION:
-        gs.score_animation_active = False
-        gs.score_animation_timer = 0.0
-        return
+    global _HUD_RECT
     
     # Ensure points field exists
     points_sys.ensure_points_field(gs)
     
-    # Calculate current displayed score (rolling up from start to target over full duration)
-    progress = min(1.0, gs.score_animation_timer / ANIMATION_DURATION)  # Progress from 0.0 to 1.0
-    # Use easing function for smooth roll-up (ease-out cubic)
-    eased_progress = 1.0 - (1.0 - progress) ** 3
-    current_score = int(gs.score_animation_start + (gs.score_animation_target - gs.score_animation_start) * eased_progress)
+    # Get current score (either animated or static)
+    current_score = points_sys.get_total_points(gs)
     
-    # Scale factor (smaller)
-    scale_factor = 0.25
+    # Check if animation is active and update displayed score
+    is_animating = getattr(gs, "score_animation_active", False)
+    if is_animating:
+        # Update animation timer
+        gs.score_animation_timer += dt
+        
+        # Check if animation should end
+        if gs.score_animation_timer >= ANIMATION_DURATION:
+            gs.score_animation_active = False
+            gs.score_animation_timer = 0.0
+            # Use final target score
+            current_score = getattr(gs, "score_animation_target", current_score)
+        else:
+            # Calculate current displayed score (rolling up from start to target)
+            progress = min(1.0, gs.score_animation_timer / ANIMATION_DURATION)
+            # Use easing function for smooth roll-up (ease-out cubic)
+            eased_progress = 1.0 - (1.0 - progress) ** 3
+            start = getattr(gs, "score_animation_start", current_score)
+            target = getattr(gs, "score_animation_target", current_score)
+            current_score = int(start + (target - start) * eased_progress)
     
-    # Load and get scaled frames
-    scaled_frames = _get_scaled_frames(scale_factor)
-    if scaled_frames is None or len(scaled_frames) == 0:
-        # Fallback: draw a simple rectangle if frames not found
-        fallback_rect = pygame.Rect(S.LOGICAL_WIDTH - 200, 20, 180, 60)
-        pygame.draw.rect(screen, (40, 40, 40, 200), fallback_rect, border_radius=8)
-        pygame.draw.rect(screen, (100, 100, 100), fallback_rect, width=2, border_radius=8)
-        font = _get_dh_font(24)
-        text = font.render(f"Score: {current_score:,}", True, (255, 255, 255))
-        text_rect = text.get_rect(center=fallback_rect.center)
-        screen.blit(text, text_rect)
-        return
-    
-    # Update frame animation timer
-    _ANIM_TIMER += dt * _ANIM_FPS
-    
-    # Get current frame (loop through all frames)
-    frame_index = int(_ANIM_TIMER) % len(scaled_frames)
-    current_frame = scaled_frames[frame_index]
-    
-    scaled_w = current_frame.get_width()
-    scaled_h = current_frame.get_height()
-    
-    # Position in top right corner (partially off-screen for corner alignment)
-    bg_x = S.LOGICAL_WIDTH - scaled_w - 2  # 2px padding from right edge (closer to corner)
-    bg_y = -int(scaled_h * 0.1)  # Negative offset to push part of it off-screen at top
-    
-    # Draw current frame
-    screen.blit(current_frame, (bg_x, bg_y))
-    
-    # Render score text (smaller font)
-    font_size = max(14, min(20, int(scaled_h * 0.4)))
-    font = _get_dh_font(font_size)
-    
-    # Format points with commas
-    score_text = f"{current_score:,}"
+    # Render score text to determine HUD width
+    font = _get_dh_font(24)
+    score_text = f"Score: {current_score:,}"
     text_surface = font.render(score_text, True, (255, 255, 255))
     
-    # Center text within the scaled image
-    text_x = bg_x + (scaled_w - text_surface.get_width()) // 2
-    text_y = bg_y + (scaled_h - text_surface.get_height()) // 2
+    # Calculate HUD width based on text width + padding
+    text_width = text_surface.get_width()
+    hud_width = max(HUD_MIN_WIDTH, text_width + (HUD_PADDING * 2))
     
-    # Optional: Add shadow for readability
+    # Calculate HUD position (top right)
+    hud_x = S.LOGICAL_WIDTH - hud_width - HUD_MARGIN_RIGHT
+    hud_y = HUD_MARGIN_TOP
+    
+    _HUD_RECT = pygame.Rect(hud_x, hud_y, hud_width, HUD_HEIGHT)
+    
+    # Draw parchment-style HUD background (matching other HUDs)
+    hud_style.draw_parchment_panel(screen, _HUD_RECT)
+    
+    # Center text within the HUD
+    text_x = hud_x + (hud_width - text_surface.get_width()) // 2
+    text_y = hud_y + (HUD_HEIGHT - text_surface.get_height()) // 2
+    
+    # Draw text with shadow for readability
     shadow_surface = font.render(score_text, True, (0, 0, 0))
     screen.blit(shadow_surface, (text_x + 2, text_y + 2))
     screen.blit(text_surface, (text_x, text_y))

@@ -90,6 +90,20 @@ def enter(gs, **_):
         import traceback
         traceback.print_exc()
     
+    # Save score to leaderboard
+    try:
+        from systems import leaderboard, points
+        player_name = getattr(gs, "player_name", "") or "Unknown"
+        player_gender = getattr(gs, "player_gender", "male")
+        score = points.get_total_points(gs)
+        if score > 0:  # Only save if score is greater than 0
+            leaderboard.add_score(player_name, player_gender, score)
+            print(f"🏆 Score saved to leaderboard: {player_name} ({player_gender}) - {score:,} points")
+    except Exception as e:
+        print(f"⚠️ Failed to save score to leaderboard: {e}")
+        import traceback
+        traceback.print_exc()
+    
     _load_bg()
     _load_anim_frames()
     st = {

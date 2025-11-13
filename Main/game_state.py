@@ -46,6 +46,8 @@ class GameState:
 
     # audio state
     is_walking: bool = False
+    is_running: bool = False
+    movement_sfx_state: str | None = None
     overworld_music_started: bool = False
     
     # score animation state (only after summoner battle victory)

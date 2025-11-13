@@ -86,9 +86,10 @@ def draw(screen, gs, fonts=None, **kwargs):
     gs._menu_buttons = [
         ui.Button("New Game",      (S.LOGICAL_WIDTH // 2, btn_y_start + 0 * btn_spacing), btn_font, enabled=True),
         ui.Button("Continue Game", (S.LOGICAL_WIDTH // 2, btn_y_start + 1 * btn_spacing), btn_font, enabled=can_continue),
-        ui.Button("Delete Save",   (S.LOGICAL_WIDTH // 2, btn_y_start + 2 * btn_spacing), btn_font, enabled=can_continue),
-        ui.Button("Settings",      (S.LOGICAL_WIDTH // 2, btn_y_start + 3 * btn_spacing), btn_font, enabled=True),
-        ui.Button("Quit",          (S.LOGICAL_WIDTH // 2, btn_y_start + 4 * btn_spacing), btn_font, enabled=True),
+        ui.Button("Leaderboard",   (S.LOGICAL_WIDTH // 2, btn_y_start + 2 * btn_spacing), btn_font, enabled=True),
+        ui.Button("Delete Save",   (S.LOGICAL_WIDTH // 2, btn_y_start + 3 * btn_spacing), btn_font, enabled=can_continue),
+        ui.Button("Settings",      (S.LOGICAL_WIDTH // 2, btn_y_start + 4 * btn_spacing), btn_font, enabled=True),
+        ui.Button("Quit",          (S.LOGICAL_WIDTH // 2, btn_y_start + 5 * btn_spacing), btn_font, enabled=True),
     ]
     # Store the save check result for handler (for debugging)
     gs._menu_has_save = can_continue
@@ -429,7 +430,7 @@ def handle(events, gs, screen=None, fonts=None, audio_bank=None, **kwargs):
                         delattr(gs, "_new_game_confirm_no_rect")
                     return None
 
-    b_new, b_cont, b_delete, b_settings, b_quit = gs._menu_buttons
+    b_new, b_cont, b_leaderboard, b_delete, b_settings, b_quit = gs._menu_buttons
 
     for event in events:
         if event.type == pygame.MOUSEBUTTONDOWN and event.button == 1:
@@ -462,6 +463,11 @@ def handle(events, gs, screen=None, fonts=None, audio_bank=None, **kwargs):
                 audio_sys.play_click(audio_bank)
                 # Return a special indicator that we're continuing (not starting new game)
                 return ("CONTINUE", S.MODE_GAME)
+
+            # -------- LEADERBOARD --------
+            elif b_leaderboard.clicked(event):
+                audio_sys.play_click(audio_bank)
+                return "LEADERBOARD"
 
             # -------- SETTINGS --------
             elif b_settings.clicked(event):

@@ -39,11 +39,13 @@ from screens import book_of_bound, archives
 from systems import hells_deck_popup
 
 OVERWORLD_LANE_X_OFFSET = getattr(S, "OVERWORLD_LANE_X_OFFSET", int(S.PLAYER_SIZE[0] * 0.3))
+# Visual offset for player sprite rendering (doesn't affect world position or camera)
+PLAYER_VISUAL_X_OFFSET = getattr(S, "PLAYER_VISUAL_X_OFFSET", 30)  # pixels to shift sprite right on screen
 
 # screens
 from screens import (
     menu_screen, char_select, name_entry,
-    black_screen, intro_video, settings_screen, pause_screen, master_oak
+    black_screen, intro_video, settings_screen, pause_screen, master_oak, leaderboard
 )
 from screens import boss_vs
 from screens import rest as rest_screen
@@ -102,6 +104,7 @@ MODE_TAVERN = "TAVERN"
 MODE_GAMBLING = "GAMBLING"
 MODE_WHORE = "WHORE"
 MODE_REST = "REST"
+MODE_LEADERBOARD = "LEADERBOARD"
 
 
 
@@ -262,8 +265,8 @@ def try_trigger_encounter(gs, summoners, merchant_frames, tavern_sprite=None, mo
             # Normal chance-based spawning (reference values)
             merchant_chance = 0.10
             tavern_chance   = 0.05
-            monster_chance  = 0.005
-            vessel_chance   = 0.545
+            monster_chance  = 0.01
+            vessel_chance   = 0.54
             summoner_chance = 0.30
             
             if merchant_frames and len(merchant_frames) > 0 and roll < merchant_chance:
@@ -333,10 +336,10 @@ def update_encounter_popup(screen, dt, gs, mist_frame, width, height, pg_instanc
     actors.draw_taverns(screen, cam, gs)
     actors.draw_bosses(screen, cam, gs)
 
-    # Player sprite
+    # Player sprite (with visual offset)
     screen.blit(
         gs.player_image,
-        (gs.player_pos.x - cam.x - gs.player_half.x, gs.player_pos.y - cam.y - gs.player_half.y)
+        (gs.player_pos.x - cam.x - gs.player_half.x + PLAYER_VISUAL_X_OFFSET, gs.player_pos.y - cam.y - gs.player_half.y)
     )
 
     # Popup panel
@@ -525,7 +528,7 @@ def start_new_game(gs):
     # Initialize score with bootstrap value
     from systems import points as points_sys
     points_sys.ensure_points_field(gs)
-    gs.total_points = 0  # Reset bootstrap score to default
+    gs.total_points = getattr(S, "BOOTSTRAP_TOTAL_POINTS", 0)
     
     # Reset first overworld blessing flag for new run
     gs.first_overworld_blessing_given = False
@@ -677,6 +680,8 @@ def enter_mode(mode, gs, deps):
             whore_number = st.get("whore_number", 1)
             whore_sprite = st.get("whore_sprite", None)
         whore_screen.enter(gs, whore_number=whore_number, whore_sprite=whore_sprite, **deps)
+    elif mode == MODE_LEADERBOARD:
+        leaderboard.enter(gs, **deps)
     elif mode == MODE_REST:
         # Get rest type from gs._rest_state
         rest_type = getattr(gs, "_rest_type", "long")
@@ -1202,6 +1207,11 @@ while running:
                         pass
                 if hasattr(gs, "is_walking"):
                     gs.is_walking = False
+                if hasattr(gs, "is_running"):
+                    gs.is_running = False
+                if hasattr(gs, "movement_sfx_state"):
+                    gs.movement_sfx_state = None
+                if hasattr(gs, "walking_channel"):
                     gs.walking_channel = None
                 
                 # Try to play tavern music (will use direct path if not in AUDIO bank)
@@ -1464,6 +1474,18 @@ while running:
     elif mode == MODE_SETTINGS:
         next_mode = settings_screen.handle(events, gs, **deps)
         settings_screen.draw(virtual_screen, gs, **deps)
+        blit_virtual_to_screen(virtual_screen, screen)
+        mouse_pos = pygame.mouse.get_pos()
+        cursor_manager.draw_cursor(screen, mouse_pos, gs, mode)
+        pygame.display.flip()
+        if next_mode:
+            mode = next_mode
+
+    # ===================== LEADERBOARD ========================
+    elif mode == MODE_LEADERBOARD:
+        next_mode = leaderboard.handle(events, gs, **deps)
+        leaderboard.update(gs, dt, **deps)
+        leaderboard.draw(virtual_screen, gs, dt, **deps)
         blit_virtual_to_screen(virtual_screen, screen)
         mouse_pos = pygame.mouse.get_pos()
         cursor_manager.draw_cursor(screen, mouse_pos, gs, mode)
@@ -1950,6 +1972,7 @@ while running:
         if mode == MODE_TAVERN:
             left_hud.draw(virtual_screen, gs)  # Left side HUD panel behind character token and party UI
             party_ui.draw_party_hud(virtual_screen, gs)  # Character token and party slots (draws on top of left_hud)
+            score_display.draw_score(virtual_screen, gs, dt)  # Score HUD in top right (always visible)
             
             # Draw bottom right HUD with buttons (textbox style)
             bottom_right_hud.draw(virtual_screen, gs)  # Bottom right HUD panel with buttons inside (textbox style)
@@ -2566,24 +2589,54 @@ while running:
         # --- Movement & walking SFX (blocked by any modal) ---
         any_modal_open = buff_popup.is_active() or bag_ui.is_open() or party_manager.is_open() or ledger.is_open() or gs.shop_open or currency_display.is_open() or rest_popup.is_open()
         keys = pygame.key.get_pressed()
-        walking_forward = (keys[pygame.K_w] or keys[pygame.K_s]) and not any_modal_open
+        vertical_input = keys[pygame.K_w] or keys[pygame.K_s]
+        shift_down = keys[pygame.K_LSHIFT] or keys[pygame.K_RSHIFT]
+        moving_forward = vertical_input and not any_modal_open
+        running_forward = moving_forward and shift_down
 
-        if not hasattr(gs, "is_walking"):
-            gs.is_walking = False
+        gs.is_walking = moving_forward
+        gs.is_running = running_forward
+
+        if not hasattr(gs, "movement_sfx_state"):
+            gs.movement_sfx_state = None
+        if not hasattr(gs, "walking_channel"):
             gs.walking_channel = None
-        if walking_forward and not gs.is_walking:
-            sfx = AUDIO.sfx.get("Walking") or AUDIO.sfx.get("walking")
-            if sfx:
-                gs.walking_channel = sfx.play(loops=-1, fade_ms=80)
-            gs.is_walking = True
-        elif not walking_forward and gs.is_walking:
+
+        desired_state = None
+        if running_forward:
+            running_sfx = AUDIO.sfx.get("Running") or AUDIO.sfx.get("running") or AUDIO.sfx.get("RUNNING")
+            if running_sfx:
+                desired_state = "running"
+            else:
+                desired_state = "walking"
+        elif moving_forward:
+            desired_state = "walking"
+
+        current_state = gs.movement_sfx_state
+        if desired_state != current_state:
             if gs.walking_channel:
                 gs.walking_channel.stop()
-            gs.is_walking = False
             gs.walking_channel = None
+            gs.movement_sfx_state = None
 
-        if walking_forward:
-            gs.walk_anim.update(dt)
+            if desired_state:
+                sfx = None
+                if desired_state == "running":
+                    sfx = running_sfx
+                if desired_state == "walking" or (desired_state == "running" and sfx is None):
+                    sfx = (
+                        AUDIO.sfx.get("Walking")
+                        or AUDIO.sfx.get("walking")
+                        or AUDIO.sfx.get("WALKING")
+                    )
+                    desired_state = "walking" if sfx else desired_state
+                if sfx:
+                    gs.walking_channel = sfx.play(loops=-1, fade_ms=80)
+                    gs.movement_sfx_state = desired_state
+
+        if moving_forward:
+            anim_speed = getattr(S, "PLAYER_RUN_ANIM_MULT", 1.5) if running_forward else 1.0
+            gs.walk_anim.update(dt * anim_speed)
             frame = gs.walk_anim.current()
             if frame is not None:
                 gs.player_image = frame
@@ -2603,6 +2656,8 @@ while running:
                     try: ch.stop()
                     except Exception: pass
                 gs.is_walking = False
+                gs.is_running = False
+                gs.movement_sfx_state = None
                 gs.walking_channel = None
                 gs._went_to_wild = True
                 mode = MODE_WILD_VESSEL
@@ -2619,6 +2674,8 @@ while running:
                     try: ch.stop()
                     except Exception: pass
                 gs.is_walking = False
+                gs.is_running = False
+                gs.movement_sfx_state = None
                 gs.walking_channel = None
                 gs._went_to_summoner = True
                 # Check if this is a boss encounter - go to VS screen first
@@ -2657,7 +2714,7 @@ while running:
 
             virtual_screen.blit(
                 gs.player_image,
-                (gs.player_pos.x - cam.x - gs.player_half.x,
+                (gs.player_pos.x - cam.x - gs.player_half.x + PLAYER_VISUAL_X_OFFSET,
                 gs.player_pos.y - cam.y - gs.player_half.y)
             )
             

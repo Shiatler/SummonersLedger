@@ -32,6 +32,12 @@ def update_player(gs, dt, player_half):
     keys = pygame.key.get_pressed()
     moving = False
     speed = getattr(gs, "player_speed", 180)
+    run_mult = getattr(S, "PLAYER_RUN_MULT", 1.5)
+    shift_down = keys[pygame.K_LSHIFT] or keys[pygame.K_RSHIFT]
+    running_input = shift_down and (keys[pygame.K_w] or keys[pygame.K_s])
+    if running_input:
+        speed *= run_mult
+    gs.is_running = running_input
     
     # Store previous Y position to calculate actual distance moved
     prev_y = gs.player_pos.y
@@ -135,10 +141,12 @@ def load_road():
     ROAD_W_NATIVE = ROAD_IMG.get_width()
     ROAD_H_NATIVE = ROAD_IMG.get_height()
 
-    # Center the road image in the world width by default
-    ROAD_ANCHOR_X = max(0, (S.WORLD_W - ROAD_W_NATIVE) // 2)
+    # Center the road image in the world width, matching the player's lane offset
+    # Player is positioned at WORLD_W // 2 + OVERWORLD_LANE_X_OFFSET, so road should match
+    overworld_lane_x_offset = getattr(S, "OVERWORLD_LANE_X_OFFSET", int(S.PLAYER_SIZE[0] * 0.3))
+    ROAD_ANCHOR_X = max(0, (S.WORLD_W - ROAD_W_NATIVE) // 2 + overworld_lane_x_offset)
 
-    print(f"✅ Loaded road (native {ROAD_W_NATIVE}x{ROAD_H_NATIVE}), anchor_x={ROAD_ANCHOR_X}")
+    print(f"✅ Loaded road (native {ROAD_W_NATIVE}x{ROAD_H_NATIVE}), anchor_x={ROAD_ANCHOR_X} (offset={overworld_lane_x_offset})")
 
 
 def draw_repeating_road(surface: pygame.Surface, cam_x_or_y: float, maybe_cam_y: float = None, repeat_x: bool = False):

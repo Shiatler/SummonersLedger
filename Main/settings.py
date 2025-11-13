@@ -49,11 +49,16 @@ ASSETS_FONTS_DIR            = os.path.join("Assets", "Fonts")
 
 
 # ===================== Player ===============================
-PLAYER_SIZE       = (138, 138)  # keeps player at consistent size
-PLAYER_MALE_FILE  = "CharacterMale.png"
-PLAYER_FEMALE_FILE= "CharacterFemale.png"
-PLAYER_SPEED      = 260
-SPRITE_SIZE       = PLAYER_SIZE  # temporary compatibility alias
+PLAYER_SIZE           = (138, 138)  # keeps player at consistent size
+PLAYER_MALE_FILE      = "CharacterMale.png"
+PLAYER_FEMALE_FILE    = "CharacterFemale.png"
+PLAYER_SPEED          = 260
+PLAYER_RUN_MULT       = 1.5
+PLAYER_RUN_ANIM_MULT  = 1.5
+SPRITE_SIZE           = PLAYER_SIZE  # temporary compatibility alias
+
+# ===================== Points / Score ========================
+BOOTSTRAP_TOTAL_POINTS = 0  # Starting score awarded on new game
 
 
 # ===================== Encounters & pacing ===================
