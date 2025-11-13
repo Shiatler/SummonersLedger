@@ -138,13 +138,18 @@ def determine_boss_party_size(boss_index: int) -> int:
         return 6
 
 
-def create_boss_data(gs, score_threshold: int, defeated_bosses: List[int]) -> Optional[Dict]:
+def create_boss_data(gs, score_threshold: int, defeated_bosses: List[int], spawned_bosses: List[int] = None) -> Optional[Dict]:
     """
     Create boss data dictionary with sprite, name, team, etc.
     Returns None if boss shouldn't spawn yet.
     """
     # Determine boss index (which boss in sequence)
-    boss_index = len(defeated_bosses)
+    # Use spawned_bosses if provided, otherwise use defeated_bosses
+    # This ensures correct party size even if bosses haven't been defeated yet
+    if spawned_bosses is not None:
+        boss_index = len(spawned_bosses)
+    else:
+        boss_index = len(defeated_bosses)
     
     # Determine gender (random for regular bosses, fixed for special)
     if score_threshold in SPECIAL_BOSSES:
@@ -164,6 +169,7 @@ def create_boss_data(gs, score_threshold: int, defeated_bosses: List[int]) -> Op
     
     # Determine party size
     party_size = determine_boss_party_size(boss_index)
+    print(f"[create_boss_data] Boss index: {boss_index}, Party size: {party_size} (defeated: {len(defeated_bosses)}, spawned: {len(spawned_bosses) if spawned_bosses is not None else 'N/A'})")
     
     # Generate boss team using same logic as generate_enemy_team but with fixed size
     try:
@@ -191,11 +197,20 @@ def create_boss_data(gs, score_threshold: int, defeated_bosses: List[int]) -> Op
         actual_size = len(team_data.get("names", []))
         if actual_size != party_size:
             print(f"⚠️ Warning: Boss team has {actual_size} vessels but expected {party_size}")
+            # If we got fewer vessels than requested, this is a problem - return None to prevent spawning
+            if actual_size < party_size:
+                print(f"⚠️ ERROR: Cannot spawn boss with insufficient vessels ({actual_size}/{party_size})")
+                return None
+        
+        # Validate that stats match names
+        stats_count = len(team_data.get("stats", []))
+        if stats_count != actual_size:
+            print(f"⚠️ Warning: Boss team stats count ({stats_count}) doesn't match names count ({actual_size})")
         
         print(f"✅ Generated boss team: {actual_size} vessels for {boss_name}")
         print(f"   Names: {team_data.get('names', [])}")
         print(f"   Levels: {team_data.get('levels', [])}")
-        print(f"   Stats count: {len(team_data.get('stats', []))}")
+        print(f"   Stats count: {stats_count}")
             
     except Exception as e:
         print(f"⚠️ Failed to generate boss team: {e}")
@@ -241,8 +256,8 @@ def check_and_spawn_bosses(gs):
     if next_threshold is not None:
         print(f"[check_and_spawn_bosses] Score: {current_score}, Spawning boss at threshold: {next_threshold}")
         print(f"   Defeated bosses: {gs.defeated_boss_scores}, Spawned bosses: {gs.spawned_boss_scores}")
-        # Create boss data
-        boss_data = create_boss_data(gs, next_threshold, gs.defeated_boss_scores)
+        # Create boss data - pass spawned_bosses to get correct boss index
+        boss_data = create_boss_data(gs, next_threshold, gs.defeated_boss_scores, gs.spawned_boss_scores)
         
         if boss_data:
             # Spawn boss

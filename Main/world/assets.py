@@ -67,6 +67,28 @@ def load_everything():
         size=S.PLAYER_SIZE
     )
 
+    # Monster vessels (VesselMonsters folder) - load at native size (no size constraint)
+    # IMPORTANT: Only load actual monster sprites (Beholder.png, Dragon.png, etc.)
+    # DO NOT load token files (TokenBeholder.png, TokenDragon.png, etc.)
+    monsters = []
+    monster_dir = os.path.join("Assets", "VesselMonsters")
+    if os.path.exists(monster_dir):
+        # Load all PNGs but filter out token files
+        all_files = glob.glob(os.path.join(monster_dir, "*.png"))
+        for path in all_files:
+            name = os.path.splitext(os.path.basename(path))[0]
+            # Skip token files (files starting with "Token")
+            if name.startswith("Token"):
+                continue
+            try:
+                sprite = load_image(path, size=None)  # Load at native size
+                monsters.append((name, sprite))
+            except Exception as e:
+                print(f"⚠️ Failed to load monster sprite {path}: {e}")
+        print(f"✅ Loaded {len(monsters)} monster sprites at native size (excluded token files)")
+    else:
+        print(f"⚠️ Monster directory not found: {monster_dir}")
+
     # Mist ANIMATION frames (Assets/Map/Mist1..9.png, or any Mist*.png)
     mist_frames = []
     try:
@@ -122,12 +144,13 @@ def load_everything():
     else:
         print(f"⚠️ Tavern sprite not found at: {tavern_path}")
 
-    print(f"🧪 Loaded: {len(summoners)} summoners, {len(vessels)} vessels, {len(rare_vessels)} rare, {len(mist_frames)} mist frames, {len(merchant_frames)} merchant frames, {'1' if tavern_sprite else '0'} tavern")
+    print(f"🧪 Loaded: {len(summoners)} summoners, {len(vessels)} vessels, {len(rare_vessels)} rare, {len(monsters)} monsters, {len(mist_frames)} mist frames, {len(merchant_frames)} merchant frames, {'1' if tavern_sprite else '0'} tavern")
     return {
         "player": player,
         "summoners": summoners,
         "vessels": vessels,
         "rare_vessels": rare_vessels,
+        "monsters": monsters,  # <-- monster sprites list
         "mist_frames": mist_frames,   # <-- frames list
         "merchant_frames": merchant_frames,  # <-- merchant frames list
         "tavern_sprite": tavern_sprite,  # <-- tavern sprite

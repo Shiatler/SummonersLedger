@@ -60,6 +60,14 @@ CLASS_HIT_DIE: Dict[str, int] = {
     "fighter": 10, "paladin": 10, "ranger": 10,
     "bard": 8, "cleric": 8, "druid": 8, "monk": 8, "rogue": 8, "warlock": 8, "artificer": 8, "blood hunter": 8,
     "sorcerer": 6, "wizard": 6,
+    # Monsters - large hit dice to match their power
+    "dragon": 20,      # Massive creatures
+    "owlbear": 12,     # Large beast
+    "beholder": 10,    # Large aberration
+    "golem": 12,       # Large construct
+    "ogre": 10,        # Large giant
+    "nothic": 8,       # Medium aberration
+    "myconid": 8,      # Medium plant
     "_default": 8,
 }
 
@@ -79,6 +87,14 @@ PRIMARY_STAT: Dict[str, str] = {
     "wizard": "INT",
     "artificer": "INT",
     "blood hunter": "DEX",
+    # Monsters
+    "dragon": "STR",
+    "owlbear": "STR",
+    "beholder": "INT",
+    "golem": "STR",
+    "ogre": "STR",
+    "nothic": "INT",
+    "myconid": "CON",
     "_default": "STR",
 }
 
@@ -126,6 +142,21 @@ def ac_for_class(class_name: str, mods: Dict[str, int]) -> int:
         return 10 + dex
     if cls == "wizard":
         return 10 + dex
+    # Monsters - higher natural AC
+    if cls == "dragon":
+        return 18 + _cap(dex, 2)  # Natural armor
+    if cls == "owlbear":
+        return 13 + _cap(dex, 2)  # Natural armor
+    if cls == "beholder":
+        return 18  # Natural armor, no DEX bonus
+    if cls == "golem":
+        return 16  # Construct, no DEX bonus
+    if cls == "ogre":
+        return 11 + _cap(dex, 1)  # Natural armor
+    if cls == "nothic":
+        return 15 + dex  # Natural armor
+    if cls == "myconid":
+        return 12 + _cap(dex, 2)  # Natural armor
     # default (unknown class)
     return 11 + dex
 

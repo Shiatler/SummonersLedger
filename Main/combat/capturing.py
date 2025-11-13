@@ -81,6 +81,7 @@ class CaptureContext:
     cur_hp: int
     scroll: ScrollName
     status: Status = None
+    asset_name: str = None         # Asset name for monster detection
 
     # Player-side bonuses (feats, passives, temporary buffs)
     capture_bonus: int = 0         # flat bonus added to the d20 total
@@ -102,15 +103,39 @@ class CaptureResult:
     shakes: int           # 0..3 for UI flair
     text: str             # formatted breakdown (can be shown in log)
 
+# -------- Monster Detection -----------------------------------
+def is_monster(asset_name: str) -> bool:
+    """Check if asset name represents a monster."""
+    if not asset_name:
+        return False
+    
+    monster_names = ["Dragon", "Owlbear", "Beholder", "Golem", "Ogre", "Nothic", "Myconid"]
+    base = asset_name.split(".")[0].replace("_", "").lower()
+    
+    for monster in monster_names:
+        if monster.lower() in base:
+            return True
+    return False
+
 # -------- DC Computation -------------------------------------
-def compute_capture_dc(ctx: CaptureContext) -> Tuple[int, Dict[str, int]]:
+def compute_capture_dc(ctx: CaptureContext, asset_name: str = None) -> Tuple[int, Dict[str, int]]:
     base = base_dc_for_level(ctx.level)
     h_adj = hp_dc_adjust(ctx.cur_hp, ctx.max_hp)
     s_adj = 0 if ctx.scroll == "eternity" else SCROLL_DC_ADJ.get(ctx.scroll, 0)
     st_adj = STATUS_DC_ADJ.get(ctx.status, 0)
-    dc = base + h_adj + s_adj + st_adj
+    
+    # Monster penalty: +10 at full HP, +5 at low HP (1-25%)
+    monster_adj = 0
+    if asset_name and is_monster(asset_name):
+        hp_ratio = (ctx.cur_hp / ctx.max_hp) if ctx.max_hp > 0 else 1.0
+        if hp_ratio >= 0.26:  # Above 25% HP
+            monster_adj = 10  # Full penalty at high HP
+        else:  # 1-25% HP
+            monster_adj = 5   # Reduced penalty at low HP
+    
+    dc = base + h_adj + s_adj + st_adj + monster_adj
     dc = max(1, dc)  # safety
-    return dc, {"base": base, "hp": h_adj, "scroll": s_adj, "status": st_adj}
+    return dc, {"base": base, "hp": h_adj, "scroll": s_adj, "status": st_adj, "monster": monster_adj}
 
 # -------- Cosmetic shakes ------------------------------------
 def _shakes_from_margin(margin: int) -> int:
@@ -152,8 +177,8 @@ def attempt_capture(ctx: CaptureContext) -> CaptureResult:
             text=f"[Eternity] Auto-bind! (Base {base}, HP {h_adj}, Status {st_adj})"
         )
 
-    # Compute DC
-    dc, parts = compute_capture_dc(ctx)
+    # Compute DC (pass asset_name for monster detection)
+    dc, parts = compute_capture_dc(ctx, ctx.asset_name)
 
     # Perform the roll using your roller (includes adv/disadv) **WITH NOTIFY**
     rr = roll_d20(mod=ctx.capture_bonus, adv=ctx.advantage, notify=True)
@@ -176,10 +201,11 @@ def attempt_capture(ctx: CaptureContext) -> CaptureResult:
     # Pretty log text
     adv_txt = " [ADV]" if ctx.advantage > 0 else (" [DIS]" if ctx.advantage < 0 else "")
     flags = " (CRIT!)" if nat20 else (" (FUMBLE!)" if nat1 else "")
+    monster_txt = f", monster {parts.get('monster', 0):+d}" if parts.get('monster', 0) != 0 else ""
     text = (
         f"Capture{adv_txt}: d20({used}) + {ctx.capture_bonus:+d} = {total} "
         f"vs DC {dc} -> {'SUCCESS' if success else 'FAIL'}{flags}  "
-        f"[base {parts['base']}, hp {parts['hp']:+d}, scroll {parts['scroll']:+d}, status {parts['status']:+d}]"
+        f"[base {parts['base']}, hp {parts['hp']:+d}, scroll {parts['scroll']:+d}, status {parts['status']:+d}{monster_txt}]"
     )
 
     return CaptureResult(

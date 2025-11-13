@@ -145,6 +145,9 @@ def _load_party_token_surface(name: str | None, size: tuple[int, int]) -> pygame
     # Find the token image file
     path = find_image(token_basename)
     if not path:
+        # Debug: print if token not found (especially for monsters)
+        if "Token" in token_basename:
+            print(f"⚠️ Token not found in party_ui: {token_basename} (searched in SEARCH_DIRS)")
         _TOKEN_SURFACE_CACHE[cache_key] = None  # Cache None to avoid retrying
         return None
     

@@ -38,6 +38,8 @@ from screens import death as death_screen
 from screens import book_of_bound, archives
 from systems import hells_deck_popup
 
+OVERWORLD_LANE_X_OFFSET = getattr(S, "OVERWORLD_LANE_X_OFFSET", int(S.PLAYER_SIZE[0] * 0.3))
+
 # screens
 from screens import (
     menu_screen, char_select, name_entry,
@@ -64,7 +66,7 @@ from systems.asset_links import token_to_vessel, find_image
 def _full_vessel_from_token_name(token_name: str | None) -> pygame.Surface | None:
     if not token_name:
         return None
-    vessel_basename = token_to_vessel(token_name)  # FTokenBarbarian1 -> FVesselBarbarian1.png
+    vessel_basename = token_to_vessel(token_name)  # FTokenBarbarian1 -> FVesselBarbarian1.png, TokenBeholder -> Beholder.png
     path = find_image(vessel_basename)
     if not path:
         return None
@@ -73,47 +75,6 @@ def _full_vessel_from_token_name(token_name: str | None) -> pygame.Surface | Non
         return img
     except Exception:
         return None
-
-
-    base = os.path.splitext(os.path.basename(token_name))[0]  # strip .png if present
-    # keep any trailing digits (…3, …12) on purpose
-
-    if base.startswith("StarterToken"):
-        body = base.replace("StarterToken", "", 1)
-        return _try_load(os.path.join("Assets", "Starters", f"Starter{body}.png"))
-
-    if base.startswith("MToken"):
-        body = base.replace("MToken", "", 1)
-        return _try_load(os.path.join("Assets", "VesselsMale", f"MVessel{body}.png"))
-
-    if base.startswith("FToken"):
-        body = base.replace("FToken", "", 1)
-        return _try_load(os.path.join("Assets", "VesselsFemale", f"FVessel{body}.png"))
-
-    if base.startswith("RToken"):
-        body = base.replace("RToken", "", 1)
-        # try exact, then strip digits fallback (RVesselWizard from RVesselWizard3)
-        p1 = os.path.join("Assets", "RareVessels", f"RVessel{body}.png")
-        img = _try_load(p1)
-        if img:
-            return img
-        import re as _re
-        m = _re.match(r"([A-Za-z]+)", body)
-        if m:
-            return _try_load(os.path.join("Assets", "RareVessels", f"RVessel{m.group(1)}.png"))
-
-    # last-chance fallbacks: maybe they already provided a full-name filename
-    for d in (
-        os.path.join("Assets", "Starters"),
-        os.path.join("Assets", "VesselsMale"),
-        os.path.join("Assets", "VesselsFemale"),
-        os.path.join("Assets", "RareVessels"),
-    ):
-        img = _try_load(os.path.join(d, f"{base}.png"))
-        if img:
-            return img
-
-    return None
 
 
 # ===================== Utilities / CWD =======================
@@ -275,7 +236,7 @@ def apply_player_variant(gs, variant_key, variants_dict):
     gs.walk_anim = Animator(walk_frames, fps=8, loop=True)
 
 
-def try_trigger_encounter(gs, summoners, merchant_frames, tavern_sprite=None):
+def try_trigger_encounter(gs, summoners, merchant_frames, tavern_sprite=None, monsters=None):
     if gs.in_encounter:
         return
     if gs.distance_travelled >= gs.next_event_at:
@@ -298,14 +259,11 @@ def try_trigger_encounter(gs, summoners, merchant_frames, tavern_sprite=None):
             # Force check was true but merchant_frames is missing
             print(f"⚠️ Force merchant check passed but merchant_frames is missing! merchant_frames: {merchant_frames}")
         else:
-            # Normal chance-based spawning
-            # Merchant chance: 10%
+            # Normal chance-based spawning (reference values)
             merchant_chance = 0.10
-            # Tavern chance: 5%
-            tavern_chance = 0.05
-            # Vessel chance: 55%
-            vessel_chance = 0.55
-            # Summoner chance: 30%
+            tavern_chance   = 0.05
+            monster_chance  = 0.005
+            vessel_chance   = 0.545
             summoner_chance = 0.30
             
             if merchant_frames and len(merchant_frames) > 0 and roll < merchant_chance:
@@ -318,8 +276,18 @@ def try_trigger_encounter(gs, summoners, merchant_frames, tavern_sprite=None):
                 # Spawn tavern (merchant_chance to merchant_chance + tavern_chance)
                 if tavern_sprite:
                     actors.spawn_tavern_ahead(gs, gs.start_x, tavern_sprite)
-            elif roll < merchant_chance + tavern_chance + vessel_chance:
-                # Spawn vessel (0.15 to 0.70)
+            elif roll < merchant_chance + tavern_chance + monster_chance:
+                # Spawn monster (0.15 to 0.155) - VERY RARE!
+                if monsters and len(monsters) > 0:
+                    actors.spawn_monster_ahead(gs, gs.start_x, monsters)
+                    print(f"🐉 Monster spawned! (rare encounter)")
+                else:
+                    # Fallback to vessel if no monsters available
+                    actors.spawn_vessel_shadow_ahead(gs, gs.start_x)
+                    if not gs.first_merchant_spawned:
+                        gs.encounters_since_merchant += 1
+            elif roll < merchant_chance + tavern_chance + monster_chance + vessel_chance:
+                # Spawn vessel (0.155 to 0.70)
                 actors.spawn_vessel_shadow_ahead(gs, gs.start_x)
                 if not gs.first_merchant_spawned:
                     gs.encounters_since_merchant += 1  # Only increment if first merchant not spawned yet
@@ -357,8 +325,9 @@ def update_encounter_popup(screen, dt, gs, mist_frame, width, height, pg_instanc
         pg_instance.update_needed(cam.y, height)
         pg_instance.draw_props(screen, cam.x, cam.y, width, height)
 
-    # Draw any active vessels/rivals/merchants/taverns in the world behind the popup
+    # Draw any active vessels/rivals/merchants/taverns/monsters in the world behind the popup
     actors.draw_vessels(screen, cam, gs, mist_frame, S.DEBUG_OVERWORLD)
+    actors.draw_monsters(screen, cam, gs, mist_frame, S.DEBUG_OVERWORLD)
     actors.draw_rivals(screen, cam, gs)
     actors.draw_merchants(screen, cam, gs)
     actors.draw_taverns(screen, cam, gs)
@@ -516,6 +485,8 @@ def reset_run_state(gs):
     gs.vessels_on_map.clear()
     if hasattr(gs, "merchants_on_map"):
         gs.merchants_on_map.clear()
+    if hasattr(gs, "monsters_on_map"):
+        gs.monsters_on_map.clear()
     gs.distance_travelled = 0.0
     gs.next_event_at = S.FIRST_EVENT_AT
 
@@ -527,8 +498,9 @@ def start_new_game(gs):
         # Use default player half size if not set
         gs.player_half = Vector2(S.PLAYER_SIZE[0] / 2, S.PLAYER_SIZE[1] / 2)
     
-    gs.player_pos = Vector2(S.WORLD_W // 2, S.WORLD_H - gs.player_half.y - 10)
-    gs.start_x = gs.player_pos.x
+    lane_center_x = S.WORLD_W // 2 + OVERWORLD_LANE_X_OFFSET
+    gs.player_pos = Vector2(lane_center_x, S.WORLD_H - gs.player_half.y - 10)
+    gs.start_x = lane_center_x
     reset_run_state(gs)
 
     # Preserve Book of Bound discoveries across new games (persistent collection)
@@ -553,7 +525,7 @@ def start_new_game(gs):
     # Initialize score with bootstrap value
     from systems import points as points_sys
     points_sys.ensure_points_field(gs)
-    gs.total_points = 51000  # Bootstrap score for testing boss system
+    gs.total_points = 0  # Reset bootstrap score to default
     
     # Reset first overworld blessing flag for new run
     gs.first_overworld_blessing_given = False
@@ -568,6 +540,7 @@ def start_new_game(gs):
     gs.defeated_boss_scores = []
     gs.spawned_boss_scores = []
     gs.bosses_on_map = []
+    gs.monsters_on_map = []
     
     # Restore Book of Bound discoveries (persistent across new games)
     gs.book_of_bound_discovered = preserved_book_of_bound
@@ -585,11 +558,11 @@ def continue_game(gs):
         gs.player_half = Vector2(S.PLAYER_SIZE[0] / 2, S.PLAYER_SIZE[1] / 2)
     
     # Set start_x to center of world (always the same, not saved)
-    gs.start_x = S.WORLD_W // 2
+    gs.start_x = S.WORLD_W // 2 + OVERWORLD_LANE_X_OFFSET
     
     # Load the save file - this will restore position, distance_travelled, and all other state
     # NOTE: requires SUMMONER_SPRITES, MERCHANT_FRAMES, and TAVERN_SPRITE to be defined (built after assets.load_everything())
-    if not saves.load_game(gs, SUMMONER_SPRITES, MERCHANT_FRAMES, TAVERN_SPRITE):
+    if not saves.load_game(gs, SUMMONER_SPRITES, MERCHANT_FRAMES, TAVERN_SPRITE, MONSTER_SPRITES):
         # If load failed, fall back to new game
         print("⚠️ Failed to load save, falling back to new game state")
         start_new_game(gs)
@@ -821,6 +794,8 @@ if __name__ == "__main__":
     RIVAL_SUMMONERS = loaded["summoners"]
     VESSELS         = loaded["vessels"]
     RARE_VESSELS    = loaded["rare_vessels"]
+    MONSTERS        = loaded.get("monsters", [])
+    MONSTER_SPRITES = {name: surf for (name, surf) in MONSTERS}
     MIST_FRAMES     = loaded["mist_frames"]
     MERCHANT_FRAMES = loaded["merchant_frames"]
     TAVERN_SPRITE   = loaded.get("tavern_sprite")
@@ -863,10 +838,11 @@ if __name__ == "__main__":
     # Calculate correct starting Y position: WORLD_H - player_half.y - 10
     # Use PLAYER_SIZE[1] / 2 since player_half isn't set yet
     starting_y = S.WORLD_H - (S.PLAYER_SIZE[1] / 2) - 10
+    lane_center_x = S.WORLD_W // 2 + OVERWORLD_LANE_X_OFFSET
     gs = GameState(
-        player_pos=Vector2(S.WORLD_W // 2, starting_y),
+        player_pos=Vector2(lane_center_x, starting_y),
         player_speed=S.PLAYER_SPEED,
-        start_x=S.WORLD_W // 2,
+        start_x=lane_center_x,
     )
     apply_player_variant(gs, "male", PLAYER_VARIANTS)
 
@@ -1519,6 +1495,7 @@ while running:
         pg.update_needed(cam.y, S.LOGICAL_HEIGHT)
         pg.draw_props(virtual_screen, cam.x, cam.y, S.LOGICAL_WIDTH, S.LOGICAL_HEIGHT)
         actors.draw_vessels(virtual_screen, cam, gs, mist_frame, S.DEBUG_OVERWORLD)
+        actors.draw_monsters(virtual_screen, cam, gs, mist_frame, S.DEBUG_OVERWORLD)
         actors.draw_rivals(virtual_screen, cam, gs)
         actors.draw_merchants(virtual_screen, cam, gs)
         actors.draw_taverns(virtual_screen, cam, gs)
@@ -2658,19 +2635,21 @@ while running:
                 world.update_player(gs, dt, gs.player_half)
             actors.update_rivals(gs, dt, gs.player_half)
             actors.update_vessels(gs, dt, gs.player_half, VESSELS, RARE_VESSELS)
+            actors.update_monsters(gs, dt, gs.player_half)
             actors.update_merchants(gs, dt, gs.player_half)
             actors.update_taverns(gs, dt, gs.player_half)
             actors.update_bosses(gs, dt, gs.player_half)
             # Check for boss spawns based on score
             from world import bosses
             bosses.check_and_spawn_bosses(gs)
-            try_trigger_encounter(gs, RIVAL_SUMMONERS, MERCHANT_FRAMES, TAVERN_SPRITE)
+            try_trigger_encounter(gs, RIVAL_SUMMONERS, MERCHANT_FRAMES, TAVERN_SPRITE, MONSTERS)
 
             cam = world.get_camera_offset(gs.player_pos, S.LOGICAL_WIDTH, S.LOGICAL_HEIGHT, gs.player_half)
             world.draw_repeating_road(virtual_screen, cam.x, cam.y)
             pg.update_needed(cam.y, S.LOGICAL_HEIGHT)
             pg.draw_props(virtual_screen, cam.x, cam.y, S.LOGICAL_WIDTH, S.LOGICAL_HEIGHT)
             actors.draw_vessels(virtual_screen, cam, gs, mist_frame, S.DEBUG_OVERWORLD)
+            actors.draw_monsters(virtual_screen, cam, gs, mist_frame, S.DEBUG_OVERWORLD)
             actors.draw_rivals(virtual_screen, cam, gs)
             actors.draw_merchants(virtual_screen, cam, gs)
             actors.draw_taverns(virtual_screen, cam, gs)

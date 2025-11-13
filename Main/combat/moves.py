@@ -552,6 +552,15 @@ def _play_move_sfx(label: str):
 # --------------------- Registry (Level 1) --------------------
 
 _CLASS_KEYS = {
+    # Monsters
+    "dragon": "dragon",
+    "owlbear": "owlbear",
+    "beholder": "beholder",
+    "golem": "golem",
+    "ogre": "ogre",
+    "nothic": "nothic",
+    "myconid": "myconid",
+    # Regular classes
     "barbarian": "barbarian",
     "druid": "druid",
     "rogue": "rogue",
@@ -668,6 +677,56 @@ _MOVE_REGISTRY: Dict[str, List[Move]] = {
         Move("bard_l20_inspire_combat", "Combat Inspiration", "Rally your allies with powerful song; channel that energy into a devastating strike.", (3, 8), "CHA", True, 0, 6),
         Move("bard_l40_sonic_boom", "Sonic Boom", "Unleash a wave of pure sound that shatters reality.", (4, 10), "CHA", True, 0, 2),
         Move("bard_l50_final_cadence", "Final Cadence", "The ultimate performance that brings all things to their end.", (6, 10), "CHA", True, 0, 1),
+    ],
+    # ===================== Monsters =====================
+    "dragon": [
+        Move("dragon_l1_claw_swipe", "Claw Swipe", "Basic dragon claw attack.", (2, 6), "STR", True, 0, 20),
+        Move("dragon_l10_fire_breath", "Fire Breath", "Breathe a cone of fire.", (3, 8), "CON", True, 0, 12),
+        Move("dragon_l20_tail_slam", "Tail Slam", "Crushing tail strike.", (4, 10), "STR", True, 0, 6),
+        Move("dragon_l30_wing_buffet", "Wing Buffet", "Powerful wing strike.", (5, 10), "STR", True, 0, 3),
+        Move("dragon_l40_dragon_roar", "Dragon Roar", "Terrifying roar that weakens foes.", (6, 12), "CHA", True, 0, 1),
+    ],
+    "owlbear": [
+        Move("owlbear_l1_claw", "Claw", "Sharp claw attack.", (1, 8), "STR", True, 0, 20),
+        Move("owlbear_l10_beak_peck", "Beak Peck", "Precise beak strike.", (2, 8), "DEX", True, 0, 12),
+        Move("owlbear_l20_hunters_pounce", "Hunter's Pounce", "Leap and strike.", (3, 10), "STR", True, 0, 6),
+        Move("owlbear_l30_savage_maul", "Savage Maul", "Frenzied mauling attack.", (4, 10), "STR", True, 0, 3),
+        Move("owlbear_l40_primal_rage", "Primal Rage", "Unleash primal fury.", (5, 12), "STR", True, 0, 1),
+    ],
+    "beholder": [
+        Move("beholder_l1_eye_ray", "Eye Ray", "Weak magical ray from central eye.", (1, 6), "INT", True, 0, 20),
+        Move("beholder_l10_paralyzing_ray", "Paralyzing Ray", "Ray that can paralyze.", (2, 8), "INT", True, 0, 12),
+        Move("beholder_l20_disintegration_ray", "Disintegration Ray", "Powerful disintegration beam.", (3, 10), "INT", True, 0, 6),
+        Move("beholder_l30_antimagic_cone", "Antimagic Cone", "Suppress magic in cone.", (4, 10), "INT", True, 0, 3),
+        Move("beholder_l40_all_seeing_eye", "All-Seeing Eye", "Ultimate beholder power.", (6, 12), "INT", True, 0, 1),
+    ],
+    "golem": [
+        Move("golem_l1_fist_slam", "Fist Slam", "Heavy stone fist strike.", (1, 10), "STR", True, 0, 20),
+        Move("golem_l10_stone_throw", "Stone Throw", "Hurl a boulder.", (2, 10), "STR", True, 0, 12),
+        Move("golem_l20_ground_slam", "Ground Slam", "Slam ground creating shockwave.", (3, 12), "STR", True, 0, 6),
+        Move("golem_l30_immovable_object", "Immovable Object", "Become unstoppable force.", (4, 12), "CON", True, 0, 3),
+        Move("golem_l40_titan_strike", "Titan Strike", "Ultimate golem attack.", (5, 12), "STR", True, 0, 1),
+    ],
+    "ogre": [
+        Move("ogre_l1_club_smash", "Club Smash", "Brutal club attack.", (1, 8), "STR", True, 0, 20),
+        Move("ogre_l10_belly_slam", "Belly Slam", "Crushing body slam.", (2, 10), "STR", True, 0, 12),
+        Move("ogre_l20_rage_swing", "Rage Swing", "Wild swinging attack.", (3, 10), "STR", True, 0, 6),
+        Move("ogre_l30_brutal_charge", "Brutal Charge", "Charge and crush.", (4, 10), "STR", True, 0, 3),
+        Move("ogre_l40_berserker_fury", "Berserker Fury", "Unleash ogre rage.", (5, 12), "STR", True, 0, 1),
+    ],
+    "nothic": [
+        Move("nothic_l1_claw_scratch", "Claw Scratch", "Sharp claw attack.", (1, 6), "DEX", True, 0, 20),
+        Move("nothic_l10_weird_insight", "Weird Insight", "Psychic damage from knowledge.", (2, 8), "INT", True, 0, 12),
+        Move("nothic_l20_rotting_gaze", "Rotting Gaze", "Gaze that causes decay.", (3, 10), "INT", True, 0, 6),
+        Move("nothic_l30_paranoid_whisper", "Paranoid Whisper", "Maddening whispers.", (4, 10), "CHA", True, 0, 3),
+        Move("nothic_l40_eldritch_sight", "Eldritch Sight", "See through all defenses.", (5, 12), "INT", True, 0, 1),
+    ],
+    "myconid": [
+        Move("myconid_l1_spore_puff", "Spore Puff", "Weak spore attack.", (1, 4), "CON", True, 0, 20),
+        Move("myconid_l10_poison_spores", "Poison Spores", "Toxic spore cloud.", (2, 6), "CON", True, 0, 12),
+        Move("myconid_l20_animating_spores", "Animating Spores", "Spores that sap strength.", (3, 8), "CON", True, 0, 6),
+        Move("myconid_l30_pacifying_spores", "Pacifying Spores", "Spores that calm enemies.", (4, 8), "WIS", True, 0, 3),
+        Move("myconid_l40_spore_burst", "Spore Burst", "Massive spore explosion.", (5, 10), "CON", True, 0, 1),
     ],
 }
 

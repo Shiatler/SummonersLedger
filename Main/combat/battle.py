@@ -226,6 +226,16 @@ def _smooth_scale(surf: pygame.Surface | None, scale: float) -> pygame.Surface |
     w, h = surf.get_width(), surf.get_height()
     return pygame.transform.smoothscale(surf, (max(1, int(w * scale)), max(1, int(h * scale))))
 
+def _smooth_scale_to_height(surf: pygame.Surface | None, target_h: int) -> pygame.Surface | None:
+    """Scale sprite to target height while maintaining aspect ratio."""
+    if surf is None:
+        return None
+    w, h = surf.get_width(), surf.get_height()
+    if h <= 0:
+        return surf
+    s = target_h / h
+    return pygame.transform.smoothscale(surf, (max(1, int(w*s)), max(1, int(h*s))))
+
 def _pretty_name_from_token(fname: str | None) -> str:
     """Get display name for a vessel (uses name generator)."""
     if not fname:
@@ -346,7 +356,15 @@ def _guess_vessel_name_from_token(fname: str) -> str | None:
         ("MToken",       "MVessel"),
         ("FToken",       "FVessel"),
         ("RToken",       "RVessel"),
-        ("Token",        "Vessel"),
+        # Monsters: TokenBeholder -> Beholder, TokenDragon -> Dragon, etc.
+        ("TokenBeholder", "Beholder"),
+        ("TokenDragon",   "Dragon"),
+        ("TokenGolem",   "Golem"),
+        ("TokenNothic",  "Nothic"),
+        ("TokenOgre",    "Ogre"),
+        ("TokenOwlbear", "Owlbear"),
+        ("TokenMyconid", "Myconid"),
+        ("Token",        "Vessel"),  # Generic fallback
     )
 
     for tok, ves in prefix_map:
@@ -382,6 +400,25 @@ def _resolve_sprite_surface(name: str | None) -> pygame.Surface | None:
         if ASSET_DEBUG:
             print(f"[assets] MISS {tag}: {basename}")
         return None
+
+    # Check for monster tokens first (TokenDragon, TokenBeholder, etc.)
+    if name.startswith("Token"):
+        # Remove "Token" prefix and file extension
+        base_name = os.path.splitext(name)[0]  # Remove .png extension if present
+        monster_name = base_name[5:] if len(base_name) > 5 else base_name  # Remove "Token" prefix
+        # Check if it's a known monster
+        monster_names = ["Beholder", "Dragon", "Golem", "Myconid", "Nothic", "Ogre", "Owlbear"]
+        if any(monster_name.startswith(m) for m in monster_names):
+            # Load from VesselMonsters folder
+            monster_path = os.path.join("Assets", "VesselMonsters", f"{monster_name}.png")
+            monster_img = _try_load(monster_path)
+            if monster_img:
+                if ASSET_DEBUG:
+                    print(f"[assets] HIT monster: {monster_name} -> {monster_path}")
+                return monster_img
+            else:
+                if ASSET_DEBUG:
+                    print(f"[assets] MISS monster: {monster_name} at {monster_path}")
 
     cand  = token_to_vessel(name)
     guess = _guess_vessel_name_from_token(name)
@@ -747,8 +784,28 @@ def _build_initial_state(gs, preserved_bg=None, preserved_ally_pos=None, preserv
         gs.combat_active_idx = _battle_start_slot(gs)
     names = getattr(gs, "party_slots_names", None) or [None]*6
     ally_token = names[int(gs.combat_active_idx)] if names else None
+    
+    # Check if ally is a monster (caught monster in party)
+    is_ally_monster = False
+    if ally_token and ally_token.startswith("Token"):
+        # Remove "Token" prefix and file extension
+        base_name = os.path.splitext(ally_token)[0]  # Remove .png extension if present
+        monster_name = base_name[5:] if len(base_name) > 5 else base_name  # Remove "Token" prefix
+        monster_names = ["Beholder", "Dragon", "Golem", "Myconid", "Nothic", "Ogre", "Owlbear"]
+        is_ally_monster = any(monster_name.startswith(m) for m in monster_names)
+    
     ally_full = _ally_sprite_from_token_name(ally_token) or pygame.Surface(S.PLAYER_SIZE, pygame.SRCALPHA)
-    ally_full = _smooth_scale(ally_full, ALLY_SCALE)
+    
+    # Scale ally sprite - monsters should be sized to fixed 500px height
+    if is_ally_monster:
+        # Monster allies: Scale to fixed height of 500 pixels
+        target_height = 500
+        if ally_full:
+            ally_full = _smooth_scale_to_height(ally_full, target_height)
+        print(f"🐉 Monster ally sprite scaled to fixed height: {target_height}px")
+    else:
+        # Normal vessel allies: Use ALLY_SCALE (1.0)
+        ally_full = _smooth_scale(ally_full, ALLY_SCALE)
 
     # Enemy 0
     enemy_token = (team.get("names") or [None])[0] if isinstance(team.get("names"), list) else None
@@ -874,6 +931,14 @@ def _build_initial_state(gs, preserved_bg=None, preserved_ally_pos=None, preserv
     # Labels
     st["enemy_label_name"]  = gs.encounter_name or "Enemy"
     st["enemy_label_level"] = int(enemy_stats.get("level", getattr(gs, "zone_level", 1)))
+
+    enemy_names = list(team.get("names", []) or [])
+    team_count = min(len(enemy_names), MAX_ENEMY_PARTY_SLOTS)
+    empty_slots = ["empty"] * max(0, MAX_ENEMY_PARTY_SLOTS - team_count)
+    alive_slots = ["alive"] * team_count
+    st["enemy_party_status"] = empty_slots + alive_slots
+    st["enemy_party_size"] = team_count
+    st["enemy_party_offset"] = len(empty_slots)
 
     return st
 
@@ -1353,7 +1418,9 @@ def _advance_to_next_enemy(gs, st):
     team = st.get("enemy_team") or {}
     names = team.get("names") or []
     stats = team.get("stats") or []
-    idx   = int(st.get("enemy_idx", 0)) + 1
+    prev_idx = int(st.get("enemy_idx", 0))
+    _set_enemy_party_slot_status(st, prev_idx, "dead")
+    idx   = prev_idx + 1
 
     if idx >= len(names) or idx >= len(stats):
         st["suppress_enemy_draw"] = True
@@ -1742,22 +1809,50 @@ def draw(screen: pygame.Surface, gs, dt: float, **_):
     active_name = names[active_i]
     active_stats = stats[active_i] if active_i < len(stats) else None
 
+    # Check if active ally is a monster
+    is_active_monster = False
+    if active_name and active_name.startswith("Token"):
+        # Remove "Token" prefix and file extension
+        base_name = os.path.splitext(active_name)[0]  # Remove .png extension if present
+        monster_name = base_name[5:] if len(base_name) > 5 else base_name  # Remove "Token" prefix
+        monster_names = ["Beholder", "Dragon", "Golem", "Myconid", "Nothic", "Ogre", "Owlbear"]
+        is_active_monster = any(monster_name.startswith(m) for m in monster_names)
+
     if st.get("ally_from_slot") is None:
         st["ally_from_slot"] = active_i
         if active_name and not st.get("ally_img"):
             try:
-                vessel_png = token_to_vessel(active_name) or active_name
-                path = find_image(vessel_png) or find_image(active_name)
-                if path and os.path.exists(path):
-                    st["ally_img"] = _smooth_scale(pygame.image.load(path).convert_alpha(), ALLY_SCALE)
+                # Try loading via _ally_sprite_from_token_name first (handles monsters)
+                ally_sprite = _ally_sprite_from_token_name(active_name)
+                if ally_sprite:
+                    if is_active_monster:
+                        target_height = 500
+                        st["ally_img"] = _smooth_scale_to_height(ally_sprite, target_height)
+                    else:
+                        st["ally_img"] = _smooth_scale(ally_sprite, ALLY_SCALE)
+                else:
+                    # Fallback to asset_links
+                    vessel_png = token_to_vessel(active_name) or active_name
+                    path = find_image(vessel_png) or find_image(active_name)
+                    if path and os.path.exists(path):
+                        loaded = pygame.image.load(path).convert_alpha()
+                        if is_active_monster:
+                            target_height = 500
+                            st["ally_img"] = _smooth_scale_to_height(loaded, target_height)
+                        else:
+                            st["ally_img"] = _smooth_scale(loaded, ALLY_SCALE)
             except Exception:
                 pass
     elif st["ally_from_slot"] != active_i and active_name and not st.get("swap_playing", False):
         try:
-            vessel_png = token_to_vessel(active_name) or active_name
-            path = find_image(vessel_png) or find_image(active_name)
-            if path and os.path.exists(path):
-                st["ally_img_next"] = _smooth_scale(pygame.image.load(path).convert_alpha(), ALLY_SCALE)
+            # Try loading via _ally_sprite_from_token_name first (handles monsters)
+            ally_sprite = _ally_sprite_from_token_name(active_name)
+            if ally_sprite:
+                if is_active_monster:
+                    target_height = 500
+                    st["ally_img_next"] = _smooth_scale_to_height(ally_sprite, target_height)
+                else:
+                    st["ally_img_next"] = _smooth_scale(ally_sprite, ALLY_SCALE)
                 st["ally_swap_target_slot"] = active_i
                 st["swap_playing"] = True
                 st["swap_t"] = 0.0
@@ -1770,6 +1865,29 @@ def draw(screen: pygame.Surface, gs, dt: float, **_):
                         audio_sys.play_sound(st["swap_sfx"])
                 except Exception:
                     pass
+            else:
+                # Fallback to asset_links
+                vessel_png = token_to_vessel(active_name) or active_name
+                path = find_image(vessel_png) or find_image(active_name)
+                if path and os.path.exists(path):
+                    loaded = pygame.image.load(path).convert_alpha()
+                    if is_active_monster:
+                        target_height = 500
+                        st["ally_img_next"] = _smooth_scale_to_height(loaded, target_height)
+                    else:
+                        st["ally_img_next"] = _smooth_scale(loaded, ALLY_SCALE)
+                    st["ally_swap_target_slot"] = active_i
+                    st["swap_playing"] = True
+                    st["swap_t"] = 0.0
+                    st["swap_total"] = 0.0
+                    st["swap_frame"] = 0
+                    st["ally_t"] = 1.0
+                    st["intro"] = False
+                    try:
+                        if st.get("swap_sfx"):
+                            audio_sys.play_sound(st["swap_sfx"])
+                    except Exception:
+                        pass
         except Exception:
             pass
 
@@ -1871,6 +1989,7 @@ def draw(screen: pygame.Surface, gs, dt: float, **_):
         enemy_max_hp = st.get("enemy_max_hp")
         _draw_hp_bar(screen, enemy_bar, st.get("enemy_hp_ratio", 1.0), enemy_label, "right",
                      current_hp=enemy_cur_hp, max_hp=enemy_max_hp)
+        _draw_enemy_party_icons(screen, enemy_bar, st)
 
     # Track last enemy hp
     st["last_enemy_hp"] = int(e_cur)
@@ -1921,6 +2040,8 @@ def draw(screen: pygame.Surface, gs, dt: float, **_):
             st["enemy_fade_active"] = True
             st["enemy_fade_t"] = 0.0
             st["enemy_defeated"] = True
+            current_idx = int(st.get("enemy_idx", 0))
+            _set_enemy_party_slot_status(st, current_idx, "dead")
             active_idx = _get_active_party_index(gs)
             if not st.get("enemy_awarded_this_ko", False) and not st.get("pending_xp_award"):
                 st["pending_xp_award"] = (
@@ -2045,3 +2166,86 @@ def draw(screen: pygame.Surface, gs, dt: float, **_):
     label = font.render("Summoner Battle — Team Mode (WIP) — auto-summon next", True, (180, 180, 180))
     # Use logical resolution for virtual screen dimensions
     screen.blit(label, label.get_rect(midbottom=(S.LOGICAL_WIDTH // 2, S.LOGICAL_HEIGHT - 8)))
+
+# ---------------- Enemy party HUD assets ----------------
+MAX_ENEMY_PARTY_SLOTS = 6
+ENEMY_PARTY_ICON_SIZE = 48
+ENEMY_PARTY_ICON_SPACING = 10
+_enemy_party_icon_cache: dict[str, pygame.Surface] = {}
+
+
+def _create_silhouette(surface: pygame.Surface | None) -> pygame.Surface | None:
+    """Return a black silhouette of the provided surface, preserving alpha."""
+    if surface is None:
+        return None
+    result = surface.copy()
+    blackout = pygame.Surface(surface.get_size(), pygame.SRCALPHA)
+    blackout.fill((0, 0, 0, 255))
+    result.blit(blackout, (0, 0), special_flags=pygame.BLEND_RGB_MULT)
+    return result
+
+
+def _load_enemy_party_icon(kind: str) -> pygame.Surface | None:
+    kind_key = kind.lower()
+    cached = _enemy_party_icon_cache.get(kind_key)
+    if cached is not None:
+        return cached
+
+    base_path = os.path.join("Assets", "Items", "Scroll_Of_Sealing.png")
+    grey_path = os.path.join("Assets", "Items", "Scroll_Of_Sealing_Grey.png")
+
+    surf: pygame.Surface | None = None
+    if kind_key == "alive":
+        surf = _try_load(base_path)
+    elif kind_key == "dead":
+        surf = _try_load(grey_path) or _try_load(base_path)
+    elif kind_key == "empty":
+        base = _try_load(base_path)
+        surf = _create_silhouette(base) if base else None
+    else:
+        surf = _try_load(base_path)
+
+    if surf is not None:
+        surf = pygame.transform.smoothscale(
+            surf, (ENEMY_PARTY_ICON_SIZE, ENEMY_PARTY_ICON_SIZE)
+        )
+        _enemy_party_icon_cache[kind_key] = surf
+
+    return surf
+
+
+def _set_enemy_party_slot_status(st: dict, slot_index: int, status: str) -> None:
+    slots = st.get("enemy_party_status")
+    if not isinstance(slots, list):
+        return
+    offset = int(st.get("enemy_party_offset", 0))
+    target = offset + slot_index
+    if 0 <= target < len(slots):
+        slots[target] = status
+
+
+def _draw_enemy_party_icons(surface: pygame.Surface, enemy_bar: pygame.Rect, st: dict) -> None:
+    statuses = st.get("enemy_party_status")
+    if not isinstance(statuses, list) or not statuses:
+        return
+
+    icons: list[pygame.Surface | None] = []
+    for status in statuses:
+        icons.append(_load_enemy_party_icon(status or "empty"))
+
+    if not icons:
+        return
+
+    total_slots = len(icons)
+    total_width = (
+        ENEMY_PARTY_ICON_SIZE * total_slots
+        + ENEMY_PARTY_ICON_SPACING * (total_slots - 1)
+    )
+
+    start_x = enemy_bar.centerx - total_width // 2
+    y = enemy_bar.bottom + 8
+
+    for icon in icons:
+        if icon is not None:
+            surface.blit(icon, (start_x, y))
+        start_x += ENEMY_PARTY_ICON_SIZE + ENEMY_PARTY_ICON_SPACING

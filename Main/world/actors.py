@@ -11,6 +11,8 @@ import settings as S
 from combat.vessel_stats import generate_vessel_stats_from_asset
 from rolling.roller import Roller
 
+MONSTER_OVERWORLD_SCALE = getattr(S, "MONSTER_OVERWORLD_SCALE", 1.8)
+
 
 # Lists live on the GameState object:
 # gs.rivals_on_map:  list of dict {name, sprite, pos(Vector2), side}
@@ -21,7 +23,7 @@ from rolling.roller import Roller
 
 # ===================== Shared spawn helpers ==================
 def _y_too_close(y: float, gs, min_sep: float) -> bool:
-    """Return True if y is within min_sep of any existing spawn (vessels, rivals, merchants, or taverns)."""
+    """Return True if y is within min_sep of any existing spawn (vessels, rivals, merchants, taverns, or monsters)."""
     for r in gs.rivals_on_map:
         if abs(y - r["pos"].y) < min_sep:
             return True
@@ -33,6 +35,9 @@ def _y_too_close(y: float, gs, min_sep: float) -> bool:
             return True
     for t in getattr(gs, "taverns_on_map", []):
         if abs(y - t["pos"].y) < min_sep:
+            return True
+    for mon in getattr(gs, "monsters_on_map", []):
+        if abs(y - mon["pos"].y) < min_sep:
             return True
     return False
 
@@ -229,6 +234,164 @@ def update_vessels(gs, dt, player_half: Vector2, vessels, rare_vessels):
     # Cull far below player
     cutoff = gs.player_pos.y + S.HEIGHT * 1.5
     gs.vessels_on_map[:] = [v for v in gs.vessels_on_map if v["pos"].y < cutoff]
+
+
+# ===================== Monsters =================
+def scale_monster_overworld_sprite(sprite: pygame.Surface | None) -> pygame.Surface | None:
+    if sprite is None:
+        return None
+    current_w, current_h = sprite.get_size()
+    if current_w <= 0 or current_h <= 0:
+        return sprite
+    target_w = int(S.PLAYER_SIZE[0] * MONSTER_OVERWORLD_SCALE)
+    target_h = int(S.PLAYER_SIZE[1] * MONSTER_OVERWORLD_SCALE)
+    scale_w = target_w / current_w
+    scale_h = target_h / current_h
+    scale = min(scale_w, scale_h)
+    final_w = max(1, int(current_w * scale))
+    final_h = max(1, int(current_h * scale))
+    return pygame.transform.smoothscale(sprite, (final_w, final_h))
+
+
+def spawn_monster_ahead(gs, start_x, monsters):
+    """Spawn a monster with its actual sprite (left/right lane) some distance above the player, with separation."""
+    if not monsters or len(monsters) == 0:
+        return
+    
+    # Choose random monster and get its sprite
+    asset_name, sprite = random.choice(monsters)
+    
+    side = random.choice(["left", "right"])
+    x = start_x + (-S.LANE_OFFSET if side == "left" else S.LANE_OFFSET)
+
+    spawn_gap = random.randint(S.SPAWN_GAP_MIN, S.SPAWN_GAP_MAX)
+    base_y = gs.player_pos.y - spawn_gap
+
+    # Ensure vertical separation from ALL existing spawns
+    sep = getattr(S, "OVERWORLD_MIN_SEPARATION_Y", 200)
+    y = _pick_spawn_y(gs, base_y, sep)
+    if y is None:
+        return
+
+    if not hasattr(gs, "monsters_on_map"):
+        gs.monsters_on_map = []
+    
+    scaled_sprite = scale_monster_overworld_sprite(sprite)
+    
+    # Store monster with sprite and asset name
+    gs.monsters_on_map.append({
+        "pos": Vector2(x, y),
+        "side": side,
+        "sprite": sprite,
+        "scaled_sprite": scaled_sprite,
+        "asset_name": asset_name
+    })
+
+
+def update_monsters(gs, dt, player_half: Vector2):
+    """Check collision with monster sprites and trigger encounter."""
+    if gs.in_encounter:
+        return
+    
+    if not hasattr(gs, "monsters_on_map"):
+        gs.monsters_on_map = []
+        return
+
+    SIZE_W, SIZE_H = S.PLAYER_SIZE
+    x_threshold = S.LANE_OFFSET + SIZE_W
+    triggered_index = None
+
+    player_top    = gs.player_pos.y - player_half.y
+    player_bottom = gs.player_pos.y + player_half.y
+
+    for i, m in enumerate(gs.monsters_on_map):
+        same_lane = abs(m["pos"].x - gs.player_pos.x) <= x_threshold
+
+        monster_top    = m["pos"].y - SIZE_H // 2
+        monster_bottom = m["pos"].y + SIZE_H // 2
+
+        in_front = player_top <= (monster_bottom + S.FRONT_TOLERANCE)
+        overlapping_vertically = player_bottom >= (monster_top - S.FRONT_TOLERANCE)
+
+        if same_lane and in_front and overlapping_vertically:
+            # Get monster data from spawn
+            asset_name = m.get("asset_name", "Unknown Monster")
+            sprite = m.get("sprite")
+
+            # 🧮 Roll stat block NOW (encounter time) using monster stat generation
+            seed = (pygame.time.get_ticks() ^ hash(asset_name) ^ int(gs.distance_travelled)) & 0xFFFFFFFF
+            try:
+                rng = Roller(seed=seed)
+            except TypeError:
+                rng = Roller()
+                for method in ("reseed", "seed", "set_seed"):
+                    fn = getattr(rng, method, None)
+                    if callable(fn):
+                        try:
+                            fn(seed)
+                            break
+                        except Exception:
+                            pass
+
+            # Use scaled level based on player's highest party level
+            from combat.team_randomizer import scaled_enemy_level
+            enemy_level = scaled_enemy_level(gs, rng)
+            
+            # Generate monster stats (with multipliers)
+            from combat.monster_stats import generate_monster_stats_from_asset
+            stats = generate_monster_stats_from_asset(
+                asset_name=asset_name,
+                level=enemy_level,
+                rng=rng,
+                notes="Rolled on monster encounter"
+            )
+
+            # Generate display name from monster name
+            from systems.name_generator import generate_vessel_name
+            gs.encounter_name   = generate_vessel_name(asset_name) if asset_name else "Wild Monster"
+            gs.encounter_sprite = sprite
+            gs.encounter_stats  = stats
+            # Store original asset name for stat generation
+            gs.encounter_token_name = asset_name
+            gs.encounter_type = "MONSTER"  # Mark as monster encounter
+            gs.in_encounter     = True
+            gs.encounter_timer  = S.ENCOUNTER_SHOW_TIME
+            triggered_index     = i
+            break
+
+    if triggered_index is not None:
+        gs.monsters_on_map.pop(triggered_index)
+
+    # Cull far below player
+    cutoff = gs.player_pos.y + S.HEIGHT * 1.5
+    gs.monsters_on_map[:] = [m for m in gs.monsters_on_map if m["pos"].y < cutoff]
+
+
+def draw_monsters(screen, cam, gs, vessel_mist=None, debug=False):
+    """Draw actual monster sprites on the overworld (larger than player)."""
+    if not hasattr(gs, "monsters_on_map"):
+        return
+    
+    for m in gs.monsters_on_map:
+        pos = m["pos"]
+        sprite = m.get("sprite")
+        scaled_sprite = m.get("scaled_sprite")
+        
+        if scaled_sprite is None and sprite is not None:
+            scaled_sprite = scale_monster_overworld_sprite(sprite)
+            m["scaled_sprite"] = scaled_sprite
+        
+        if scaled_sprite:
+            screen_x = int(pos.x - cam.x - scaled_sprite.get_width() // 2)
+            screen_y = int(pos.y - cam.y - scaled_sprite.get_height() // 2)
+            screen.blit(scaled_sprite, (screen_x, screen_y))
+        elif sprite:
+            screen_x = int(pos.x - cam.x - sprite.get_width() // 2)
+            screen_y = int(pos.y - cam.y - sprite.get_height() // 2)
+            screen.blit(sprite, (screen_x, screen_y))
+        
+        if debug:
+            pygame.draw.circle(screen, (255, 0, 255), (int(pos.x - cam.x), int(pos.y - cam.y)), 5)
 
 
 def draw_vessels(screen, cam, gs, vessel_mist, debug=False):
@@ -479,7 +642,7 @@ def spawn_boss_ahead(gs, start_x, boss_data: dict):
         return
     
     # Boss spawns in the middle of the road (centered like player)
-    x = start_x  # Center of road (same as player's start_x)
+    x = start_x  # Center of road (same as player's start_x; already offset in gs.start_x)
     
     # Spawn far ahead (further than normal encounters)
     spawn_gap = random.randint(800, 1200)  # Much further than normal spawns

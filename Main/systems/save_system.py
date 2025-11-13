@@ -290,6 +290,16 @@ def save_game(gs, *, force: bool = False):
             }
             for t in getattr(gs, "taverns_on_map", [])
         ],
+        "monsters_on_map": [
+            {
+                "asset_name": mon.get("asset_name", ""),
+                "side": mon.get("side", "left"),
+                "x": float(mon_pos.x if isinstance(mon_pos := mon.get("pos"), Vector2) else mon.get("x", 0.0)),
+                "y": float(mon_pos.y if isinstance(mon_pos := mon.get("pos"), Vector2) else mon.get("y", 0.0)),
+            }
+            for mon in getattr(gs, "monsters_on_map", [])
+            if mon.get("asset_name")
+        ],
 
         # ✅ inventory
         "inventory": getattr(gs, "inventory", {}),
@@ -413,7 +423,13 @@ def save_game(gs, *, force: bool = False):
         return False
 
 
-def load_game(gs, summoner_sprites: dict[str, object] | None = None, merchant_frames: list | None = None, tavern_sprite: object | None = None):
+def load_game(
+    gs,
+    summoner_sprites: dict[str, object] | None = None,
+    merchant_frames: list | None = None,
+    tavern_sprite: object | None = None,
+    monster_sprites: dict[str, object] | None = None,
+):
     """
     Load saved data and restore player pos, pacing, character, spawns,
     rebuild party tokens from saved filenames, and rehydrate party stats.
@@ -631,6 +647,43 @@ def load_game(gs, summoner_sprites: dict[str, object] | None = None, merchant_fr
                     "pos": Vector2(x, y),
                     "side": side,
                 })
+
+        if not hasattr(gs, "monsters_on_map"):
+            gs.monsters_on_map = []
+        else:
+            gs.monsters_on_map.clear()
+        
+        monsters_json = data.get("monsters_on_map", [])
+        from world import actors as world_actors
+        from systems.asset_links import find_image as _find_image
+        
+        for mon in monsters_json:
+            asset_name = mon.get("asset_name")
+            if not asset_name:
+                continue
+            side = mon.get("side", "left")
+            x = float(mon.get("x", getattr(gs, "start_x", 0.0)))
+            y = float(mon.get("y", gs.player_pos.y))
+            
+            sprite = None
+            if monster_sprites:
+                sprite = monster_sprites.get(asset_name)
+            if sprite is None:
+                path = _find_image(f"{asset_name}.png")
+                if path and os.path.exists(path):
+                    try:
+                        sprite = pygame.image.load(path).convert_alpha()
+                    except Exception as e:
+                        print(f"⚠️ Failed to load monster sprite {asset_name} from {path}: {e}")
+                        sprite = None
+            scaled_sprite = world_actors.scale_monster_overworld_sprite(sprite) if sprite is not None else None
+            gs.monsters_on_map.append({
+                "pos": Vector2(x, y),
+                "side": side,
+                "sprite": sprite,
+                "scaled_sprite": scaled_sprite,
+                "asset_name": asset_name,
+            })
 
         print(
             f"📂 Loaded save from {S.SAVE_PATH} (character={gs.player_gender}, "

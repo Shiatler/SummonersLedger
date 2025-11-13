@@ -9,16 +9,28 @@ PREFIX_TO_TOKEN  = (
     ("FVessel", "FToken"),
     ("MVessel", "MToken"),
     ("RVessel", "RToken"),
+    # Monsters: Direct name -> TokenName (e.g., "Beholder" -> "TokenBeholder")
+    ("Beholder", "TokenBeholder"),
+    ("Dragon", "TokenDragon"),
+    ("Golem", "TokenGolem"),
+    ("Nothic", "TokenNothic"),
+    ("Ogre", "TokenOgre"),
+    ("Owlbear", "TokenOwlbear"),
+    ("Myconid", "TokenMyconid"),
 )
 PREFIX_TO_VESSEL = tuple((t, v) for (v, t) in PREFIX_TO_TOKEN)
 
 # --- where to search (matches your tree) ---
+# Note: Token files (TokenBeholder.png, etc.) are in Assets/VesselMonsters
+# Vessel sprites (Beholder.png, etc.) are also in Assets/VesselMonsters
 SEARCH_DIRS = (
+    "Assets/VesselMonsters",  # Monsters first (contains both sprites and tokens)
     "Assets/Starters",
     "Assets/VesselsFemale",
     "Assets/VesselsMale",
     "Assets/RareVessels",
     "Assets/PlayableCharacters",  # harmless fallback
+    "Assets/Map",  # Fallback for tokens that might be in Map folder
 )
 
 def _to_png(basename: str) -> str:
@@ -49,8 +61,20 @@ def find_image(basename_or_path: str | None) -> str | None:
     if os.path.exists(basename_or_path):
         return basename_or_path
     base = os.path.basename(basename_or_path)
+    # Try exact match first
     for d in SEARCH_DIRS:
         p = os.path.join(d, base)
         if os.path.exists(p):
             return p
+    # Try case-insensitive match (for Windows compatibility)
+    base_lower = base.lower()
+    for d in SEARCH_DIRS:
+        if not os.path.exists(d):
+            continue
+        try:
+            for filename in os.listdir(d):
+                if filename.lower() == base_lower:
+                    return os.path.join(d, filename)
+        except Exception:
+            pass
     return None

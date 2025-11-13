@@ -71,32 +71,16 @@ def _try_load(path: str | None):
     return None
 
 def _full_vessel_from_token_name(token_name: str | None) -> pygame.Surface | None:
-    """Load vessel image from token name (same logic as ledger.py)."""
+    """Load vessel image from token name (handles monsters)."""
     if not token_name:
         return None
-    base = os.path.splitext(os.path.basename(token_name))[0]
-    if base.startswith("StarterToken"):
-        body = base.replace("StarterToken", "", 1)
-        return _try_load(os.path.join("Assets", "Starters", f"Starter{body}.png"))
-    if base.startswith("MToken"):
-        body = base.replace("MToken", "", 1)
-        return _try_load(os.path.join("Assets", "VesselsMale", f"MVessel{body}.png"))
-    if base.startswith("FToken"):
-        body = base.replace("FToken", "", 1)
-        return _try_load(os.path.join("Assets", "VesselsFemale", f"FVessel{body}.png"))
-    if base.startswith("RToken"):
-        body = base.replace("RToken", "", 1)
-        p1 = os.path.join("Assets", "RareVessels", f"RVessel{body}.png")
-        img = _try_load(p1)
-        if img:
-            return img
-        m = re.match(r"([A-Za-z]+)", body)
-        if m:
-            return _try_load(os.path.join("Assets", "RareVessels", f"RVessel{m.group(1)}.png"))
-    for d in ("Starters", "VesselsMale", "VesselsFemale", "RareVessels"):
-        img = _try_load(os.path.join("Assets", d, f"{base}.png"))
-        if img:
-            return img
+    # Use asset_links for proper token->vessel conversion (handles monsters)
+    from systems.asset_links import token_to_vessel, find_image
+    vessel_name = token_to_vessel(token_name)
+    if vessel_name:
+        path = find_image(vessel_name)
+        if path and os.path.exists(path):
+            return _try_load(path)
     return None
 
 def _fit_center(surf: pygame.Surface, rect: pygame.Rect) -> tuple[pygame.Surface, pygame.Rect]:

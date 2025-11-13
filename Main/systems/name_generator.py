@@ -112,6 +112,12 @@ def generate_vessel_name(token_name: str) -> str:
         normalized = "RToken" + base[7:]  # Replace "RVessel" with "RToken"
     elif base.startswith("Starter"):
         normalized = "StarterToken" + base[7:]  # Replace "Starter" with "StarterToken"
+    elif base.startswith("Token"):
+        # Already a token (including monster tokens like "TokenBeholder")
+        normalized = base
+    elif base in ("Beholder", "Dragon", "Golem", "Nothic", "Ogre", "Owlbear", "Myconid"):
+        # Monster name without prefix - add Token prefix
+        normalized = "Token" + base
     else:
         normalized = base  # Already a token name or unknown format
     
@@ -121,13 +127,25 @@ def generate_vessel_name(token_name: str) -> str:
     if normalized in _NAME_CACHE:
         return _NAME_CACHE[normalized]
     
+    # Determine gender / type from normalized prefix
+    is_monster = normalized.startswith("Token") and normalized[5:] in ("Beholder", "Dragon", "Golem", "Nothic", "Ogre", "Owlbear", "Myconid")
+
+    # Monsters keep their species name instead of generated names
+    if is_monster:
+        monster_name = normalized[5:]
+        full_name = monster_name
+        _NAME_CACHE[token_name] = full_name
+        if normalized != token_name:
+            _NAME_CACHE[normalized] = full_name
+        return full_name
+
     # Load vessel name lists
     _ensure_vessel_names_loaded()
     
     # Determine gender from normalized prefix
-    is_female = normalized.startswith("FToken") or normalized.startswith("FVessel")
+    is_female = (normalized.startswith("FToken") or normalized.startswith("FVessel")) and not is_monster
     
-    # Select appropriate first name list
+    # Select appropriate first name list (monsters use male names)
     first_names = _FIRST_NAMES_FEMALE if is_female else _FIRST_NAMES_MALE
     
     # Use normalized name as seed for deterministic generation

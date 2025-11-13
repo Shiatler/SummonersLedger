@@ -78,7 +78,7 @@ def _load_player_sprite(gs) -> pygame.Surface | None:
     if surf:
         # Scale larger to fill more of the popup
         sh = S.LOGICAL_HEIGHT
-        return _smooth_scale_to_height(surf, int(sh * 0.50))  # Even larger size
+        return _smooth_scale_to_height(surf, int(sh * 0.65))  # Larger presence on VS screen
     return None
 
 def _pick_boss_track() -> str | None:
@@ -112,7 +112,7 @@ def enter(gs, **_):
     # Scale boss sprite if needed (larger to match player)
     if boss_sprite:
         sh = S.LOGICAL_HEIGHT
-        boss_sprite = _smooth_scale_to_height(boss_sprite, int(sh * 0.50))  # Even larger size
+        boss_sprite = _smooth_scale_to_height(boss_sprite, int(sh * 0.65))  # Larger presence on VS screen
     
     # Play boss music
     track = _pick_boss_track()

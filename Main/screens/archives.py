@@ -509,7 +509,7 @@ def _load_vessel_sprite(vessel_name: str, is_token: bool) -> pygame.Surface | No
     """Load a vessel sprite or token. Returns None if not found."""
     try:
         if is_token:
-            # For tokens, try find_image first (searches all asset dirs)
+            # For tokens, try find_image first (searches all asset dirs including VesselMonsters)
             from systems.asset_links import find_image
             token_path = find_image(vessel_name)
             if token_path and os.path.exists(token_path):
@@ -520,8 +520,8 @@ def _load_vessel_sprite(vessel_name: str, is_token: bool) -> pygame.Surface | No
             if os.path.exists(map_path):
                 return pygame.image.load(map_path).convert_alpha()
             
-            # Try category folders
-            for category_dir in ["Starters", "VesselsFemale", "VesselsMale", "RareVessels"]:
+            # Try category folders (including VesselMonsters)
+            for category_dir in ["VesselMonsters", "Starters", "VesselsFemale", "VesselsMale", "RareVessels"]:
                 category_path = os.path.join("Assets", category_dir, f"{vessel_name}.png")
                 if os.path.exists(category_path):
                     return pygame.image.load(category_path).convert_alpha()
@@ -537,8 +537,8 @@ def _load_vessel_sprite(vessel_name: str, is_token: bool) -> pygame.Surface | No
             if vessel_path and os.path.exists(vessel_path):
                 return pygame.image.load(vessel_path).convert_alpha()
             
-            # Try category folders
-            for category_dir in ["Starters", "VesselsFemale", "VesselsMale", "RareVessels"]:
+            # Try category folders (including VesselMonsters)
+            for category_dir in ["VesselMonsters", "Starters", "VesselsFemale", "VesselsMale", "RareVessels"]:
                 category_path = os.path.join("Assets", category_dir, f"{vessel_name}.png")
                 if os.path.exists(category_path):
                     return pygame.image.load(category_path).convert_alpha()

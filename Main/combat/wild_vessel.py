@@ -203,6 +203,16 @@ def _smooth_scale(surf: pygame.Surface | None, scale: float) -> pygame.Surface |
     w, h = surf.get_width(), surf.get_height()
     return pygame.transform.smoothscale(surf, (max(1, int(w*scale)), max(1, int(h*scale))))
 
+def _smooth_scale_to_height(surf: pygame.Surface | None, target_h: int) -> pygame.Surface | None:
+    """Scale sprite to target height while maintaining aspect ratio (like summoner_battle.py)."""
+    if surf is None:
+        return None
+    w, h = surf.get_width(), surf.get_height()
+    if h <= 0:
+        return surf
+    s = target_h / h
+    return pygame.transform.smoothscale(surf, (max(1, int(w*s)), max(1, int(h*s))))
+
 def _pretty_name_from_token(fname: str | None) -> str:
     """Get display name for a vessel (uses name generator)."""
     if not fname:
@@ -212,6 +222,23 @@ def _pretty_name_from_token(fname: str | None) -> str:
 
 def _ally_sprite_from_token_name(fname: str | None):
     if not fname: return None
+    # Check for monster tokens first (TokenDragon, TokenBeholder, etc.)
+    if fname.startswith("Token"):
+        # Remove "Token" prefix and file extension
+        base_name = os.path.splitext(fname)[0]  # Remove .png extension if present
+        monster_name = base_name[5:] if len(base_name) > 5 else base_name  # Remove "Token" prefix
+        # Check if it's a known monster
+        monster_names = ["Beholder", "Dragon", "Golem", "Myconid", "Nothic", "Ogre", "Owlbear"]
+        if any(monster_name.startswith(m) for m in monster_names):
+            # Load from VesselMonsters folder
+            monster_path = os.path.join("Assets", "VesselMonsters", f"{monster_name}.png")
+            print(f"🐉 Loading monster ally sprite from: {monster_path} (token: {fname}, name: {monster_name})")
+            monster_img = _try_load(monster_path)
+            if monster_img:
+                print(f"✅ Successfully loaded monster sprite: {monster_name} ({monster_img.get_width()}x{monster_img.get_height()})")
+                return monster_img
+            else:
+                print(f"⚠️ Failed to load monster sprite from: {monster_path}")
     if fname.startswith("StarterToken"):
         return _try_load(os.path.join("Assets", "Starters", fname.replace("Token", "")))
     if fname.startswith(("FToken", "MToken")):
@@ -234,6 +261,10 @@ def _ally_sprite_from_token_name(fname: str | None):
 
 def _enemy_sprite_from_name(name: str | None):
     if not name: return None
+    # Check VesselMonsters first (monsters)
+    monster_img = _try_load(os.path.join("Assets", "VesselMonsters", f"{name}.png"))
+    if monster_img: return monster_img
+    # Then check regular vessel folders
     for d in ("VesselsMale", "VesselsFemale", "RareVessels"):
         img = _try_load(os.path.join("Assets", d, f"{name}.png"))
         if img: return img
@@ -451,7 +482,9 @@ def _on_use_item(gs, item) -> bool:
         except Exception:
             pass
 
+        asset_name = getattr(gs, "encounter_token_name", None)
         ctx = CaptureContext(level=level, max_hp=max_hp, cur_hp=cur_hp,
+                             asset_name=asset_name,
                              scroll=cap_kind, status=None, capture_bonus=0, advantage=0)
         res = attempt_capture(ctx)
 
@@ -638,16 +671,107 @@ def enter(gs, audio_bank=None, **_):
     if st:
         st["infernal_rebirth_used_this_battle"] = False
 
-    ally_full  = _ally_sprite_from_token_name(ally_token_name) or pygame.Surface(S.PLAYER_SIZE, pygame.SRCALPHA)
-    # Use token name for sprite loading, fallback to encounter_sprite or encounter_name (for backwards compatibility)
-    token_name = getattr(gs, "encounter_token_name", None)
-    enemy_full = _enemy_sprite_from_name(token_name) if token_name else (getattr(gs, "encounter_sprite", None) or _enemy_sprite_from_name(getattr(gs, "encounter_name", None)))
+    # Check if ally is a monster (caught monster in party) BEFORE loading sprite
+    is_ally_monster = False
+    if ally_token_name and ally_token_name.startswith("Token"):
+        # Remove "Token" prefix and file extension
+        base_name = os.path.splitext(ally_token_name)[0]  # Remove .png extension if present
+        monster_name = base_name[5:] if len(base_name) > 5 else base_name  # Remove "Token" prefix
+        monster_names = ["Beholder", "Dragon", "Golem", "Myconid", "Nothic", "Ogre", "Owlbear"]
+        is_ally_monster = any(monster_name.startswith(m) for m in monster_names)
+    
+    # Load ally sprite - use same logic as enemy for monsters
+    ally_full = None
+    if is_ally_monster:
+        # Monster allies: Use _ally_sprite_from_token_name which already handles monsters correctly
+        # It checks for Token prefix and loads from VesselMonsters folder
+        ally_full = _ally_sprite_from_token_name(ally_token_name)
+        if not ally_full:
+            # Fallback: try direct loading with monster name
+            base_name = os.path.splitext(ally_token_name)[0] if ally_token_name else ""
+            monster_name = base_name[5:] if len(base_name) > 5 else base_name  # Remove "Token" prefix
+            print(f"🐉 Trying direct monster load for ally: {monster_name} (from token: {ally_token_name})")
+            ally_full = _enemy_sprite_from_name(monster_name)
+            if ally_full:
+                print(f"✅ Successfully loaded monster ally sprite: {monster_name}")
+            else:
+                print(f"⚠️ Failed to load monster ally sprite for {monster_name}")
+    else:
+        # Normal vessel allies: Use standard loading
+        ally_full = _ally_sprite_from_token_name(ally_token_name)
+    
+    if ally_full is None:
+        ally_full = pygame.Surface(S.PLAYER_SIZE, pygame.SRCALPHA)
+        ally_full.fill((40, 160, 40, 220))  # Green placeholder for ally
+        print(f"⚠️ Ally sprite not found for {ally_token_name}, using placeholder")
+    
+    # Load enemy sprite - for monsters, ALWAYS reload fresh from file (never use encounter_sprite)
+    # because encounter_sprite is scaled for overworld (1.1x), not battle
+    # For vessels, use encounter_sprite if available (pre-loaded at PLAYER_SIZE)
+    is_monster = getattr(gs, "encounter_type", None) == "MONSTER"
+    enemy_full = None
+    
+    if is_monster:
+        # Monsters: ALWAYS load fresh from file (at native size, then scale for battle)
+        # DO NOT use encounter_sprite - it's scaled for overworld display
+        token_name = getattr(gs, "encounter_token_name", None)
+        if token_name:
+            enemy_full = _enemy_sprite_from_name(token_name)
+            if not enemy_full:
+                print(f"⚠️ Failed to load monster sprite for {token_name}, trying fallback")
+                # Last resort: try encounter_name
+                enemy_full = _enemy_sprite_from_name(getattr(gs, "encounter_name", None))
+        else:
+            print(f"⚠️ No token_name for monster, trying encounter_name")
+            enemy_full = _enemy_sprite_from_name(getattr(gs, "encounter_name", None))
+    else:
+        # Vessels: ALWAYS load fresh from source assets using same approach as monsters
+        # Use _enemy_sprite_from_name which loads directly from file paths at native size
+        # This ensures consistent sizing regardless of game state (never use encounter_sprite - it may be pre-scaled)
+        token_name = getattr(gs, "encounter_token_name", None)
+        if token_name:
+            enemy_full = _enemy_sprite_from_name(token_name)
+            if not enemy_full:
+                print(f"⚠️ Failed to load vessel sprite for {token_name}, trying fallback")
+                # Last resort: try encounter_name
+                enemy_full = _enemy_sprite_from_name(getattr(gs, "encounter_name", None))
+        else:
+            print(f"⚠️ No token_name for vessel, trying encounter_name")
+            enemy_full = _enemy_sprite_from_name(getattr(gs, "encounter_name", None))
+    
     if enemy_full is None:
         enemy_full = pygame.Surface(S.PLAYER_SIZE, pygame.SRCALPHA)
         enemy_full.fill((160,40,40,220))
-
-    ally_full  = _smooth_scale(ally_full,  ALLY_SCALE)
-    enemy_full = _smooth_scale(enemy_full, ENEMY_SCALE)
+    
+    # Scale ally sprite - monsters should be sized like enemy vessels (ENEMY_SCALE), not allies
+    if is_ally_monster:
+        # Monster allies: Scale to fixed height of 500 pixels
+        target_height = 500
+        if ally_full:
+            ally_full = _smooth_scale_to_height(ally_full, target_height)
+        print(f"🐉 Monster ally sprite scaled to fixed height: {target_height}px")
+    else:
+        # Normal vessel allies: Use ALLY_SCALE (1.0)
+        ally_full = _smooth_scale(ally_full, ALLY_SCALE)
+    
+    # Scale enemy sprite - use same logic as battle.py (just apply ENEMY_SCALE)
+    if is_monster:
+        # Monsters: Scale to match ally sprite height (same size as player's vessel)
+        ally_h = ally_full.get_height() if ally_full else S.PLAYER_SIZE[1]
+        if enemy_full:
+            current_w, current_h = enemy_full.get_size()
+            print(f"🐉 Monster sprite loaded: {current_w}x{current_h}, scaling to ally height: {ally_h}")
+            
+            # Scale monster to match ally height
+            if current_h != ally_h:
+                enemy_full = _smooth_scale_to_height(enemy_full, ally_h)
+                new_w, new_h = enemy_full.get_size()
+                print(f"🐉 Scaled monster sprite from {current_w}x{current_h} to {new_w}x{new_h} (ally height: {ally_h})")
+            else:
+                print(f"🐉 Monster sprite already matches ally height {ally_h}")
+    else:
+        # Vessels: Use same scaling logic as battle.py - just apply ENEMY_SCALE
+        enemy_full = _smooth_scale(enemy_full, ENEMY_SCALE)
 
     # Use logical resolution for virtual screen dimensions (not physical screen size)
     sw, sh = S.LOGICAL_WIDTH, S.LOGICAL_HEIGHT
@@ -783,6 +907,47 @@ def enter(gs, audio_bank=None, **_):
             pick = random.choice(tracks)
             audio_sys.play_music(audio_bank, pick, loop=True, fade_ms=220)
             gs._wild["track"] = pick
+
+    # Play monster-specific sound when entering monster battle
+    if is_monster:
+        monster_name = None
+        token_name = getattr(gs, "encounter_token_name", None)
+        if token_name:
+            # Remove "Token" prefix and extension if present
+            base = os.path.splitext(token_name)[0]
+            if base.startswith("Token"):
+                monster_name = base[5:]  # Remove "Token" prefix
+            else:
+                monster_name = base
+        else:
+            encounter_name = getattr(gs, "encounter_name", None)
+            if encounter_name:
+                monster_name = encounter_name
+        
+        # Map monster name to sound file (MP3s stored alongside monster sprites)
+        if monster_name:
+            monster_name_lower = monster_name.lower()
+            monster_sound_dir = os.path.join("Assets", "VesselMonsters")
+            monster_sounds = {
+                "beholder": os.path.join(monster_sound_dir, "Beholder.mp3"),
+                "dragon": os.path.join(monster_sound_dir, "Dragon.mp3"),
+                "golem": os.path.join(monster_sound_dir, "Golem.mp3"),
+                "myconid": os.path.join(monster_sound_dir, "Myconid.mp3"),
+                "nothic": os.path.join(monster_sound_dir, "Nothic.mp3"),
+                "ogre": os.path.join(monster_sound_dir, "Ogre.mp3"),
+                "owlbear": os.path.join(monster_sound_dir, "Owlbear.mp3"),
+            }
+
+            # Play monster-specific sound
+            sound_path = monster_sounds.get(monster_name_lower)
+            if sound_path and os.path.exists(sound_path):
+                try:
+                    monster_sfx = _load_sfx(sound_path)
+                    if monster_sfx:
+                        audio_sys.play_sound(monster_sfx)
+                        print(f"🎵 Playing monster battle sound: {sound_path}")
+                except Exception as e:
+                    print(f"⚠️ Failed to play monster sound {sound_path}: {e}")
 
     set_roll_callback(roll_ui._on_roll)
     bag_action.set_use_item_callback(_on_use_item)
@@ -1622,24 +1787,52 @@ def draw(screen, gs, dt, **_):
     active_name  = names[active_i]
     active_stats = stats[active_i] if active_i < len(stats) else None
 
+    # Check if active ally is a monster
+    is_active_monster = False
+    if active_name and active_name.startswith("Token"):
+        # Remove "Token" prefix and file extension
+        base_name = os.path.splitext(active_name)[0]  # Remove .png extension if present
+        monster_name = base_name[5:] if len(base_name) > 5 else base_name  # Remove "Token" prefix
+        monster_names = ["Beholder", "Dragon", "Golem", "Myconid", "Nothic", "Ogre", "Owlbear"]
+        is_active_monster = any(monster_name.startswith(m) for m in monster_names)
+    
     if st.get("ally_from_slot") is None:
         st["ally_from_slot"] = active_i
         if active_name and not st.get("ally_img"):
             try:
-                from systems.asset_links import token_to_vessel, find_image
-                vessel_png = token_to_vessel(active_name)
-                path = find_image(vessel_png)
-                if path and os.path.exists(path):
-                    st["ally_img"] = pygame.image.load(path).convert_alpha()
-                    st["ally_img"] = _smooth_scale(st["ally_img"], ALLY_SCALE)
+                # Try loading via _ally_sprite_from_token_name first (handles monsters)
+                ally_sprite = _ally_sprite_from_token_name(active_name)
+                if ally_sprite:
+                    if is_active_monster:
+                        # Monster allies: Scale to fixed height of 500 pixels
+                        target_height = 500
+                        st["ally_img"] = _smooth_scale_to_height(ally_sprite, target_height)
+                    else:
+                        st["ally_img"] = _smooth_scale(ally_sprite, ALLY_SCALE)
+                else:
+                    # Fallback to asset_links
+                    from systems.asset_links import token_to_vessel, find_image
+                    vessel_png = token_to_vessel(active_name)
+                    path = find_image(vessel_png)
+                    if path and os.path.exists(path):
+                        loaded = pygame.image.load(path).convert_alpha()
+                        if is_active_monster:
+                            target_height = 500
+                            st["ally_img"] = _smooth_scale_to_height(loaded, target_height)
+                        else:
+                            st["ally_img"] = _smooth_scale(loaded, ALLY_SCALE)
             except Exception: pass
     elif st["ally_from_slot"] != active_i and active_name and not st.get("swap_playing", False):
         try:
-            from systems.asset_links import token_to_vessel, find_image
-            vessel_png = token_to_vessel(active_name)
-            path = find_image(vessel_png)
-            if path and os.path.exists(path):
-                st["ally_img_next"] = _smooth_scale(pygame.image.load(path).convert_alpha(), ALLY_SCALE)
+            # Try loading via _ally_sprite_from_token_name first (handles monsters)
+            ally_sprite = _ally_sprite_from_token_name(active_name)
+            if ally_sprite:
+                if is_active_monster:
+                    # Monster allies: Scale to fixed height of 500 pixels
+                    target_height = 500
+                    st["ally_img_next"] = _smooth_scale_to_height(ally_sprite, target_height)
+                else:
+                    st["ally_img_next"] = _smooth_scale(ally_sprite, ALLY_SCALE)
                 st["ally_swap_target_slot"] = active_i
                 st["swap_playing"] = True
                 st["swap_t"] = 0.0
@@ -1651,6 +1844,29 @@ def draw(screen, gs, dt, **_):
                     if st.get("swap_sfx"):
                         audio_sys.play_sound(st["swap_sfx"])
                 except Exception: pass
+            else:
+                # Fallback to asset_links
+                from systems.asset_links import token_to_vessel, find_image
+                vessel_png = token_to_vessel(active_name)
+                path = find_image(vessel_png)
+                if path and os.path.exists(path):
+                    loaded = pygame.image.load(path).convert_alpha()
+                    if is_active_monster:
+                        target_height = 500
+                        st["ally_img_next"] = _smooth_scale_to_height(loaded, target_height)
+                    else:
+                        st["ally_img_next"] = _smooth_scale(loaded, ALLY_SCALE)
+                    st["ally_swap_target_slot"] = active_i
+                    st["swap_playing"] = True
+                    st["swap_t"] = 0.0
+                    st["swap_total"] = 0.0
+                    st["swap_frame"] = 0
+                    st["ally_t"] = 1.0
+                    st["intro"] = False
+                    try:
+                        if st.get("swap_sfx"):
+                            audio_sys.play_sound(st["swap_sfx"])
+                    except Exception: pass
         except Exception: pass
 
     # Ally HP ratio

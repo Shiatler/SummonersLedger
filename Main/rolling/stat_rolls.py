@@ -26,6 +26,14 @@ CLASS_PRIORITIES = {
     "warlock":   ("CHA", "CON", "DEX"),
     "artificer": ("INT", "CON", "DEX"),
     "blood hunter": ("DEX", "CON", "STR"),
+    # Monsters - prioritize their primary attack stat
+    "dragon":    ("STR", "CON", "DEX"),      # Physical powerhouse
+    "owlbear":   ("STR", "CON", "DEX"),      # Physical beast
+    "beholder":  ("INT", "CON", "WIS"),      # Mental powerhouse
+    "golem":     ("STR", "CON", "INT"),      # Construct strength
+    "ogre":      ("STR", "CON", "DEX"),      # Brute force
+    "nothic":    ("INT", "DEX", "CON"),      # Mental aberration
+    "myconid":   ("CON", "STR", "DEX"),      # Resilient plant
 }
 
 def _randint(rng, a: int, b: int) -> int:

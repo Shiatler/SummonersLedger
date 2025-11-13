@@ -196,18 +196,22 @@ def _load_token_icon(fname: str | None, size: int) -> pygame.Surface | None:
     if key in _ICON_CACHE:
         return _ICON_CACHE[key]
     surf = None
-    for d in ("Starters", "VesselsMale", "VesselsFemale", "RareVessels", "PlayableCharacters"):
-        p = os.path.join("Assets", d, fname)
-        if os.path.exists(p):
-            try:
-                src = pygame.image.load(p).convert_alpha()
-                w, h = src.get_width(), src.get_height()
-                s = min(size / max(1, w), size / max(1, h))
-                nw, nh = max(1, int(w * s)), max(1, int(h * s))
-                surf = pygame.transform.smoothscale(src, (nw, nh))
-                break
-            except Exception:
-                pass
+    # Use find_image to search all asset directories (including VesselMonsters)
+    from systems.asset_links import find_image
+    path = find_image(fname)
+    if path and os.path.exists(path):
+        try:
+            src = pygame.image.load(path).convert_alpha()
+            w, h = src.get_width(), src.get_height()
+            s = min(size / max(1, w), size / max(1, h))
+            nw, nh = max(1, int(w * s)), max(1, int(h * s))
+            surf = pygame.transform.smoothscale(src, (nw, nh))
+        except Exception as e:
+            print(f"⚠️ Failed to load token icon {fname} from {path}: {e}")
+    else:
+        # Debug: print if token not found
+        if fname and "Token" in fname:
+            print(f"⚠️ Token icon not found: {fname} (searched in SEARCH_DIRS)")
     _ICON_CACHE[key] = surf
     return surf
 
