@@ -263,11 +263,11 @@ def try_trigger_encounter(gs, summoners, merchant_frames, tavern_sprite=None, mo
             print(f"⚠️ Force merchant check passed but merchant_frames is missing! merchant_frames: {merchant_frames}")
         else:
             # Normal chance-based spawning (reference values)
-            merchant_chance = 0.10
-            tavern_chance   = 0.05
-            monster_chance  = 0.01
-            vessel_chance   = 0.54
-            summoner_chance = 0.30
+            merchant_chance = 0.10  # 10%
+            tavern_chance   = 0.05  # 5%
+            monster_chance  = 0.01  # 1%
+            vessel_chance   = 0.54  # 54%
+            summoner_chance = 0.30  # 30%
             
             if merchant_frames and len(merchant_frames) > 0 and roll < merchant_chance:
                 # Spawn merchant (0.0 to 0.10)
@@ -520,8 +520,8 @@ def start_new_game(gs):
     # Initialize currency (all start at 0)
     from systems import currency as currency_sys
     currency_sys.ensure_currency_fields(gs)
-    # Starting gold: 10 gold pieces
-    gs.gold = 10
+    # Starting gold: bootstrap value
+    gs.gold = getattr(S, "BOOTSTRAP_GOLD", 0)
     gs.silver = 0
     gs.bronze = 0
     
@@ -576,39 +576,46 @@ def continue_game(gs):
     # After loading, restore player variant and ensure position is valid
     apply_player_variant(gs, gs.player_gender, PLAYER_VARIANTS)
     
-    # CRITICAL: Restore X position from start_x (NOT from save file)
-    # The X position is always restored from start_x because player stays centered horizontally
-    gs.player_pos.x = gs.start_x
+    # 🍺 Check if we should restore to tavern mode BEFORE adjusting position
+    restore_to_tavern = getattr(gs, "_restore_to_tavern", False)
     
-    # CRITICAL: Clamp Y position to world bounds after loading
-    # This ensures the loaded position is valid even if world bounds changed
-    loaded_y_before_clamp = gs.player_pos.y
-    min_y = gs.player_half.y
-    max_y = S.WORLD_H - gs.player_half.y
-    gs.player_pos.y = max(min_y, min(gs.player_pos.y, max_y))
-    
-    if abs(loaded_y_before_clamp - gs.player_pos.y) > 0.1:
-        print(f"⚠️ WARNING: Y position was clamped from {loaded_y_before_clamp:.1f} to {gs.player_pos.y:.1f}")
-        print(f"   Bounds: min={min_y:.1f}, max={max_y:.1f}, WORLD_H={S.WORLD_H}")
+    if restore_to_tavern:
+        # Mark that we should start in tavern mode
+        gs._start_in_tavern = True
+        
+        # Restore tavern position if available (tavern.enter() will also restore it, but set it here too)
+        tavern_state = getattr(gs, "_tavern_state", {})
+        tavern_pos = tavern_state.get("tavern_player_pos")
+        if tavern_pos:
+            # Restore both X and Y from tavern position
+            gs.player_pos.x = tavern_pos.x
+            gs.player_pos.y = tavern_pos.y
+            print(f"🍺 Restored tavern position in continue_game: ({tavern_pos.x:.1f}, {tavern_pos.y:.1f})")
+        else:
+            print(f"⚠️ No tavern position found in _tavern_state, using current position")
+        
+        print(f"🍺 Will restore to tavern mode on continue")
+    else:
+        # CRITICAL: Restore X position from start_x (NOT from save file) - only for overworld
+        # The X position is always restored from start_x because player stays centered horizontally
+        gs.player_pos.x = gs.start_x
+        
+        # CRITICAL: Clamp Y position to world bounds after loading
+        # This ensures the loaded position is valid even if world bounds changed
+        loaded_y_before_clamp = gs.player_pos.y
+        min_y = gs.player_half.y
+        max_y = S.WORLD_H - gs.player_half.y
+        gs.player_pos.y = max(min_y, min(gs.player_pos.y, max_y))
+        
+        if abs(loaded_y_before_clamp - gs.player_pos.y) > 0.1:
+            print(f"⚠️ WARNING: Y position was clamped from {loaded_y_before_clamp:.1f} to {gs.player_pos.y:.1f}")
+            print(f"   Bounds: min={min_y:.1f}, max={max_y:.1f}, WORLD_H={S.WORLD_H}")
     
     print(f"✅ After adjustments. Position: ({gs.player_pos.x:.1f}, {gs.player_pos.y:.1f}), start_x: {gs.start_x:.1f}")
     
     # Mark that this is a continued game (loaded from save), so first overworld blessing should NOT trigger
     gs._game_was_loaded_from_save = True
     gs.first_overworld_blessing_given = True
-    
-    # 🍺 Check if we should restore to tavern mode
-    restore_to_tavern = getattr(gs, "_restore_to_tavern", False)
-    if restore_to_tavern:
-        # Restore overworld position from tavern state (for when exiting tavern)
-        if hasattr(gs, "_tavern_state") and gs._tavern_state.get("overworld_player_pos"):
-            overworld_pos = gs._tavern_state["overworld_player_pos"]
-            # Store it for later restoration when exiting tavern
-            print(f"💾 Restored overworld position from save: ({overworld_pos.x:.1f}, {overworld_pos.y:.1f})")
-        
-        # Mark that we should start in tavern mode
-        gs._start_in_tavern = True
-        print(f"🍺 Will restore to tavern mode on continue")
     
     # Ensure Book of Bound discoveries are preserved (should already be loaded, but double-check)
     if preserved_book_of_bound:
@@ -660,6 +667,8 @@ def enter_mode(mode, gs, deps):
             archives.enter(gs, **deps)
             gs._archives_entered = True
     elif mode == MODE_TAVERN:
+        # Set gs.mode so save function can detect we're in tavern mode
+        setattr(gs, "mode", MODE_TAVERN)
         # Add summoners to deps for tavern
         tavern_deps = dict(deps, rival_summoners=RIVAL_SUMMONERS)
         tavern_screen.enter(gs, **tavern_deps)
@@ -1855,6 +1864,8 @@ while running:
                         delattr(gs, "_shop_music_timer")
 
                 mode = S.MODE_GAME
+                # Set gs.mode so save function can detect we're in overworld mode
+                setattr(gs, "mode", S.MODE_GAME)
                 # Reset overworld music state so it restarts in the game mode loop
                 gs.overworld_music_started = False
             elif next_mode == "GAMBLING":
@@ -2335,6 +2346,11 @@ while running:
                 # Block all other input while buff popup is active
                 continue
             
+            # Handle heal textbox first (it's modal and works even when party manager is closed)
+            if party_manager.is_heal_textbox_active():
+                if party_manager.handle_event(e, gs):
+                    continue
+            
             # Ignore the exact key that toggled a modal this frame to avoid double-handling
             if bag_ui.is_open():
                 if not (just_toggled_bag and e.type == pygame.KEYDOWN and e.key == pygame.K_i):
@@ -2431,6 +2447,8 @@ while running:
                         audio.play_click(AUDIO)
                     continue
                 audio.play_click(AUDIO)
+                # Store that we're returning to overworld (not tavern)
+                gs._pause_return_to = S.MODE_GAME
                 mode = MODE_PAUSE
             elif event.type == pygame.KEYDOWN:
                 # Close purchase selector with ESC
@@ -2733,8 +2751,8 @@ while running:
         bottom_right_hud.draw(virtual_screen, gs)  # Bottom right HUD panel with buttons inside (textbox style)
         if bag_ui.is_open():
             bag_ui.draw_popup(virtual_screen, gs)
-        if party_manager.is_open():
-            party_manager.draw(virtual_screen, gs)
+        # Always draw party manager to show heal textbox even when closed
+        party_manager.draw(virtual_screen, gs)
         if ledger.is_open():
             ledger.draw(virtual_screen, gs)
         if gs.shop_open:

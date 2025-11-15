@@ -263,11 +263,12 @@ def enter(gs, whore_number: int, whore_sprite=None, **_):
     _WHORE_SPRITE = sprite
     _WHORE_NUMBER = whore_number
     
-    # Initialize state
+    # Initialize state (always reset when entering whore screen)
     if not hasattr(gs, "_whore_state"):
         gs._whore_state = {}
     
     st = gs._whore_state
+    # Reset all state when entering whore screen (important for multiple visits)
     st["whore_number"] = whore_number
     st["textbox_active"] = True
     st["textbox_blink_t"] = 0.0
@@ -276,6 +277,30 @@ def enter(gs, whore_number: int, whore_sprite=None, **_):
     st["fade_alpha"] = 0
     st["fade_timer"] = 0.0
     st["total_timer"] = 0.0
+    st["return_to_tavern"] = False  # CRITICAL: Reset return flag
+    
+    # Store the tavern reference when entering whore screen (so we can mark it as consumed when returning)
+    # Get current tavern position to store which tavern this whore belongs to
+    current_tavern = getattr(gs, "near_tavern", None)
+    if current_tavern and isinstance(current_tavern, dict) and "pos" in current_tavern:
+        tavern_pos = current_tavern["pos"]
+        st["tavern_key"] = (float(tavern_pos.x), float(tavern_pos.y))
+        print(f"💋 Stored tavern key for whore: ({st['tavern_key'][0]:.1f}, {st['tavern_key'][1]:.1f})")
+    else:
+        # Fallback: try to get from tavern_state's overworld_tavern
+        tavern_state = getattr(gs, "_tavern_state", None)
+        if isinstance(tavern_state, dict) and "overworld_tavern" in tavern_state:
+            fallback_tavern = tavern_state["overworld_tavern"]
+            if fallback_tavern and isinstance(fallback_tavern, dict) and "pos" in fallback_tavern:
+                tavern_pos = fallback_tavern["pos"]
+                st["tavern_key"] = (float(tavern_pos.x), float(tavern_pos.y))
+                print(f"💋 Stored tavern key from fallback: ({st['tavern_key'][0]:.1f}, {st['tavern_key'][1]:.1f})")
+            else:
+                st["tavern_key"] = None
+                print(f"⚠️ Could not determine tavern key for whore")
+        else:
+            st["tavern_key"] = None
+            print(f"⚠️ Could not determine tavern key for whore")
     
     # Play bedroom music
     _load_bedroom_music()
@@ -314,10 +339,34 @@ def handle(events, gs, dt: float, **_):
         global _BEDROOM_MUSIC_PLAYING
         _BEDROOM_MUSIC_PLAYING = False
 
-        # Mark whore as consumed and remove from tavern state
+        # Mark whore as consumed for THIS specific tavern and remove from tavern state
         tavern_state = getattr(gs, "_tavern_state", None)
         if isinstance(tavern_state, dict):
-            tavern_state["whore_consumed"] = True
+            # Initialize per-tavern whore tracking if needed
+            if "tavern_whores_consumed" not in tavern_state:
+                tavern_state["tavern_whores_consumed"] = {}
+            
+            # Use the stored tavern key from when we entered the whore screen
+            # This ensures we mark the correct tavern even if near_tavern is None or changed
+            tavern_key = st.get("tavern_key", None)
+            if tavern_key:
+                tavern_state["tavern_whores_consumed"][tavern_key] = True
+                print(f"💋 Marked whore as consumed for tavern at ({tavern_key[0]:.1f}, {tavern_key[1]:.1f})")
+            else:
+                # Fallback: try to get from near_tavern or overworld_tavern
+                current_tavern = getattr(gs, "near_tavern", None)
+                if not current_tavern and "overworld_tavern" in tavern_state:
+                    current_tavern = tavern_state["overworld_tavern"]
+                
+                if current_tavern and isinstance(current_tavern, dict) and "pos" in current_tavern:
+                    tavern_pos = current_tavern["pos"]
+                    tavern_key = (float(tavern_pos.x), float(tavern_pos.y))
+                    tavern_state["tavern_whores_consumed"][tavern_key] = True
+                    print(f"💋 Marked whore as consumed for tavern at ({tavern_key[0]:.1f}, {tavern_key[1]:.1f}) [fallback]")
+                else:
+                    print(f"⚠️ Could not determine tavern key to mark whore as consumed")
+            
+            # Remove whore from current tavern state
             tavern_state["whore_pos"] = None
             tavern_state["whore_sprite"] = None
             tavern_state["whore_number"] = None

@@ -1190,7 +1190,7 @@ def draw(screen, gs, dt):
         # Store button rect for click handling (we'll use sprite_area_rect.centerx for consistency)
         # The handle function will calculate the same position
         
-        # Stats info box (polished)
+        # Stats info box (polished) - split into two columns
         info_box_y = add_button_rect.bottom + 20
         info_box_width = left_panel_rect.width - 60
         num_stats = 11
@@ -1205,63 +1205,131 @@ def draw(screen, gs, dt):
         )
         _draw_info_box_polished(screen, info_box_rect)
         
-        # Draw stats
+        # Split box into two columns
+        divider_x = info_box_rect.x + info_box_rect.width // 2
+        divider_rect = pygame.Rect(divider_x, info_box_rect.y, 2, info_box_rect.height)
+        pygame.draw.rect(screen, COLOR_PANEL_BORDER_INNER, divider_rect)
+        
+        # Left column: Stats
+        left_col_x = info_box_rect.x + 20
+        left_col_width = (info_box_rect.width // 2) - 40
+        
         stat_font = _get_font(22)
         y_offset = info_box_rect.y + 25
-        line_height = 32
         
         # Class
         class_name = stats.get("class_name", "Unknown")
         class_text = f"Class: {class_name}"
         class_surf = stat_font.render(class_text, True, COLOR_TEXT)
-        screen.blit(class_surf, (info_box_rect.x + 20, y_offset))
+        screen.blit(class_surf, (left_col_x, y_offset))
         y_offset += line_height
         
         # Level
         level = stats.get("level", 1)
         level_text = f"Level: {level}"
         level_surf = stat_font.render(level_text, True, COLOR_TEXT)
-        screen.blit(level_surf, (info_box_rect.x + 20, y_offset))
+        screen.blit(level_surf, (left_col_x, y_offset))
         y_offset += line_height
         
         # XP
-        xp = stats.get("xp", 0)
-        xp_text = f"XP: {xp}"
+        xp_current = stats.get("xp_current", 0)
+        xp_needed = stats.get("xp_needed", 0)
+        xp_text = f"XP: {xp_current} / {xp_needed}" if xp_needed > 0 else f"XP: {xp_current}"
         xp_surf = stat_font.render(xp_text, True, COLOR_TEXT)
-        screen.blit(xp_surf, (info_box_rect.x + 20, y_offset))
+        screen.blit(xp_surf, (left_col_x, y_offset))
         y_offset += line_height
         
         # HP
-        hp = stats.get("hp", 10)
-        max_hp = stats.get("max_hp", 10)
-        hp_text = f"HP: {hp} / {max_hp}"
+        hp = stats.get("hp", 10)  # Max HP
+        current_hp = stats.get("current_hp", hp)  # Current HP, defaults to max if not set
+        hp_text = f"HP: {current_hp} / {hp}"
         hp_surf = stat_font.render(hp_text, True, COLOR_TEXT)
-        screen.blit(hp_surf, (info_box_rect.x + 20, y_offset))
+        screen.blit(hp_surf, (left_col_x, y_offset))
         y_offset += line_height
         
         # AC
         ac = stats.get("ac", 10)
-        ac_text = f"AC: {ac}"
+        ac_bonus = stats.get("ac_bonus", 0)
+        ac_total = ac + ac_bonus
+        ac_text = f"AC: {ac_total}" + (f" (+{ac_bonus})" if ac_bonus > 0 else "")
         ac_surf = stat_font.render(ac_text, True, COLOR_TEXT)
-        screen.blit(ac_surf, (info_box_rect.x + 20, y_offset))
+        screen.blit(ac_surf, (left_col_x, y_offset))
         y_offset += line_height
         
-        # Abilities
+        # Abilities - get from abilities dict with uppercase keys
+        abilities = stats.get("abilities", {})
         ability_names = {
-            "str": "Strength",
-            "dex": "Dexterity",
-            "con": "Constitution",
-            "int": "Intelligence",
-            "wis": "Wisdom",
-            "cha": "Charisma",
+            "STR": "Strength",
+            "DEX": "Dexterity",
+            "CON": "Constitution",
+            "INT": "Intelligence",
+            "WIS": "Wisdom",
+            "CHA": "Charisma",
         }
         
         for abbr, full_name in ability_names.items():
-            ability_score = stats.get(abbr, 10)
-            ability_text = f"{full_name}: {ability_score}"
+            ability_score = abilities.get(abbr, 10)
+            # Also get modifier for display
+            mods = stats.get("mods", {})
+            ability_mod = mods.get(abbr, 0)
+            mod_str = f" ({ability_mod:+d})" if ability_mod != 0 else ""
+            ability_text = f"{full_name}: {ability_score}{mod_str}"
             ability_surf = stat_font.render(ability_text, True, COLOR_TEXT)
-            screen.blit(ability_surf, (info_box_rect.x + 20, y_offset))
+            screen.blit(ability_surf, (left_col_x, y_offset))
             y_offset += line_height
+        
+        # Right column: Moves
+        right_col_x = divider_x + 20
+        right_col_width = (info_box_rect.width // 2) - 40
+        
+        # Get moves for this vessel
+        try:
+            from combat.moves import _normalize_class, _MOVE_REGISTRY
+            class_name = stats.get("class_name", "Fighter")
+            level = stats.get("level", 1)
+            
+            # Normalize class name
+            norm_class = _normalize_class(stats)
+            if norm_class:
+                all_moves = _MOVE_REGISTRY.get(norm_class, [])
+                available_moves = []
+                for move in all_moves:
+                    if "_l1_" in move.id:
+                        available_moves.append(move)
+                    elif "_l10_" in move.id and level >= 10:
+                        available_moves.append(move)
+                    elif "_l20_" in move.id and level >= 20:
+                        available_moves.append(move)
+                    elif "_l40_" in move.id and level >= 40:
+                        available_moves.append(move)
+                    elif "_l50_" in move.id and level >= 50:
+                        available_moves.append(move)
+            else:
+                available_moves = []
+        except Exception as e:
+            print(f"⚠️ Failed to get moves for vessel: {e}")
+            available_moves = []
+        
+        # Moves title
+        moves_title_font = _get_font(22, bold=True)
+        moves_title_text = "Moves"
+        moves_title_surf = moves_title_font.render(moves_title_text, True, COLOR_TEXT_HIGHLIGHT)
+        screen.blit(moves_title_surf, (right_col_x, info_box_rect.y + 25))
+        
+        # Draw moves
+        move_font = _get_font(20)
+        move_y_offset = info_box_rect.y + 60
+        move_line_height = 28
+        for move in available_moves:
+            # Format damage dice (e.g., (2, 8) -> "2d8")
+            dice_count, dice_sides = move.dice
+            damage_text = f"{dice_count}d{dice_sides}"
+            
+            # Move name and damage
+            move_text = f"{move.label}: {damage_text}"
+            move_surf = move_font.render(move_text, True, COLOR_TEXT)
+            screen.blit(move_surf, (right_col_x, move_y_offset))
+            move_y_offset += move_line_height
     
     # ===================== RIGHT PANEL (Storage Grid) =====================
     right_panel_rect = pygame.Rect(LEFT_PANEL_WIDTH, HEADER_HEIGHT, RIGHT_PANEL_WIDTH, sh - HEADER_HEIGHT)

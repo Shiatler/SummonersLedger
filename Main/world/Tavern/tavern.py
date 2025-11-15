@@ -491,23 +491,34 @@ def enter(gs, rival_summoners=None, **_):
     # Only roll NPCs on first entry to this tavern (check if they're already set)
     is_first_entry = "npc_initialized" not in st
     
+    # Initialize per-tavern whore tracking if needed
+    if "tavern_whores_consumed" not in st:
+        st["tavern_whores_consumed"] = {}  # Dict mapping (x, y) -> bool
+    
+    # Get current tavern position to check if THIS tavern's whore was consumed
+    current_tavern_consumed = False
+    if current_tavern and isinstance(current_tavern, dict) and "pos" in current_tavern:
+        tavern_pos = current_tavern["pos"]
+        tavern_key = (float(tavern_pos.x), float(tavern_pos.y))
+        current_tavern_consumed = st["tavern_whores_consumed"].get(tavern_key, False)
+    
     if is_first_entry:
         # Load NPC sprites
         _load_barkeeper_sprite()
         _load_gambler_sprite()
         
-        # Randomly select and load a whore NPC (100% chance one spawns unless consumed)
-        if not st.get("whore_consumed", False):
+        # Randomly select and load a whore NPC (100% chance one spawns unless THIS tavern's whore was consumed)
+        if not current_tavern_consumed:
             whore_number = _select_whore()
             whore_sprite = _load_whore_sprite(whore_number)
             st["whore_number"] = whore_number
             st["whore_sprite"] = whore_sprite
-            print(f"💋 Selected Whore{whore_number} ({whore_number}/9)")
+            print(f"💋 Selected Whore{whore_number} ({whore_number}/9) for this tavern")
         else:
             st["whore_number"] = None
             st["whore_sprite"] = None
             st["whore_pos"] = None
-            print("💋 Whore already satisfied - none present in tavern")
+            print(f"💋 Whore already satisfied in THIS tavern - none present")
         
         # Randomly select and spawn a summoner (like overworld)
         if rival_summoners and len(rival_summoners) > 0:

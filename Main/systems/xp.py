@@ -196,6 +196,11 @@ def apply_level_up(gs, idx: int, new_level: int, *, preserve_hp_ratio: bool = Tr
         print(f"⚠️ build_stats failed during level-up for slot {idx}: {e}")
         return
 
+    # Remove HP from new_stats - we calculate it separately using milestone system
+    # build_stats uses compute_hp which includes per-level gains (wrong for vessels)
+    new_stats.pop("hp", None)
+    new_stats.pop("current_hp", None)  # Also remove current_hp, we handle it separately
+
     # Merge rebuilt stats; keep our XP fields intact if present
     st.update(new_stats)
     st["level"] = int(new_level)

@@ -1,0 +1,9 @@
+Mega HP bug?
+Healing textbox bug
+Sprite size bug på nogen rares
+QHD bug
+Rebalance of moves
+Archives BUG med stats
+Boss bug
+Party generation
+AI bug

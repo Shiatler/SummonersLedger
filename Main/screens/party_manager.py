@@ -694,6 +694,8 @@ def handle_event(e, gs) -> bool:
             _HEAL_ANIMATION_TIMER = 0.0  # Reset timer
             _HEAL_ANIMATION_START_TIME = 0.0
             _play_click()
+            # Consume the event to prevent it from closing the party manager
+            # The party manager should stay open in overworld when use mode is active
             return True
         
         # Block all other input while textbox is active
@@ -703,6 +705,9 @@ def handle_event(e, gs) -> bool:
         return False
 
     if e.type == pygame.KEYDOWN and e.key in (pygame.K_ESCAPE, pygame.K_TAB):
+        # If in use mode (healing), clear it first, then close
+        if _USE_MODE:
+            clear_use_mode()
         close()
         _play_click()
         return True
@@ -711,6 +716,13 @@ def handle_event(e, gs) -> bool:
         mx, my = e.pos
 
         if _PANEL_RECT and not _PANEL_RECT.collidepoint(mx, my):
+            # Don't close if textbox is active - let textbox handle the click
+            if _HEAL_TEXTBOX_ACTIVE:
+                return False
+            # Don't close if we're in use mode (healing) - user needs to select a vessel
+            if _USE_MODE:
+                return False
+            # Otherwise, close normally
             close()
             _play_open()
             return True
@@ -743,7 +755,7 @@ def handle_event(e, gs) -> bool:
                             vessel_name = _pretty_name(names[real_idx]) or "Vessel"
                             _show_heal_textbox(gs, vessel_name, heal_amount, real_idx)
 
-                            # End the player's turn now that the effect happened
+                            # End the player's turn now that the effect happened (only in combat)
                             try:
                                 gs._turn_ready = False
                                 gs._turn_consumed_by_item = True
@@ -753,9 +765,18 @@ def handle_event(e, gs) -> bool:
                             # Healing didn't apply (e.g., already at full HP), play click instead
                             _play_click()
 
-                        clear_use_mode()  # Reset the use mode after applying the effect
-                        close()
-                        return True
+                        # Check if we're in overworld (no active combat)
+                        in_overworld = not (getattr(gs, "_battle", None) or getattr(gs, "_wild", None))
+                        
+                        if in_overworld:
+                            # In overworld: keep party manager open and use mode active so user can heal again
+                            # Don't clear use mode or close - user can select another vessel or press escape
+                            return True
+                        else:
+                            # In combat: clear use mode and close party manager (original behavior)
+                            clear_use_mode()  # Reset the use mode after applying the effect
+                            close()
+                            return True
 
                     # --- If we're in picker mode, call the callback and close ---
                     if _ON_PICK is not None:

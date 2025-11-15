@@ -59,6 +59,7 @@ SPRITE_SIZE           = PLAYER_SIZE  # temporary compatibility alias
 
 # ===================== Points / Score ========================
 BOOTSTRAP_TOTAL_POINTS = 0  # Starting score awarded on new game
+BOOTSTRAP_GOLD = 100  # Starting gold awarded on new game
 
 
 # ===================== Encounters & pacing ===================
@@ -82,8 +83,8 @@ DEBUG_OVERWORLD  = False
 
 # ===================== Audio Defaults ========================
 # Referenced by audio.py via getattr(..., default)
-MUSIC_VOLUME = 0.3
-SFX_VOLUME   = 0.3
+MUSIC_VOLUME = 0.0
+SFX_VOLUME   = 0.1
 
 
 # ===================== Save Files ============================

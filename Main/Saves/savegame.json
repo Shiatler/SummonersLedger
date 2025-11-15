@@ -1,0 +1,239 @@
+{
+  "player_y": 97620.77999999818,
+  "distance_travelled": 2300.22000000182,
+  "next_event_at": 2441.0,
+  "player_gender": "male",
+  "party_slots_names": [
+    "MTokenSorcerer2.png",
+    "StarterTokenBarbarian4.png",
+    null,
+    null,
+    "RTokenRanger1.png",
+    "FTokenBarbarian1.png"
+  ],
+  "party_vessel_stats": [
+    {
+      "name": "MVesselSorcerer2.png",
+      "class_name": "Sorcerer",
+      "level": 1,
+      "abilities": {
+        "STR": 10,
+        "DEX": 13,
+        "CON": 15,
+        "INT": 9,
+        "WIS": 9,
+        "CHA": 17
+      },
+      "mods": {
+        "STR": 0,
+        "DEX": 1,
+        "CON": 2,
+        "INT": -1,
+        "WIS": -1,
+        "CHA": 3
+      },
+      "prof": 2,
+      "ac": 11,
+      "hp": 8,
+      "initiative": 1,
+      "attack_stat": "CHA",
+      "attack_bonus": 5,
+      "notes": "Generated from asset name",
+      "current_hp": 8,
+      "xp_current": 0,
+      "xp_needed": 3,
+      "xp_total": 0
+    },
+    {
+      "name": "StarterBarbarian4",
+      "class_name": "Barbarian",
+      "level": 1,
+      "abilities": {
+        "STR": 15,
+        "DEX": 13,
+        "CON": 15,
+        "INT": 12,
+        "WIS": 10,
+        "CHA": 8
+      },
+      "mods": {
+        "STR": 2,
+        "DEX": 1,
+        "CON": 2,
+        "INT": 1,
+        "WIS": 0,
+        "CHA": -1
+      },
+      "prof": 2,
+      "ac": 15,
+      "hp": 14,
+      "initiative": 1,
+      "attack_stat": "STR",
+      "attack_bonus": 4,
+      "notes": "Generated from asset name",
+      "current_hp": 14,
+      "xp_current": 0,
+      "xp_needed": 3,
+      "xp_total": 0
+    },
+    null,
+    null,
+    {
+      "name": "RVesselRanger1.png",
+      "class_name": "Ranger",
+      "level": 1,
+      "abilities": {
+        "STR": 10,
+        "DEX": 16,
+        "CON": 10,
+        "INT": 9,
+        "WIS": 13,
+        "CHA": 8
+      },
+      "mods": {
+        "STR": 0,
+        "DEX": 3,
+        "CON": 0,
+        "INT": -1,
+        "WIS": 1,
+        "CHA": -1
+      },
+      "prof": 2,
+      "ac": 16,
+      "hp": 10,
+      "initiative": 3,
+      "attack_stat": "DEX",
+      "attack_bonus": 5,
+      "notes": "Generated from asset name",
+      "current_hp": 10,
+      "xp_current": 0,
+      "xp_needed": 3,
+      "xp_total": 0
+    },
+    {
+      "name": "FTokenBarbarian1.png",
+      "class_name": "FTokenBarbarian",
+      "level": 1,
+      "abilities": {
+        "STR": 17,
+        "DEX": 13,
+        "CON": 12,
+        "INT": 12,
+        "WIS": 12,
+        "CHA": 9
+      },
+      "mods": {
+        "STR": 3,
+        "DEX": 1,
+        "CON": 1,
+        "INT": 1,
+        "WIS": 1,
+        "CHA": -1
+      },
+      "prof": 2,
+      "ac": 12,
+      "hp": 9,
+      "initiative": 1,
+      "attack_stat": "STR",
+      "attack_bonus": 5,
+      "notes": "Generated from asset name",
+      "current_hp": 9,
+      "xp_current": 0,
+      "xp_needed": 3,
+      "xp_total": 0
+    }
+  ],
+  "rivals_on_map": [
+    {
+      "name": "Ivar Stormshadow",
+      "filename": "MSummoner16",
+      "side": "right",
+      "x": 1381.0,
+      "y": 93839.67999999976
+    },
+    {
+      "name": "Garron Silverflare",
+      "filename": "MSummoner4",
+      "side": "left",
+      "x": 1101.0,
+      "y": 95991.62999999912
+    },
+    {
+      "name": "Dretha Brimstone",
+      "filename": "FSummoner4",
+      "side": "left",
+      "x": 1101.0,
+      "y": 92673.41999999892
+    },
+    {
+      "name": "Isolde Silverclaw",
+      "filename": "FSummoner13",
+      "side": "left",
+      "x": 1101.0,
+      "y": 93561.82999999849
+    }
+  ],
+  "vessels_on_map": [
+    {
+      "side": "left",
+      "x": 1101.0,
+      "y": 92995.8799999999
+    },
+    {
+      "side": "left",
+      "x": 1101.0,
+      "y": 92440.96999999872
+    },
+    {
+      "side": "left",
+      "x": 1101.0,
+      "y": 94351.58999999826
+    }
+  ],
+  "merchants_on_map": [
+    {
+      "side": "right",
+      "x": 1381.0,
+      "y": 91744.83999999931
+    }
+  ],
+  "taverns_on_map": [],
+  "monsters_on_map": [],
+  "inventory": {
+    "scroll_of_command": 5,
+    "scroll_of_sealing": 7,
+    "scroll_of_subjugation": 3,
+    "scroll_of_eternity": 3,
+    "scroll_of_healing": 1,
+    "scroll_of_regeneration": 2,
+    "scroll_of_revivity": 1,
+    "rations": 1,
+    "alcohol": 1
+  },
+  "total_points": 0,
+  "gold": 100,
+  "silver": 0,
+  "bronze": 0,
+  "book_of_bound_discovered": [
+    "StarterBarbarian4"
+  ],
+  "archives": [],
+  "active_buffs": [
+    {
+      "tier": "Common",
+      "id": 7,
+      "name": "Common7",
+      "image_path": "Assets\\Blessings\\Common7.png"
+    }
+  ],
+  "buffs_history": [
+    {
+      "tier": "Common",
+      "id": 7,
+      "name": "Common7",
+      "image_path": "Assets\\Blessings\\Common7.png"
+    }
+  ],
+  "first_overworld_blessing_given": true,
+  "saved_in_tavern": false
+}
