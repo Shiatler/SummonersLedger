@@ -145,6 +145,20 @@ def _load_all_vessel_silhouettes():
         except Exception as e:
             print(f"⚠️ Failed to load rare vessel {path}: {e}")
     
+    # 5. Load Monster Vessels VERY LAST (always blacked out in the book list)
+    #    Folder: Assets/VesselMonsters, include only actual vessel sprites (exclude Token*.png)
+    monster_dir = os.path.join("Assets", "VesselMonsters")
+    monster_paths = sorted(glob.glob(os.path.join(monster_dir, "*.png")))
+    monster_paths = [p for p in monster_paths if not os.path.basename(p).lower().startswith("token")]
+    for path in monster_paths:
+        try:
+            sprite = pygame.image.load(path).convert_alpha()
+            silhouette = _create_silhouette(sprite)
+            name = os.path.splitext(os.path.basename(path))[0]
+            _vessel_silhouettes.append((name, silhouette, "monster"))
+        except Exception as e:
+            print(f"⚠️ Failed to load monster vessel {path}: {e}")
+    
     _total_entries = len(_vessel_silhouettes)
     _silhouettes_loaded = True
     print(f"📚 Book of the Bound: Loaded {_total_entries} vessel silhouettes")
@@ -193,6 +207,8 @@ def _load_vessel_sprite(vessel_name: str, category: str) -> pygame.Surface | Non
             sprite_path = os.path.join(S.ASSETS_VESSELS_FEMALE_DIR, f"{vessel_name}.png")
         elif category == "male":
             sprite_path = os.path.join(S.ASSETS_VESSELS_MALE_DIR, f"{vessel_name}.png")
+        elif category == "monster":
+            sprite_path = os.path.join("Assets", "VesselMonsters", f"{vessel_name}.png")
         else:
             return None
         
@@ -1046,7 +1062,8 @@ def draw(screen: pygame.Surface, gs, dt, **_):
                 scaled_h = int(spr_h * scale)
                 
                 # If discovered, load and display the actual sprite; otherwise use silhouette
-                if is_discovered:
+                # Monsters are ALWAYS shown as silhouettes in the Book (blacked out), even if discovered.
+                if is_discovered and category != "monster":
                     # Load the actual sprite
                     actual_sprite = _load_vessel_sprite(name, category)
                     if actual_sprite:
