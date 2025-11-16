@@ -107,12 +107,19 @@ CLASS_TYPE_CHART: Dict[str, Dict[str, List[str]]] = {
 def normalize_class_name(class_name: str) -> Optional[str]:
     """
     Normalize class name to lowercase for lookup.
+    Strips common prefixes like RToken, FToken, MToken, RVessel, etc.
     Returns None if class not found in chart.
     """
     if not class_name:
         return None
     
-    class_lower = class_name.lower().strip()
+    # Strip common prefixes (order matters - check longer prefixes first)
+    prefixes = ["rtoken", "ftoken", "mtoken", "rvessel", "fvessel", "mvessel", "starter"]
+    cleaned = class_name.lower().strip()
+    for prefix in prefixes:
+        if cleaned.startswith(prefix):
+            cleaned = cleaned[len(prefix):].strip()
+            break
     
     # Handle variations and aliases
     aliases = {
@@ -120,7 +127,7 @@ def normalize_class_name(class_name: str) -> Optional[str]:
         "bloodhunter": "bloodhunter",
     }
     
-    normalized = aliases.get(class_lower, class_lower)
+    normalized = aliases.get(cleaned, cleaned)
     
     if normalized in CLASS_TYPE_CHART:
         return normalized

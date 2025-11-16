@@ -624,7 +624,10 @@ def _draw_heal_textbox(screen: pygame.Surface, dt: float = 0.016):
         screen.blit(prompt, (rect.right - prompt.get_width() - 20, rect.bottom - prompt.get_height() - 12))
 
 
-def _swap(gs, i, j):
+def swap_party_slots(gs, i, j):
+    """
+    Swap two party slots. Public function for use by party_ui drag-and-drop.
+    """
     # Get current names and stats - create new lists to avoid reference issues
     names_src = getattr(gs, "party_slots_names", None)
     stats_src = getattr(gs, "party_vessel_stats", None)
@@ -894,7 +897,7 @@ def handle_event(e, gs) -> bool:
                         return True
                     else:
                         if _SELECTED != real_idx:
-                            _swap(gs, _SELECTED, real_idx)
+                            swap_party_slots(gs, _SELECTED, real_idx)
                         _SELECTED = None
                         _play_click()
                         return True

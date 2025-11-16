@@ -514,8 +514,30 @@ def _on_use_item(gs, item) -> bool:
 
 
 # ---------------- UI helpers ----------------
+# Cache for type effectiveness icons
+_TYPE_ICON_CACHE = {}
+
+def _load_type_icon(icon_name: str) -> pygame.Surface | None:
+    """Load and cache type effectiveness icon."""
+    if icon_name in _TYPE_ICON_CACHE:
+        return _TYPE_ICON_CACHE[icon_name]
+    
+    path = os.path.join("Assets", "Map", f"{icon_name}.png")
+    if os.path.exists(path):
+        try:
+            icon = pygame.image.load(path).convert_alpha()
+            _TYPE_ICON_CACHE[icon_name] = icon
+            return icon
+        except Exception as e:
+            print(f"⚠️ Failed to load type icon {icon_name}: {e}")
+    return None
+
 def _draw_hp_bar(surface: pygame.Surface, rect: pygame.Rect, hp_ratio: float, name: str, align: str,
-                 current_hp: int = None, max_hp: int = None):
+                 current_hp: int = None, max_hp: int = None, type_effectiveness: str = None):
+    """
+    Draw HP bar with optional type effectiveness icon.
+    type_effectiveness: "weakness" to show Weakness.png, "resist" to show Resist.png, None for nothing
+    """
     hp_ratio = max(0.0, min(1.0, hp_ratio))
     x, y, w, h = rect
     frame, border, gold, inner = (70,45,30), (140,95,60), (185,150,60), (28,18,14)
@@ -560,6 +582,25 @@ def _draw_hp_bar(surface: pygame.Surface, rect: pygame.Rect, hp_ratio: float, na
             # Only draw if there's enough space on the green bar
             if text_x > trough.x + 4:
                 surface.blit(hp_label, (text_x, text_y))
+    
+    # Draw type effectiveness icon on the right side of the HP bar
+    if type_effectiveness in ("weakness", "resist"):
+        icon_name = "Weakness" if type_effectiveness == "weakness" else "Resist"
+        icon = _load_type_icon(icon_name)
+        if icon:
+            # Scale icon to fit nicely in the HP bar (about 60% of bar height)
+            icon_size = max(20, int(h * 0.6))
+            scaled_icon = pygame.transform.smoothscale(icon, (icon_size, icon_size))
+            # Position per side: ally (left bar) → right side; enemy (right bar) → left side
+            vertical_offset = -4  # nudge up slightly to level visually
+            if align == "left":
+                # Ally HP bar
+                icon_x = rect.right - scaled_icon.get_width() - 8
+            else:
+                # Enemy HP bar
+                icon_x = rect.x + 8
+            icon_y = rect.y + (rect.height - scaled_icon.get_height()) // 2 + vertical_offset
+            surface.blit(scaled_icon, (icon_x, icon_y))
         
 # ---------- XP strip (matches ledger style, compact) ----------
 def _xp_compute(stats: dict) -> tuple[int, int, int, float]:
@@ -1256,7 +1297,7 @@ def _resolve_capture_after_popup(gs):
             st["enemy_fade_t"] = 0.0
             st["pending_result_payload"] = ("success", "Vessel Caught!", f"Bound with roll {res.total} vs DC {res.dc}")
         else:
-            _show_result_screen(st, "Party is Full!", "There’s no room to bind this Vessel.", kind="fail", exit_on_close=False)
+            _show_result_screen(st, "Party is Full!", "There's no room to bind this Vessel.", kind="fail", exit_on_close=False)
     else:
         _show_result_screen(st, "It broke free!", f"Your roll {res.total} vs DC {res.dc}", kind="fail", exit_on_close=False)
 
@@ -1979,8 +2020,50 @@ def draw(screen, gs, dt, **_):
         except Exception:
             pass
     
+    # Calculate type effectiveness for HP bars
+    # For enemy HP bar: Check if enemy is weak/resistant to ally's damage type
+    enemy_type_effectiveness = None
+    if st.get("enemy_img") is not None:
+        try:
+            from combat.type_chart import get_class_damage_type, get_type_effectiveness
+            from combat.moves import _class_string, _enemy_class_string
+            
+            ally_class = _class_string(active_stats) if isinstance(active_stats, dict) else None
+            enemy_class = _enemy_class_string(gs)
+            
+            if ally_class and enemy_class:
+                ally_damage_type = get_class_damage_type(ally_class)
+                if ally_damage_type:
+                    effectiveness = get_type_effectiveness(ally_damage_type, enemy_class)
+                    if effectiveness >= 1.9:  # Super effective (2x)
+                        enemy_type_effectiveness = "weakness"
+                    elif effectiveness <= 0.6:  # Not very effective (0.5x)
+                        enemy_type_effectiveness = "resist"
+        except Exception as e:
+            print(f"⚠️ Failed to calculate enemy type effectiveness: {e}")
+    
+    # For ally HP bar: Check if ally is weak/resistant to enemy's damage type
+    ally_type_effectiveness = None
+    try:
+        from combat.type_chart import get_class_damage_type, get_type_effectiveness
+        from combat.moves import _class_string, _enemy_class_string
+        
+        ally_class = _class_string(active_stats) if isinstance(active_stats, dict) else None
+        enemy_class = _enemy_class_string(gs)
+        
+        if ally_class and enemy_class:
+            enemy_damage_type = get_class_damage_type(enemy_class)
+            if enemy_damage_type:
+                effectiveness = get_type_effectiveness(enemy_damage_type, ally_class)
+                if effectiveness >= 1.9:  # Super effective (2x)
+                    ally_type_effectiveness = "weakness"
+                elif effectiveness <= 0.6:  # Not very effective (0.5x)
+                    ally_type_effectiveness = "resist"
+    except Exception as e:
+        print(f"⚠️ Failed to calculate ally type effectiveness: {e}")
+    
     _draw_hp_bar(screen, ally_bar, st.get("ally_hp_ratio", 1.0), ally_label, "left",
-                 current_hp=ally_cur_hp, max_hp=ally_max_hp)
+                 current_hp=ally_cur_hp, max_hp=ally_max_hp, type_effectiveness=ally_type_effectiveness)
     # XP strip under ally HP plate
     if isinstance(active_stats, dict):
         xp_h = 22  # tweak height as you like
@@ -1993,7 +2076,7 @@ def draw(screen, gs, dt, **_):
         enemy_cur_hp = st.get("enemy_cur_hp")
         enemy_max_hp = st.get("enemy_max_hp")
         _draw_hp_bar(screen, enemy_bar, st.get("enemy_hp_ratio", 1.0), enemy_label, "right",
-                     current_hp=enemy_cur_hp, max_hp=enemy_max_hp)
+                     current_hp=enemy_cur_hp, max_hp=enemy_max_hp, type_effectiveness=enemy_type_effectiveness)
 
     # Enemy KO debounce & fade
     if st.get("last_enemy_hp") is None: st["last_enemy_hp"] = int(e_cur)

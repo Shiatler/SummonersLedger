@@ -442,8 +442,30 @@ def _resolve_sprite_surface(name: str | None) -> pygame.Surface | None:
 
 
 # ---------------- UI helpers ----------------
+# Cache for type effectiveness icons
+_TYPE_ICON_CACHE = {}
+
+def _load_type_icon(icon_name: str) -> pygame.Surface | None:
+    """Load and cache type effectiveness icon."""
+    if icon_name in _TYPE_ICON_CACHE:
+        return _TYPE_ICON_CACHE[icon_name]
+    
+    path = os.path.join("Assets", "Map", f"{icon_name}.png")
+    if os.path.exists(path):
+        try:
+            icon = pygame.image.load(path).convert_alpha()
+            _TYPE_ICON_CACHE[icon_name] = icon
+            return icon
+        except Exception as e:
+            print(f"⚠️ Failed to load type icon {icon_name}: {e}")
+    return None
+
 def _draw_hp_bar(surface: pygame.Surface, rect: pygame.Rect, hp_ratio: float, name: str, align: str, 
-                 current_hp: int = None, max_hp: int = None):
+                 current_hp: int = None, max_hp: int = None, type_effectiveness: str = None):
+    """
+    Draw HP bar with optional type effectiveness icon.
+    type_effectiveness: "weakness" to show Weakness.png, "resist" to show Resist.png, None for nothing
+    """
     hp_ratio = max(0.0, min(1.0, hp_ratio))
     x, y, w, h = rect
     frame, border, gold, inner = (70,45,30), (140,95,60), (185,150,60), (28,18,14)
@@ -488,6 +510,25 @@ def _draw_hp_bar(surface: pygame.Surface, rect: pygame.Rect, hp_ratio: float, na
             # Only draw if there's enough space on the green bar
             if text_x > trough.x + 4:
                 surface.blit(hp_label, (text_x, text_y))
+    
+    # Draw type effectiveness icon on the right side of the HP bar
+    if type_effectiveness in ("weakness", "resist"):
+        icon_name = "Weakness" if type_effectiveness == "weakness" else "Resist"
+        icon = _load_type_icon(icon_name)
+        if icon:
+            # Scale icon to fit nicely in the HP bar (about 60% of bar height)
+            icon_size = max(20, int(h * 0.6))
+            scaled_icon = pygame.transform.smoothscale(icon, (icon_size, icon_size))
+            # Position per side: ally (left bar) → right side; enemy (right bar) → left side
+            vertical_offset = -4  # nudge up slightly to level visually
+            if align == "left":
+                # Ally HP bar
+                icon_x = rect.right - scaled_icon.get_width() - 8
+            else:
+                # Enemy HP bar
+                icon_x = rect.x + 8
+            icon_y = rect.y + (rect.height - scaled_icon.get_height()) // 2 + vertical_offset
+            surface.blit(scaled_icon, (icon_x, icon_y))
 
 # ---------- XP strip ----------
 def _xp_compute(stats: dict) -> tuple[int, int, int, float]:
@@ -2015,8 +2056,94 @@ def draw(screen: pygame.Surface, gs, dt: float, **_):
         except Exception:
             pass
     
+    # Calculate type effectiveness for HP bars
+    # Helper to clean class name (strip FToken/MToken/RToken/RVessel/etc prefixes)
+    def _clean_class_name(class_name: str) -> str:
+        if not class_name:
+            return ""
+        # Strip common prefixes (order matters - check longer prefixes first)
+        prefixes = ["RToken", "FToken", "MToken", "RVessel", "FVessel", "MVessel", "Starter"]
+        cleaned = class_name
+        for prefix in prefixes:
+            if cleaned.startswith(prefix):
+                cleaned = cleaned[len(prefix):]
+                break
+        return cleaned.strip()
+    
+    # For enemy HP bar: Check if enemy is weak/resistant to ally's damage type
+    enemy_type_effectiveness = None
+    if st.get("enemy_img") is not None and not suppress_enemy:
+        try:
+            from combat.type_chart import get_class_damage_type, get_type_effectiveness
+            from combat.moves import _class_string, _enemy_class_string
+            
+            ally_class_raw = _class_string(active_stats) if isinstance(active_stats, dict) else None
+            enemy_class_raw = _enemy_class_string(gs)
+            
+            # Clean class names (strip prefixes)
+            ally_class = _clean_class_name(ally_class_raw) if ally_class_raw else None
+            enemy_class = _clean_class_name(enemy_class_raw) if enemy_class_raw else None
+            
+            # Debug output
+            if ally_class_raw or enemy_class_raw:
+                print(f"🔍 Type icon debug - Ally: '{ally_class_raw}' -> '{ally_class}', Enemy: '{enemy_class_raw}' -> '{enemy_class}'")
+            
+            if ally_class and enemy_class:
+                ally_damage_type = get_class_damage_type(ally_class)
+                if ally_damage_type:
+                    effectiveness = get_type_effectiveness(ally_damage_type, enemy_class)
+                    print(f"🔍 Type effectiveness: {ally_damage_type} vs {enemy_class} = {effectiveness}x")
+                    if effectiveness >= 1.9:  # Super effective (2x)
+                        enemy_type_effectiveness = "weakness"
+                        print(f"✅ Setting enemy_type_effectiveness = 'weakness'")
+                    elif effectiveness <= 0.6:  # Not very effective (0.5x)
+                        enemy_type_effectiveness = "resist"
+                        print(f"✅ Setting enemy_type_effectiveness = 'resist'")
+                else:
+                    print(f"⚠️ No damage type found for ally class '{ally_class}'")
+            else:
+                if not ally_class:
+                    print(f"⚠️ No ally class found (raw: '{ally_class_raw}')")
+                if not enemy_class:
+                    print(f"⚠️ No enemy class found (raw: '{enemy_class_raw}')")
+        except Exception as e:
+            print(f"⚠️ Failed to calculate enemy type effectiveness: {e}")
+            import traceback
+            traceback.print_exc()
+    
+    # For ally HP bar: Check if ally is weak/resistant to enemy's damage type
+    ally_type_effectiveness = None
+    try:
+        from combat.type_chart import get_class_damage_type, get_type_effectiveness
+        from combat.moves import _class_string, _enemy_class_string
+        
+        ally_class_raw = _class_string(active_stats) if isinstance(active_stats, dict) else None
+        enemy_class_raw = _enemy_class_string(gs)
+        
+        # Clean class names (strip prefixes)
+        ally_class = _clean_class_name(ally_class_raw) if ally_class_raw else None
+        enemy_class = _clean_class_name(enemy_class_raw) if enemy_class_raw else None
+        
+        if ally_class and enemy_class:
+            enemy_damage_type = get_class_damage_type(enemy_class)
+            if enemy_damage_type:
+                effectiveness = get_type_effectiveness(enemy_damage_type, ally_class)
+                print(f"🔍 Ally type effectiveness: {enemy_damage_type} vs {ally_class} = {effectiveness}x")
+                if effectiveness >= 1.9:  # Super effective (2x)
+                    ally_type_effectiveness = "weakness"
+                    print(f"✅ Setting ally_type_effectiveness = 'weakness'")
+                elif effectiveness <= 0.6:  # Not very effective (0.5x)
+                    ally_type_effectiveness = "resist"
+                    print(f"✅ Setting ally_type_effectiveness = 'resist'")
+            else:
+                print(f"⚠️ No damage type found for enemy class '{enemy_class}'")
+    except Exception as e:
+        print(f"⚠️ Failed to calculate ally type effectiveness: {e}")
+        import traceback
+        traceback.print_exc()
+    
     _draw_hp_bar(screen, ally_bar, st.get("ally_hp_ratio", 1.0), ally_label, "left",
-                 current_hp=ally_cur_hp, max_hp=ally_max_hp)
+                 current_hp=ally_cur_hp, max_hp=ally_max_hp, type_effectiveness=ally_type_effectiveness)
     if isinstance(active_stats, dict):
         xp_h = 22
         # XP strip position (HP text is now on top, so no adjustment needed)
@@ -2029,10 +2156,40 @@ def draw(screen: pygame.Surface, gs, dt: float, **_):
         enemy_cur_hp = st.get("enemy_cur_hp")
         enemy_max_hp = st.get("enemy_max_hp")
         _draw_hp_bar(screen, enemy_bar, st.get("enemy_hp_ratio", 1.0), enemy_label, "right",
-                     current_hp=enemy_cur_hp, max_hp=enemy_max_hp)
+                     current_hp=enemy_cur_hp, max_hp=enemy_max_hp, type_effectiveness=enemy_type_effectiveness)
         _draw_enemy_party_icons(screen, enemy_bar, st)
 
-    # --- Move animation overlay (draw after sprites and HP bars) ---
+    # Enemy fade & draw — completely suppressed during result/exit
+    if st.get("enemy_img") and not suppress_enemy:
+        enemy_surface = st["enemy_img"]
+        if st.get("enemy_fade_active", False):
+            st["enemy_fade_t"] += dt
+            t = st["enemy_fade_t"]
+            dur = max(0.001, st.get("enemy_fade_dur", ENEMY_FADE_SEC))
+            alpha = max(0, 255 - int(255 * (t / dur)))
+            temp = enemy_surface.copy(); temp.set_alpha(alpha)
+            screen.blit(temp, (ex, ey))
+            if t >= dur:
+                st["enemy_fade_active"] = False
+                st["enemy_img"] = None
+
+                # make sure an award exists for this KO
+                if not st.get("pending_xp_award") and not st.get("enemy_awarded_this_ko", False):
+                    active_idx = _get_active_party_index(gs)
+                    estats = dict(getattr(gs, "encounter_stats", {}) or {})
+                    enemy_name = gs.encounter_name or "Enemy"
+                    st["pending_xp_award"] = ("defeat", enemy_name, estats, int(active_idx))
+                    # Removed debug spam: print("[battle] queued XP award (post-fade safety):", st["pending_xp_award"])
+                    st["enemy_awarded_this_ko"] = True
+
+                if not suppress_enemy:
+                    _advance_to_next_enemy(gs, st)
+
+
+        else:
+            screen.blit(enemy_surface, (ex, ey))
+
+    # --- Move animation overlay (draw after sprites, HP bars, and enemy sprite) ---
     try:
         aw = ally.get_width() if ally else 0
         ah = ally.get_height() if ally else 0
@@ -2112,36 +2269,6 @@ def draw(screen: pygame.Surface, gs, dt: float, **_):
     else:
         if e_cur > 0 or moves_busy:
             st["defeat_debounce_t"] = 0.0
-
-    # Enemy fade & draw — completely suppressed during result/exit
-    if st.get("enemy_img") and not suppress_enemy:
-        enemy_surface = st["enemy_img"]
-        if st.get("enemy_fade_active", False):
-            st["enemy_fade_t"] += dt
-            t = st["enemy_fade_t"]
-            dur = max(0.001, st.get("enemy_fade_dur", ENEMY_FADE_SEC))
-            alpha = max(0, 255 - int(255 * (t / dur)))
-            temp = enemy_surface.copy(); temp.set_alpha(alpha)
-            screen.blit(temp, (ex, ey))
-            if t >= dur:
-                st["enemy_fade_active"] = False
-                st["enemy_img"] = None
-
-                # make sure an award exists for this KO
-                if not st.get("pending_xp_award") and not st.get("enemy_awarded_this_ko", False):
-                    active_idx = _get_active_party_index(gs)
-                    estats = dict(getattr(gs, "encounter_stats", {}) or {})
-                    enemy_name = gs.encounter_name or "Enemy"
-                    st["pending_xp_award"] = ("defeat", enemy_name, estats, int(active_idx))
-                    # Removed debug spam: print("[battle] queued XP award (post-fade safety):", st["pending_xp_award"])
-                    st["enemy_awarded_this_ko"] = True
-
-                if not suppress_enemy:
-                    _advance_to_next_enemy(gs, st)
-
-
-        else:
-            screen.blit(enemy_surface, (ex, ey))
 
     # Ally swap VFX
     if st.get("swap_playing", False):

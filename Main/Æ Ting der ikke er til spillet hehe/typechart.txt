@@ -1,0 +1,69 @@
+Druid
+Deals: Piercing
+Weak: Bludgeoning, Fire
+Resist: Lightning, Piercing
+
+Barbarian
+Deals: Bludgeoning
+Weak: Slashing, Psychic
+Resist: Fire, Bludgeoning
+
+Rogue
+Deals: Slashing
+Weak: Piercing, Radiant
+Resist: Psychic, Slashing
+
+Bard
+Deals: Psychic
+Weak: Necrotic, Bludgeoning
+Resist: Radiant, Psychic
+
+Cleric
+Deals: Radiant
+Weak: Necrotic, Psychic
+Resist: Radiant, Piercing
+
+Fighter
+Deals: Slashing
+Weak: Lightning, Psychic
+Resist: Piercing, Bludgeoning
+
+Monk
+Deals: Bludgeoning
+Weak: Radiant, Fire
+Resist: Piercing, Psychic
+
+Paladin
+Deals: Radiant
+Weak: Necrotic, Slashing
+Resist: Radiant, Bludgeoning
+
+Ranger
+Deals: Piercing
+Weak: Fire, Necrotic
+Resist: Lightning, Piercing
+
+Sorcerer
+Deals: Lightning
+Weak: Piercing, Bludgeoning
+Resist: Fire, Lightning
+
+Warlock
+Deals: Necrotic
+Weak: Radiant, Fire
+Resist: Psychic, Necrotic
+
+Wizard
+Deals: Fire
+Weak: Piercing, Slashing
+Resist: Psychic, Fire
+
+Artificer
+Deals: Lightning
+Weak: Fire, Necrotic
+Resist: Bludgeoning, Lightning
+
+Blood Hunter
+Deals: Necrotic
+Weak: Radiant, Slashing
+Resist: Fire, Necrotic

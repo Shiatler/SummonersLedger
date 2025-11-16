@@ -1,0 +1,327 @@
+{
+  "player_y": 92575.4799999947,
+  "distance_travelled": 7345.520000005301,
+  "next_event_at": 7509.0,
+  "player_gender": "male",
+  "party_slots_names": [
+    "StarterTokenBarbarian4.png",
+    "FTokenCleric3.png",
+    null,
+    null,
+    "RTokenRanger1.png",
+    "FTokenBarbarian1.png"
+  ],
+  "party_vessel_stats": [
+    {
+      "name": "StarterBarbarian4",
+      "class_name": "Barbarian",
+      "level": 2,
+      "abilities": {
+        "STR": 14,
+        "DEX": 12,
+        "CON": 12,
+        "INT": 11,
+        "WIS": 8,
+        "CHA": 7
+      },
+      "mods": {
+        "STR": 2,
+        "DEX": 1,
+        "CON": 1,
+        "INT": 0,
+        "WIS": -1,
+        "CHA": -2
+      },
+      "prof": 2,
+      "ac": 14,
+      "hp": 13,
+      "initiative": 1,
+      "attack_stat": "STR",
+      "attack_bonus": 4,
+      "notes": "Level up rebuild (milestone HP handled in XP)",
+      "current_hp": 12,
+      "xp_current": 2,
+      "xp_needed": 4,
+      "xp_total": 5
+    },
+    {
+      "name": "FVesselCleric3.png",
+      "class_name": "Cleric",
+      "level": 1,
+      "abilities": {
+        "STR": 14,
+        "DEX": 12,
+        "CON": 14,
+        "INT": 8,
+        "WIS": 15,
+        "CHA": 7
+      },
+      "mods": {
+        "STR": 2,
+        "DEX": 1,
+        "CON": 2,
+        "INT": -1,
+        "WIS": 2,
+        "CHA": -2
+      },
+      "prof": 2,
+      "ac": 13,
+      "hp": 10,
+      "initiative": 1,
+      "attack_stat": "WIS",
+      "attack_bonus": 4,
+      "notes": "Generated from asset name",
+      "current_hp": 10,
+      "xp_current": 2,
+      "xp_needed": 3,
+      "xp_total": 2
+    },
+    null,
+    null,
+    {
+      "name": "RVesselRanger1.png",
+      "class_name": "Ranger",
+      "level": 10,
+      "abilities": {
+        "STR": 10,
+        "DEX": 16,
+        "CON": 10,
+        "INT": 10,
+        "WIS": 13,
+        "CHA": 9
+      },
+      "mods": {
+        "STR": 0,
+        "DEX": 3,
+        "CON": 0,
+        "INT": 0,
+        "WIS": 1,
+        "CHA": -1
+      },
+      "prof": 2,
+      "ac": 16,
+      "hp": 17,
+      "initiative": 3,
+      "attack_stat": "DEX",
+      "attack_bonus": 5,
+      "notes": "Generated from asset name",
+      "current_hp": 17,
+      "xp_current": 2,
+      "xp_needed": 17,
+      "xp_total": 2
+    },
+    {
+      "name": "FTokenBarbarian1.png",
+      "class_name": "FTokenBarbarian",
+      "level": 10,
+      "abilities": {
+        "STR": 15,
+        "DEX": 14,
+        "CON": 13,
+        "INT": 10,
+        "WIS": 10,
+        "CHA": 10
+      },
+      "mods": {
+        "STR": 2,
+        "DEX": 2,
+        "CON": 1,
+        "INT": 0,
+        "WIS": 0,
+        "CHA": 0
+      },
+      "prof": 2,
+      "ac": 13,
+      "hp": 13,
+      "initiative": 2,
+      "attack_stat": "STR",
+      "attack_bonus": 4,
+      "notes": "Generated from asset name",
+      "current_hp": 13,
+      "xp_current": 2,
+      "xp_needed": 17,
+      "xp_total": 2
+    }
+  ],
+  "rivals_on_map": [
+    {
+      "name": "Faelan Stormheart",
+      "filename": "FSummoner11",
+      "side": "right",
+      "x": 1381.0,
+      "y": 89679.58999999921
+    },
+    {
+      "name": "Krivan Moonshadow",
+      "filename": "MSummoner3",
+      "side": "left",
+      "x": 1101.0,
+      "y": 89241.29999999884
+    },
+    {
+      "name": "Skrit Graveshade",
+      "filename": "MSummoner2",
+      "side": "right",
+      "x": 1381.0,
+      "y": 88986.78999999784
+    },
+    {
+      "name": "Krik Windblaze",
+      "filename": "MSummoner18",
+      "side": "left",
+      "x": 1101.0,
+      "y": 88742.62999999768
+    },
+    {
+      "name": "Perran Whisperclaw",
+      "filename": "MSummoner1",
+      "side": "right",
+      "x": 1381.0,
+      "y": 88046.81999999676
+    },
+    {
+      "name": "Tobin Frostwind",
+      "filename": "MSummoner19",
+      "side": "left",
+      "x": 1101.0,
+      "y": 90786.57999999651
+    },
+    {
+      "name": "Faelan Stormheart",
+      "filename": "FSummoner11",
+      "side": "left",
+      "x": 1101.0,
+      "y": 92358.19999999607
+    },
+    {
+      "name": "Yvaine Blazefury",
+      "filename": "FSummoner1",
+      "side": "right",
+      "x": 1381.0,
+      "y": 85956.20999999515
+    },
+    {
+      "name": "Yvaine Blazefury",
+      "filename": "FSummoner1",
+      "side": "right",
+      "x": 1381.0,
+      "y": 84690.82999999504
+    }
+  ],
+  "vessels_on_map": [
+    {
+      "side": "left",
+      "x": 1101.0,
+      "y": 90556.78999999962
+    },
+    {
+      "side": "right",
+      "x": 1381.0,
+      "y": 91665.33999999851
+    },
+    {
+      "side": "right",
+      "x": 1381.0,
+      "y": 89911.21999999802
+    },
+    {
+      "side": "right",
+      "x": 1381.0,
+      "y": 86542.63999999638
+    },
+    {
+      "side": "right",
+      "x": 1381.0,
+      "y": 91316.7299999962
+    },
+    {
+      "side": "right",
+      "x": 1381.0,
+      "y": 87755.57999999587
+    },
+    {
+      "side": "right",
+      "x": 1381.0,
+      "y": 87530.57999999571
+    },
+    {
+      "side": "right",
+      "x": 1381.0,
+      "y": 89493.80999999549
+    },
+    {
+      "side": "left",
+      "x": 1101.0,
+      "y": 90258.23999999535
+    },
+    {
+      "side": "left",
+      "x": 1101.0,
+      "y": 85005.4299999952
+    }
+  ],
+  "merchants_on_map": [
+    {
+      "side": "left",
+      "x": 1101.0,
+      "y": 91035.30999999864
+    },
+    {
+      "side": "left",
+      "x": 1101.0,
+      "y": 88500.67999999826
+    }
+  ],
+  "taverns_on_map": [
+    {
+      "side": "left",
+      "x": 1101.0,
+      "y": 93843.31999999701
+    },
+    {
+      "side": "right",
+      "x": 1381.0,
+      "y": 88309.76999999728
+    }
+  ],
+  "monsters_on_map": [],
+  "inventory": {
+    "scroll_of_command": 5,
+    "scroll_of_sealing": 5,
+    "scroll_of_subjugation": 3,
+    "scroll_of_eternity": 3,
+    "scroll_of_healing": 3,
+    "scroll_of_regeneration": 2,
+    "scroll_of_revivity": 1,
+    "rations": 1,
+    "alcohol": 1
+  },
+  "total_points": 0,
+  "gold": 100,
+  "silver": 0,
+  "bronze": 0,
+  "book_of_bound_discovered": [
+    "StarterBarbarian4",
+    "StarterBarbarian1",
+    "StarterRogue4"
+  ],
+  "archives": [],
+  "active_buffs": [
+    {
+      "tier": "Common",
+      "id": 2,
+      "name": "Common2",
+      "image_path": "Assets\\Blessings\\Common2.png"
+    }
+  ],
+  "buffs_history": [
+    {
+      "tier": "Common",
+      "id": 2,
+      "name": "Common2",
+      "image_path": "Assets\\Blessings\\Common2.png"
+    }
+  ],
+  "first_overworld_blessing_given": true,
+  "saved_in_tavern": false
+}

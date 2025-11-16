@@ -348,6 +348,7 @@ def _perform_enemy_basic_attack(gs, mv: Move) -> bool:
             total_dmg = base + bonus_mod
 
         total_dmg = max(0, total_dmg)
+        print(f"[moves][ENEMY] Base damage before type effectiveness: {total_dmg}")
         
         # Apply type effectiveness (D&D damage type system)
         type_effectiveness = 1.0
@@ -364,20 +365,30 @@ def _perform_enemy_basic_attack(gs, mv: Move) -> bool:
             stats = _active_stats(gs)
             defender_class = _class_string(stats) if isinstance(stats, dict) else None
             
+            print(f"[moves][ENEMY] Type calc - attacker_class: '{attacker_class}', move_damage_type: '{move_damage_type}', defender_class: '{defender_class}'")
+            
             if move_damage_type and defender_class:
                 type_effectiveness = get_type_effectiveness(move_damage_type, defender_class)
                 effectiveness_label = get_effectiveness_label(type_effectiveness)
                 
+                print(f"[moves][ENEMY] Type effectiveness result: {type_effectiveness}, label: '{effectiveness_label}'")
+                
                 if type_effectiveness != 1.0:
                     original_dmg = total_dmg
-                    total_dmg = int(total_dmg * type_effectiveness)
-                    print(f"[moves][ENEMY] Type effectiveness: {move_damage_type} vs {defender_class} = {effectiveness_label} ({type_effectiveness}x) | {original_dmg} → {total_dmg}")
+                    multiplied = total_dmg * type_effectiveness
+                    total_dmg = int(multiplied)
+                    print(f"[moves][ENEMY] Type effectiveness: {move_damage_type} vs {defender_class} = {effectiveness_label} ({type_effectiveness}x) | {original_dmg} * {type_effectiveness} = {multiplied} → {total_dmg}")
                 else:
                     print(f"[moves][ENEMY] Type effectiveness: {move_damage_type} vs {defender_class} = {effectiveness_label} ({type_effectiveness}x)")
+            else:
+                print(f"[moves][ENEMY] Missing data for type effectiveness: move_damage_type={move_damage_type}, defender_class={defender_class}")
         except Exception as e:
             print(f"⚠️ Type effectiveness calculation error (enemy): {e}")
+            import traceback
+            traceback.print_exc()
         
         total_dmg = max(0, total_dmg)
+        print(f"[moves][ENEMY] Final damage after type effectiveness: {total_dmg}")
         
         # Apply damage reduction from buffs
         original_dmg = total_dmg

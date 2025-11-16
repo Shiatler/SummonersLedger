@@ -34,6 +34,15 @@ _SLOT_GLOW_CACHE: dict[tuple[int, int, int, int], pygame.Surface] = {}  # (w,h,a
 # ---------- Click hitboxes ----------
 _slot_rects: list[pygame.Rect] = []    # populated per draw; 6 rects (2x3 grid)
 
+# ---------- Drag-and-drop state ----------
+_DRAGGING = False
+_DRAG_SLOT_INDEX = None
+_DRAG_MOUSE_POS = (0, 0)
+_DRAG_TOKEN_SURFACE = None
+_DRAG_START_POS = (0, 0)
+_DRAG_POTENTIAL = False  # True when mouse is down but drag hasn't started yet
+_DRAG_THRESHOLD = 5  # Pixels of movement required before drag starts
+
 def _get_hover_glow_slot(size: tuple[int, int], alpha: int = 60, radius: int = 8) -> pygame.Surface:
     """
     Rounded-rect soft glow for slot hover; cached to avoid per-frame allocs.
@@ -193,10 +202,55 @@ def _render_name_fitted(text: str, max_w: int, max_size: int, min_size: int) -> 
 
 # ===================== Event handling ========================
 def handle_event(e, gs) -> bool:
+    global _DRAGGING, _DRAG_SLOT_INDEX, _DRAG_MOUSE_POS, _DRAG_TOKEN_SURFACE, _DRAG_START_POS, _DRAG_POTENTIAL
+    
     if ledger.is_open():
         return ledger.handle_event(e, gs)
-    if e.type == pygame.MOUSEBUTTONDOWN and e.button == 1:
-        mx, my = e.pos
+    
+    # Convert mouse position to logical coordinates
+    if e.type in (pygame.MOUSEBUTTONDOWN, pygame.MOUSEBUTTONUP, pygame.MOUSEMOTION):
+        screen_mx, screen_my = e.pos if hasattr(e, 'pos') else pygame.mouse.get_pos()
+        mx, my = coords.screen_to_logical((screen_mx, screen_my))
+    else:
+        mx, my = coords.screen_to_logical(pygame.mouse.get_pos())
+    
+    # Handle drag end (mouse button up)
+    if (_DRAGGING or _DRAG_POTENTIAL) and e.type == pygame.MOUSEBUTTONUP and e.button == 1:
+        if _DRAGGING:
+            # Find which slot we're dropping on
+            drop_slot = None
+            for idx, rect in enumerate(_slot_rects):
+                if rect.collidepoint(mx, my):
+                    drop_slot = idx
+                    break
+            
+            if drop_slot is not None and drop_slot != _DRAG_SLOT_INDEX:
+                # Swap the slots
+                try:
+                    from screens.party_manager import swap_party_slots
+                    swap_party_slots(gs, _DRAG_SLOT_INDEX, drop_slot)
+                    # Play click sound
+                    try:
+                        from systems import audio as audio_sys
+                        audio_sys.play_click(audio_sys.get_global_bank())
+                    except:
+                        pass
+                except Exception as ex:
+                    print(f"⚠️ Drag-and-drop swap failed: {ex}")
+        elif _DRAG_POTENTIAL:
+            # Was a potential drag but never started - treat as click (open ledger)
+            if _DRAG_SLOT_INDEX is not None:
+                ledger.open(gs, _DRAG_SLOT_INDEX)
+        
+        # End drag
+        _DRAGGING = False
+        _DRAG_POTENTIAL = False
+        _DRAG_SLOT_INDEX = None
+        _DRAG_TOKEN_SURFACE = None
+        return True
+    
+    # Handle drag start (mouse button down)
+    if not _DRAGGING and not _DRAG_POTENTIAL and e.type == pygame.MOUSEBUTTONDOWN and e.button == 1:
         for idx, rect in enumerate(_slot_rects):
             if rect.collidepoint(mx, my):
                 has_token = (
@@ -210,9 +264,43 @@ def handle_event(e, gs) -> bool:
                     and gs.party_slots_names[idx]
                 )
                 if has_token or has_name:
-                    ledger.open(gs, idx)
+                    # Mark as potential drag (will start if mouse moves enough)
+                    _DRAG_POTENTIAL = True
+                    _DRAG_SLOT_INDEX = idx
+                    _DRAG_START_POS = (mx, my)
+                    _DRAG_MOUSE_POS = (mx, my)
+                    # Store the token surface for dragging
+                    if has_token and isinstance(gs.party_slots[idx], pygame.Surface):
+                        _DRAG_TOKEN_SURFACE = gs.party_slots[idx].copy()
+                    else:
+                        # Load token if needed
+                        token_name = gs.party_slots_names[idx] if idx < len(gs.party_slots_names) else None
+                        if token_name:
+                            portrait_w, portrait_h = PORTRAIT_SIZE
+                            slot_size, _, _ = _compute_slot_metrics(portrait_h)
+                            _DRAG_TOKEN_SURFACE = _load_party_token_surface(token_name, (slot_size, slot_size))
+                        else:
+                            _DRAG_TOKEN_SURFACE = None
                     return True
                 break
+    
+    # Handle drag motion - start drag if moved enough
+    if _DRAG_POTENTIAL and e.type == pygame.MOUSEMOTION:
+        _DRAG_MOUSE_POS = (mx, my)
+        # Check if mouse has moved enough to start dragging
+        dx = mx - _DRAG_START_POS[0]
+        dy = my - _DRAG_START_POS[1]
+        distance = (dx * dx + dy * dy) ** 0.5
+        if distance >= _DRAG_THRESHOLD:
+            _DRAGGING = True
+            _DRAG_POTENTIAL = False
+        return True
+    
+    # Handle drag motion (already dragging)
+    if _DRAGGING and e.type == pygame.MOUSEMOTION:
+        _DRAG_MOUSE_POS = (mx, my)
+        return True
+    
     return False
 
 # ===================== HUD Drawing ===========================
@@ -394,11 +482,50 @@ def draw_party_hud(screen: pygame.Surface, gs):
         from systems import hud_style
         hud_style.draw_slot_panel(screen, r, hovered=is_hovered, filled=bool(token))
         
-        # Draw token if present
-        if token and isinstance(token, pygame.Surface):
+        # Draw token if present (but not if it's being dragged)
+        if token and isinstance(token, pygame.Surface) and not ((_DRAGGING or _DRAG_POTENTIAL) and _DRAG_SLOT_INDEX == i):
             inner = _normalize_token_for_slot(token, slot_size, inner_margin)
             if inner:
                 screen.blit(inner, inner.get_rect(center=r.center))
+        
+        # Highlight drop target when dragging
+        if (_DRAGGING or _DRAG_POTENTIAL) and _DRAG_SLOT_INDEX is not None and _DRAG_SLOT_INDEX != i:
+            drag_mx, drag_my = _DRAG_MOUSE_POS
+            if r.collidepoint(drag_mx, drag_my):
+                # Highlight potential drop target
+                highlight = pygame.Surface((r.w, r.h), pygame.SRCALPHA)
+                highlight.fill((255, 255, 255, 80))
+                screen.blit(highlight, r.topleft)
+                # Draw border (beige brown)
+                pygame.draw.rect(screen, (160, 140, 120, 200), r, width=3, border_radius=4)
+
+    # Draw dragged token following mouse
+    if (_DRAGGING or _DRAG_POTENTIAL) and _DRAG_TOKEN_SURFACE is not None:
+        # Use current mouse position from drag state
+        drag_mx, drag_my = _DRAG_MOUSE_POS
+        
+        # Draw semi-transparent version at original position
+        if _DRAG_SLOT_INDEX is not None and _DRAG_SLOT_INDEX < len(_slot_rects):
+            orig_rect = _slot_rects[_DRAG_SLOT_INDEX]
+            orig_token = gs.party_slots[_DRAG_SLOT_INDEX] if _DRAG_SLOT_INDEX < len(gs.party_slots) else None
+            if orig_token and isinstance(orig_token, pygame.Surface):
+                inner = _normalize_token_for_slot(orig_token, slot_size, inner_margin)
+                if inner:
+                    # Draw semi-transparent at original position
+                    semi_transparent = inner.copy()
+                    semi_transparent.set_alpha(128)
+                    screen.blit(semi_transparent, inner.get_rect(center=orig_rect.center))
+        
+        # Draw dragged token at mouse position
+        dragged_inner = _normalize_token_for_slot(_DRAG_TOKEN_SURFACE, slot_size, inner_margin)
+        if dragged_inner:
+            # Draw shadow/outline first for better visibility
+            shadow_surf = pygame.Surface((dragged_inner.get_width() + 4, dragged_inner.get_height() + 4), pygame.SRCALPHA)
+            shadow_surf.fill((0, 0, 0, 100))
+            screen.blit(shadow_surf, shadow_surf.get_rect(center=(drag_mx + 2, drag_my + 2)))
+            # Then draw the token on top
+            drag_rect = dragged_inner.get_rect(center=(drag_mx, drag_my))
+            screen.blit(dragged_inner, drag_rect)
 
     # Ledger modal overlay
     if ledger.is_open():
