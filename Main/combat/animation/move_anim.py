@@ -20,6 +20,8 @@ DEFAULT_DURATION_MS = 500
 DEFAULT_ANGLE_DEG = -90.0  # rotate sprite -90deg so the blade points downward
 
 _MELEE_CLASSES = {"Paladin", "Fighter", "Barbarian", "Monk", "Rogue", "Bloodhunter"}
+_MONSTER_CLASSES = {"Dragon", "Owlbear", "Beholder", "Golem", "Ogre", "Nothic", "Myconid"}
+_RANGED_MONSTER_EXCEPTIONS = {"Beholder", "Nothic", "Myconid"}
 
 def _ensure_anim_blob(gs):
     if not hasattr(gs, "_move_anim") or not isinstance(getattr(gs, "_move_anim"), dict):
@@ -41,6 +43,9 @@ def start_move_anim(gs, move) -> None:
     anim_type = "projectile"
     if cls in _MELEE_CLASSES:
         anim_type = "melee"
+    elif cls in _MONSTER_CLASSES:
+        # Monsters default to melee, except listed ranged casters
+        anim_type = "projectile" if cls in _RANGED_MONSTER_EXCEPTIONS else "melee"
 
     surf = None
     if p and os.path.exists(p):
