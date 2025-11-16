@@ -1062,8 +1062,8 @@ def draw(screen: pygame.Surface, gs, dt, **_):
                 scaled_h = int(spr_h * scale)
                 
                 # If discovered, load and display the actual sprite; otherwise use silhouette
-                # Monsters are ALWAYS shown as silhouettes in the Book (blacked out), even if discovered.
-                if is_discovered and category != "monster":
+                # Show full sprite once discovered (same behavior for all categories, including monsters)
+                if is_discovered:
                     # Load the actual sprite
                     actual_sprite = _load_vessel_sprite(name, category)
                     if actual_sprite:
