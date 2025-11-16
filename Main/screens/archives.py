@@ -1151,9 +1151,9 @@ def draw(screen, gs, dt):
         
         # Vessel name with glow - centered with sprite area
         name_font = _get_font(38, bold=True)
-        from systems.name_generator import generate_vessel_name
+        from systems.name_generator import get_display_vessel_name
         token_name = archive_vessel.get("token_name", vessel_name)
-        name_text = generate_vessel_name(token_name)
+        name_text = get_display_vessel_name(token_name, stats)
         
         # Center the name with the sprite area (not the entire left panel)
         name_surf = name_font.render(name_text, True, COLOR_TEXT_HIGHLIGHT)

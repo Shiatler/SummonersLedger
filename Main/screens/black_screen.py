@@ -257,7 +257,9 @@ def handle(events, gs, saves=None, audio_bank=None, **_):
 
         elif event.type == pygame.MOUSEBUTTONDOWN and event.button == 1:
             # Accept spotlighted starter -> add token + continue
-            if gs._starter_last_rect and gs._starter_last_rect.collidepoint(event.pos):
+            # Convert mouse coordinates to logical coordinates for QHD support
+            mx, my = coords.screen_to_logical(event.pos)
+            if gs._starter_last_rect and gs._starter_last_rect.collidepoint(mx, my):
                 audio_sys.play_click(audio_bank)
                 gs.starter_clicked = gs.revealed_class
                 gs.intro_class = gs.revealed_class
@@ -317,10 +319,12 @@ def handle(events, gs, saves=None, audio_bank=None, **_):
                 return "INTRO_VIDEO"
 
             # Reveal: pick ONCE per class (remember thereafter)
+            # Convert mouse coordinates to logical coordinates for QHD support
+            mx, my = coords.screen_to_logical(event.pos)
             for key, data in gs._class_select.items():
                 if key in ("order", "grass", "starters_dir"):
                     continue
-                if data["rect"].collidepoint(event.pos):
+                if data["rect"].collidepoint(mx, my):
                     audio_sys.play_click(audio_bank)
                     gs.selected_class = key
                     gs.revealed_class = key

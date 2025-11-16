@@ -12,6 +12,7 @@ import settings as S
 from systems import buffs
 from systems import audio as audio_sys
 from systems import audio
+from systems import coords
 
 # Font helper
 _DH_FONT_PATH = None
@@ -1203,8 +1204,9 @@ def _draw_card_tooltip(screen, card, card_index):
     tooltip_font = _get_dh_font(18)
     name_font = _get_dh_font(22, bold=True)
     
-    # Get mouse position for tooltip placement
-    mx, my = pygame.mouse.get_pos()
+    # Get mouse position for tooltip placement - Convert to logical coordinates for QHD support
+    screen_mx, screen_my = pygame.mouse.get_pos()
+    mx, my = coords.screen_to_logical((screen_mx, screen_my))
     
     # Build tooltip text: name on first line, description below
     tooltip_lines = [card_name, card_description]

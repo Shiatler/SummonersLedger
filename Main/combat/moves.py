@@ -19,6 +19,13 @@ from typing import Optional, Dict, Any, Iterable, Tuple, List
 from systems import audio as audio_sys
 from rolling import roller  # calls are wrapped in try/except
 from combat.stats import proficiency_for_level
+from combat.type_chart import (
+    get_class_damage_type, 
+    normalize_class_name,
+    get_type_effectiveness,
+    get_effectiveness_label,
+    get_effectiveness_color
+)
 
 # --------------------- Data model ----------------------------
 
@@ -32,6 +39,7 @@ class Move:
     to_hit: bool = True
     self_hp_cost: int = 0
     max_pp: int = 40        # default PP cap (level 1 moves → 20)
+    damage_type: Optional[str] = None  # D&D damage type (Piercing, Fire, etc.) - auto-determined from class if None
 
 # --------------------- helpers: state ------------------------
 
@@ -335,6 +343,36 @@ def _perform_enemy_basic_attack(gs, mv: Move) -> bool:
 
         total_dmg = max(0, total_dmg)
         
+        # Apply type effectiveness (D&D damage type system)
+        type_effectiveness = 1.0
+        effectiveness_label = ""
+        try:
+            # Get attacker's (enemy's) class
+            enemy_stats = _enemy_stats(gs)
+            attacker_class = _class_string(enemy_stats) if isinstance(enemy_stats, dict) else None
+            
+            # Get move's damage type
+            move_damage_type = _get_move_damage_type(mv, attacker_class)
+            
+            # Get defender's (ally's) class
+            stats = _active_stats(gs)
+            defender_class = _class_string(stats) if isinstance(stats, dict) else None
+            
+            if move_damage_type and defender_class:
+                type_effectiveness = get_type_effectiveness(move_damage_type, defender_class)
+                effectiveness_label = get_effectiveness_label(type_effectiveness)
+                
+                if type_effectiveness != 1.0:
+                    original_dmg = total_dmg
+                    total_dmg = int(total_dmg * type_effectiveness)
+                    print(f"[moves][ENEMY] Type effectiveness: {move_damage_type} vs {defender_class} = {effectiveness_label} ({type_effectiveness}x) | {original_dmg} → {total_dmg}")
+                else:
+                    print(f"[moves][ENEMY] Type effectiveness: {move_damage_type} vs {defender_class} = {effectiveness_label} ({type_effectiveness}x)")
+        except Exception as e:
+            print(f"⚠️ Type effectiveness calculation error (enemy): {e}")
+        
+        total_dmg = max(0, total_dmg)
+        
         # Apply damage reduction from buffs
         original_dmg = total_dmg
         stats = _active_stats(gs)
@@ -351,18 +389,35 @@ def _perform_enemy_basic_attack(gs, mv: Move) -> bool:
 
         print(f"[moves][ENEMY] {mv.label} → damage={total_dmg} | ally {a_cur} → {new_cur}")
 
-        # Update display message to show original damage if reduced
+        # Update display message to show original damage if reduced, and type effectiveness
         dmg_display = total_dmg
         if original_dmg != total_dmg:
             dmg_display = f"{original_dmg} (reduced to {total_dmg})"
         
+        subtitle = f"Hit for {dmg_display}!"
+        if effectiveness_label:
+            subtitle += f" [{effectiveness_label}]"
+        if new_cur <= 0:
+            subtitle += " (You're down)"
+        
         st["result"] = {
             "kind": "info",
             "title": f"Enemy used {mv.label}",
-            "subtitle": (f"Hit for {dmg_display}!" if new_cur > 0 else f"Hit for {dmg_display}! (You're down)"),
+            "subtitle": subtitle,
             "t": 0.0, "alpha": 0, "played": False,
             "exit_on_close": False,
         }
+        
+        # Store effectiveness info for display (always store, including 1x)
+        if effectiveness_label:
+            st["last_type_effectiveness"] = {
+                "label": effectiveness_label,
+                "multiplier": type_effectiveness,
+                "color": get_effectiveness_color(type_effectiveness)
+            }
+        else:
+            st.pop("last_type_effectiveness", None)
+        
         _play_move_sfx(mv.label); _click()
         return True
     finally:
@@ -548,6 +603,71 @@ def _play_move_sfx(label: str):
     except Exception:
         pass
 
+def _get_move_damage_type(mv: Move, attacker_class: Optional[str] = None) -> Optional[str]:
+    """
+    Get the damage type for a move.
+    
+    Priority:
+    1. If move has explicit damage_type, use it
+    2. If attacker_class provided, get damage type from class
+    3. Extract class from move ID (e.g., "barb_l1_wild_swing" -> "barbarian")
+    4. Return None if can't determine
+    
+    Args:
+        mv: The Move object
+        attacker_class: Optional class name of the attacker (for fallback)
+    
+    Returns:
+        Damage type string (e.g., "Piercing") or None
+    """
+    # Priority 1: Explicit damage_type on move
+    if mv.damage_type:
+        return mv.damage_type
+    
+    # Priority 2: Use provided attacker class
+    if attacker_class:
+        dmg_type = get_class_damage_type(attacker_class)
+        if dmg_type:
+            return dmg_type
+    
+    # Priority 3: Extract class from move ID
+    # Move IDs are like "barb_l1_wild_swing", "druid_l10_flame_seed", etc.
+    move_id = mv.id.lower()
+    
+    # Map move ID prefixes to class names
+    id_to_class = {
+        "barb": "barbarian",
+        "druid": "druid",
+        "rogue": "rogue",
+        "wizard": "wizard",
+        "cleric": "cleric",
+        "paladin": "paladin",
+        "ranger": "ranger",
+        "warlock": "warlock",
+        "monk": "monk",
+        "sorc": "sorcerer",
+        "arti": "artificer",
+        "bh": "bloodhunter",
+        "fighter": "fighter",
+        "bard": "bard",
+        # Monsters (fallback to fighter for now, or could add monster types later)
+        "dragon": "fighter",  # Default to fighter for monsters
+        "owlbear": "fighter",
+        "beholder": "fighter",
+        "golem": "fighter",
+        "ogre": "fighter",
+        "nothic": "fighter",
+        "myconid": "fighter",
+    }
+    
+    for prefix, class_name in id_to_class.items():
+        if move_id.startswith(prefix):
+            dmg_type = get_class_damage_type(class_name)
+            if dmg_type:
+                return dmg_type
+    
+    return None
+
 
 # --------------------- Registry (Level 1) --------------------
 
@@ -583,69 +703,69 @@ _MOVE_REGISTRY: Dict[str, List[Move]] = {
     "barbarian": [
         Move("barb_l1_wild_swing", "Wild Swing", "Sloppy first strike.", (1, 5), "STR", True, 0, 20),
         Move("barb_l10_reckless_strike", "Reckless Strike", "Swing with reckless abandon; hits harder, misses often.", (1, 10), "STR", True, 0, 12),
-        Move("barb_l20_frenzied_blow", "Frenzied Blow", "A trained rhythm of rage; two brutal chops in one motion.", (2, 8), "STR", True, 0, 6),
+        Move("barb_l20_frenzied_blow", "Frenzied Blow", "A trained rhythm of rage; two brutal chops in one motion.", (2, 6), "STR", True, 0, 6),
         Move("barb_l40_brutal_cleave", "Brutal Cleave", "Heavy strike that channels every ounce of strength.", (2, 10), "STR", True, 0, 3),
         Move("barb_l50_world_breaker", "World Breaker", "Devastating ground slam.", (3, 12), "STR", True, 0, 1),
     ],
     "druid": [
         Move("druid_l1_thorn_whip", "Thorn Whip", "Cantrip lash of vines.", (2, 3), "WIS", True, 0, 20),
         Move("druid_l10_flame_seed", "Flame Seed", "A spark of wildfire magic from nature's fury.", (1, 8), "WIS", True, 0, 15),
-        Move("druid_l20_moonbeam", "Moonbeam", "Summon pale lunar energy to sear a single foe.", (2, 10), "WIS", True, 0, 8),
-        Move("druid_l40_call_lightning", "Call Lightning", "Command a bolt of the storm itself.", (3, 10), "WIS", True, 0, 2),
+        Move("druid_l20_moonbeam", "Moonbeam", "Summon pale lunar energy to sear a single foe.", (2, 6), "WIS", True, 0, 8),
+        Move("druid_l40_call_lightning", "Call Lightning", "Command a bolt of the storm itself.", (3, 8), "WIS", True, 0, 2),
         Move("druid_l50_storm_of_ages", "Storm of Ages", "Full fury of nature's wrath.", (5, 10), "WIS", True, 0, 1),
     ],
     "rogue": [
         Move("rogue_l1_quick_stab", "Quick Stab", "Hasty jab.", (1, 5), "DEX", True, 0, 20),
-        Move("rogue_l10_sneak_strike", "Sneak Strike", "A practiced backstab from the shadows.", (2, 6), "DEX", True, 0, 10),
-        Move("rogue_l20_cunning_flurry", "Cunning Flurry", "Swift, precise blows exploiting every weakness.", (3, 6), "DEX", True, 0, 5),
+        Move("rogue_l10_sneak_strike", "Sneak Strike", "A practiced backstab from the shadows.", (2, 5), "DEX", True, 0, 10),
+        Move("rogue_l20_cunning_flurry", "Cunning Flurry", "Swift, precise blows exploiting every weakness.", (3, 5), "DEX", True, 0, 5),
         Move("rogue_l40_assassinate", "Assassinate", "A deadly opening strike with high crit potential.", (4, 6), "DEX", True, 0, 2),
         Move("rogue_l50_death_mark", "Death Mark", "Guaranteed critical strike.", (6, 10), "DEX", True, 0, 1),
     ],
     "wizard": [
         Move("wizard_l1_arcane_bolt", "Arcane Bolt", "Spark of arcane energy.", (1, 6), "INT", True, 0, 20),
-        Move("wizard_l10_scorching_ray", "Scorching Ray", "Twin beams of focused fire.", (2, 6), "INT", True, 0, 12),
+        Move("wizard_l10_scorching_ray", "Scorching Ray", "Twin beams of focused fire.", (4, 3), "INT", True, 0, 8),
         Move("wizard_l20_fireball", "Fireball", "Explosive burst of chaotic flame.", (6, 6), "INT", True, 0, 1),
         Move("wizard_l40_blight", "Blight", "Drain life and vitality with dark magic.", (8, 8), "INT", True, 0, 1),
         Move("wizard_l50_meteor_swarm", "Meteor Swarm", "Summon meteors from the heavens.", (10, 8), "INT", True, 0, 1),
     ],
     "cleric": [
         Move("cleric_l1_sacred_flame", "Sacred Flame", "Radiant spark.", (1, 5), "WIS", True, 0, 20),
-        Move("cleric_l10_guiding_bolt", "Guiding Bolt", "Blast of holy energy that scorches evil.", (4, 6), "WIS", True, 0, 8),
+        Move("cleric_l10_guiding_bolt", "Guiding Bolt", "Blast of holy energy that scorches evil.", (3, 6), "WIS", True, 0, 4),
         Move("cleric_l20_spiritual_weapon", "Spiritual Weapon", "Summon a spectral blade for radiant punishment.", (2, 8), "WIS", True, 0, 10),
         Move("cleric_l40_flame_strike", "Flame Strike", "Call down holy fire upon your foes.", (4, 8), "WIS", True, 0, 2),
         Move("cleric_l50_divine_intervention", "Divine Intervention", "Channel the full power of your deity.", (6, 10), "WIS", True, 0, 1),
     ],
     "paladin": [
         Move("paladin_l1_smite_training", "Smite Training", "Basic weapon strike infused with faint divine power.", (1, 8), "STR", True, 0, 20),
-        Move("paladin_l10_divine_smite", "Divine Smite", "Infuse your attack with sacred light.", (2, 8), "STR", True, 0, 10),
-        Move("paladin_l20_crusaders_wrath", "Crusader's Wrath", "Righteous strength guided by faith.", (3, 8), "STR", True, 0, 5),
+        Move("paladin_l10_divine_smite", "Divine Smite", "Infuse your attack with sacred light.", (1, 12), "STR", True, 0, 10),
+        Move("paladin_l20_crusaders_wrath", "Crusader's Wrath", "Righteous strength guided by faith.", (1, 20), "STR", True, 0, 5),
         Move("paladin_l40_holy_smite", "Holy Smite", "True divine retribution.", (4, 8), "STR", True, 0, 2),
         Move("paladin_l50_avenging_wrath", "Avenging Wrath", "Divine judgment that cannot be denied.", (5, 10), "STR", True, 0, 1),
     ],
     "ranger": [
         Move("ranger_l1_aimed_shot", "Aimed Shot", "Careful bow shot.", (1, 5), "DEX", True, 0, 20),
         Move("ranger_l10_hunters_mark", "Hunter's Mark", "Marked prey takes focused damage.", (2, 7), "DEX", True, 0, 10),  # 1d8+1d6 approximated as 2d7
-        Move("ranger_l20_hail_of_thorns", "Hail of Thorns", "Arrows explode into piercing splinters.", (2, 10), "DEX", True, 0, 6),
+        Move("ranger_l20_hail_of_thorns", "Hail of Thorns", "Arrows explode into piercing splinters.", (3, 5), "DEX", True, 0, 6),
         Move("ranger_l40_lightning_arrow", "Lightning Arrow", "A charged shot that carries storm power.", (4, 8), "DEX", True, 0, 2),
         Move("ranger_l50_heartseeker", "Heartseeker", "Always finds its mark.", (5, 10), "DEX", True, 0, 1),
     ],
     "warlock": [
         Move("warlock_l1_eldritch_blast", "Eldritch Blast", "Signature cantrip of dark energy.", (1, 6), "CHA", True, 0, 20),
-        Move("warlock_l10_agonizing_blast", "Agonizing Blast", "More painful, refined version of your blast.", (2, 10), "CHA", True, 0, 12),
-        Move("warlock_l20_hunger_of_hadar", "Hunger of Hadar", "Tear a rift into the void's cold darkness.", (4, 8), "CHA", True, 0, 4),
+        Move("warlock_l10_agonizing_blast", "Agonizing Blast", "More painful, refined version of your blast.", (1, 12), "CHA", True, 0, 12),
+        Move("warlock_l20_hunger_of_hadar", "Hunger of Hadar", "Tear a rift into the void's cold darkness.", (4, 5), "CHA", True, 0, 4),
         Move("warlock_l40_eldritch_torrent", "Eldritch Torrent", "Continuous beam of infernal destruction.", (6, 10), "CHA", True, 0, 1),
         Move("warlock_l50_soul_rend", "Soul Rend", "Tear at the very essence of your target.", (8, 10), "CHA", True, 0, 1),
     ],
     "monk": [
         Move("monk_l1_martial_strike", "Martial Strike", "Basic unarmed strike.", (1, 5), "DEX", True, 0, 20),
         Move("monk_l10_flurry_of_blows", "Flurry of Blows", "Two lightning-fast strikes.", (2, 6), "DEX", True, 0, 10),
-        Move("monk_l20_stunning_strike", "Stunning Strike", "Precise nerve hit that disrupts focus.", (1, 8), "DEX", True, 0, 15),
+        Move("monk_l20_stunning_strike", "Stunning Strike", "Precise nerve hit that disrupts focus.", (2, 10), "DEX", True, 0, 15),
         Move("monk_l40_quivering_palm", "Quivering Palm", "Devastating ki strike from within.", (4, 10), "DEX", True, 0, 2),
         Move("monk_l50_perfect_strike", "Perfect Strike", "Flawless ki strike that transcends the physical.", (5, 12), "DEX", True, 0, 1),
     ],
     "sorcerer": [
         Move("sorc_l1_burning_hands", "Burning Hands", "Brief cone of flame.", (2, 3), "CHA", True, 0, 20),
-        Move("sorc_l10_chromatic_orb", "Chromatic Orb", "Hurl an orb of random elemental energy (fire, ice, lightning, or acid). Pure chaos given form.", (3, 8), "CHA", True, 0, 10),
+        Move("sorc_l10_chromatic_orb", "Chromatic Orb", "Hurl an orb of random elemental energy (fire, ice, lightning, or acid). Pure chaos given form.", (3, 5), "CHA", True, 0, 10),
         Move("sorc_l20_fireball", "Fireball", "The classic explosion of chaos and pride.", (8, 6), "CHA", True, 0, 1),
         Move("sorc_l40_disintegrate", "Disintegrate", "A single ray that vaporizes its target.", (10, 6), "CHA", True, 0, 1),
         Move("sorc_l50_reality_warp", "Reality Warp", "Bend reality itself to your will.", (12, 8), "CHA", True, 0, 1),
@@ -659,22 +779,22 @@ _MOVE_REGISTRY: Dict[str, List[Move]] = {
     ],
     "blood_hunter": [
         Move("bh_l1_hemorrhage_cut", "Hemorrhage Cut", "Brutal self-fueled cut.", (1, 5), "STR|DEX", True, 0, 20),
-        Move("bh_l10_crimson_slash", "Crimson Slash", "Empowered strike at the cost of 2 HP.", (2, 8), "STR|DEX", True, 2, 12),
-        Move("bh_l20_rite_of_the_blade", "Rite of the Blade", "Channel cursed energy through your weapon; costs 3 HP.", (3, 10), "STR|DEX", True, 3, 6),
+        Move("bh_l10_crimson_slash", "Crimson Slash", "Empowered strike at the cost of 2 HP.", (2, 5), "STR|DEX", True, 2, 12),
+        Move("bh_l20_rite_of_the_blade", "Rite of the Blade", "Channel cursed energy through your weapon; costs 3 HP.", (3, 7), "STR|DEX", True, 3, 6),
         Move("bh_l40_blood_nova", "Blood Nova", "Release stored life force in a devastating arc; costs 5 HP.", (4, 12), "STR|DEX", True, 5, 2),
         Move("bh_l50_final_rite", "Final Rite", "Sacrifice 10 HP for ultimate cursed power.", (6, 12), "STR|DEX", True, 10, 1),
     ],
     "fighter": [
         Move("fighter_l1_weapon_strike", "Weapon Strike", "Disciplined opening attack.", (1, 5), "STR|DEX", True, 0, 20),
-        Move("fighter_l10_action_surge", "Action Surge", "Unleash a flurry of precise strikes.", (2, 8), "STR|DEX", True, 0, 10),
-        Move("fighter_l20_second_wind", "Second Wind", "Channel renewed vigor into a devastating blow.", (3, 10), "STR|DEX", True, 0, 5),
+        Move("fighter_l10_action_surge", "Action Surge", "Unleash a flurry of precise strikes.", (2, 6), "STR|DEX", True, 0, 10),
+        Move("fighter_l20_second_wind", "Second Wind", "Channel renewed vigor into a devastating blow.", (3, 7), "STR|DEX", True, 0, 5),
         Move("fighter_l40_ultimate_technique", "Ultimate Technique", "Masterful execution of combat perfection.", (4, 12), "STR|DEX", True, 0, 2),
         Move("fighter_l50_legendary_strike", "Legendary Strike", "A strike that transcends mortal skill.", (5, 12), "STR|DEX", True, 0, 1),
     ],
     "bard": [
         Move("bard_l1_vicious_mockery", "Vicious Mockery", "Psychic jab that rattles.", (1, 4), "CHA", True, 0, 20),
         Move("bard_l10_cutting_words", "Cutting Words", "Sharp words that strike like blades.", (2, 6), "CHA", True, 0, 12),
-        Move("bard_l20_inspire_combat", "Combat Inspiration", "Rally your allies with powerful song; channel that energy into a devastating strike.", (3, 8), "CHA", True, 0, 6),
+        Move("bard_l20_inspire_combat", "Combat Inspiration", "Rally your allies with powerful song; channel that energy into a devastating strike.", (3, 6), "CHA", True, 0, 6),
         Move("bard_l40_sonic_boom", "Sonic Boom", "Unleash a wave of pure sound that shatters reality.", (4, 10), "CHA", True, 0, 2),
         Move("bard_l50_final_cadence", "Final Cadence", "The ultimate performance that brings all things to their end.", (6, 10), "CHA", True, 0, 1),
     ],
@@ -973,6 +1093,35 @@ def _perform_basic_attack(gs, mv: Move) -> bool:
                 total_dmg += permanent_damage_bonus
                 print(f"[moves] Permanent damage bonus +{permanent_damage_bonus} applied: {total_dmg - permanent_damage_bonus} → {total_dmg}")
         
+        # Apply type effectiveness (D&D damage type system)
+        type_effectiveness = 1.0
+        effectiveness_label = ""
+        try:
+            # Get attacker's class
+            attacker_class = _class_string(stats) if isinstance(stats, dict) else None
+            
+            # Get move's damage type
+            move_damage_type = _get_move_damage_type(mv, attacker_class)
+            
+            # Get defender's (enemy's) class
+            enemy_stats = _enemy_stats(gs)
+            defender_class = _class_string(enemy_stats) if isinstance(enemy_stats, dict) else None
+            
+            if move_damage_type and defender_class:
+                type_effectiveness = get_type_effectiveness(move_damage_type, defender_class)
+                effectiveness_label = get_effectiveness_label(type_effectiveness)
+                
+                if type_effectiveness != 1.0:
+                    original_dmg = total_dmg
+                    total_dmg = int(total_dmg * type_effectiveness)
+                    print(f"[moves] Type effectiveness: {move_damage_type} vs {defender_class} = {effectiveness_label} ({type_effectiveness}x) | {original_dmg} → {total_dmg}")
+                else:
+                    print(f"[moves] Type effectiveness: {move_damage_type} vs {defender_class} = {effectiveness_label} ({type_effectiveness}x)")
+        except Exception as e:
+            print(f"⚠️ Type effectiveness calculation error: {e}")
+        
+        total_dmg = max(0, total_dmg)
+        
         # Apply self HP cost if move has it (Blood Hunter moves)
         if mv.self_hp_cost > 0:
             a_cur, a_max = _ally_hp_tuple(gs)
@@ -985,6 +1134,16 @@ def _perform_basic_attack(gs, mv: Move) -> bool:
         _set_enemy_hp(gs, new_cur, mx)
 
         print(f"[moves] {mv.label} → damage={total_dmg} | enemy {cur} → {new_cur}")
+        
+        # Store effectiveness info for display (always store, including 1x)
+        if effectiveness_label:
+            st["last_type_effectiveness"] = {
+                "label": effectiveness_label,
+                "multiplier": type_effectiveness,
+                "color": get_effectiveness_color(type_effectiveness)
+            }
+        else:
+            st.pop("last_type_effectiveness", None)
 
         if new_cur <= 0:
             # Trigger fade; wild_vessel will show KO card (from pending_result_payload) then exit.
@@ -993,19 +1152,28 @@ def _perform_basic_attack(gs, mv: Move) -> bool:
 
             n, s = mv.dice
             breakdown = f"{n}d{s} + {mv.ability} = {total_dmg}"
+            ko_message = f"Dealt {total_dmg} ({breakdown})"
+            if effectiveness_label:
+                ko_message += f" [{effectiveness_label}]"
             st["pending_result_payload"] = (
                 "success",
                 f"{mv.label} – KO!",
-                f"Dealt {total_dmg} ({breakdown})"
+                ko_message
             )
 
             # Flag is useful if your scene checks it before deciding what to do after fade
             st["enemy_defeated"] = True
         else:
+            subtitle = f"Hit for {total_dmg}!"
+            if effectiveness_label:
+                subtitle += f" [{effectiveness_label}]"
+            if new_cur <= 0:
+                subtitle += " (Enemy down)"
+            
             st["result"] = {
                 "kind": "info",
                 "title": mv.label,
-                "subtitle": f"Hit for {total_dmg}!",
+                "subtitle": subtitle,
                 "t": 0.0, "alpha": 0, "played": False,
                 "exit_on_close": False,
             }

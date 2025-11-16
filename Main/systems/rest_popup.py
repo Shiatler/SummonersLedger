@@ -9,6 +9,7 @@ import pygame
 import settings as S
 from systems import audio as audio_sys
 from systems import hud_buttons
+from systems import coords
 
 # ---------- Font helpers ----------
 _DH_FONT_PATH = None
@@ -176,8 +177,9 @@ def draw(screen: pygame.Surface, gs):
     if not _OPEN or not _POPUP_RECT:
         return
     
-    # Get mouse position for hover
-    mx, my = pygame.mouse.get_pos()
+    # Get mouse position for hover - Convert to logical coordinates for QHD support
+    screen_mx, screen_my = pygame.mouse.get_pos()
+    mx, my = coords.screen_to_logical((screen_mx, screen_my))
     
     # Draw speech bubble background (rounded rectangle)
     bubble_rect = _POPUP_RECT.copy()

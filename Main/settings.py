@@ -101,6 +101,7 @@ DND_FONT_FILE = "DH.otf"
 MODE_MENU = "MENU"
 MODE_GAME = "GAME"
 MODE_DEATH = "DEATH"
+MODE_PAUSE = "PAUSE"
 
 
 # ===================== Road / Background =====================

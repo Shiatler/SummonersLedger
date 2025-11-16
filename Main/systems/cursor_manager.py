@@ -458,6 +458,18 @@ def _is_hovering_clickable(mouse_pos, gs=None, mode=None):
             except:
                 pass
         
+        # ==================== HELP SCREEN ====================
+        if mode and "HELP" in mode_str:
+            try:
+                from screens import help_screen
+                # Back button is the only clickable control; use its rect function
+                if hasattr(help_screen, '_get_back_rect'):
+                    back_rect = help_screen._get_back_rect()
+                    if back_rect and back_rect.collidepoint(logical_pos):
+                        return True
+            except:
+                pass
+        
         # ==================== BLACK SCREEN (STARTER SELECTION) ====================
         if mode and "BLACK_SCREEN" in mode_str:
             try:

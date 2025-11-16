@@ -8,6 +8,7 @@
 from __future__ import annotations
 import os, pygame
 import settings as S
+from systems import coords
 
 MODE_DEATH = getattr(S, "MODE_DEATH", "DEATH")
 MODE_MENU  = getattr(S, "MODE_MENU",  "MENU")
@@ -206,7 +207,9 @@ def draw(screen: pygame.Surface, gs, dt, **_):
     st["btn_rect"] = btn_rect
 
     # Hover glow only (no border/ring)
-    if btn_rect.collidepoint(pygame.mouse.get_pos()):
+    # Convert mouse coordinates to logical coordinates for QHD support
+    mx, my = coords.screen_to_logical(pygame.mouse.get_pos())
+    if btn_rect.collidepoint(mx, my):
         glow = pygame.Surface((int(btn_rect.w * 1.14), int(btn_rect.h * 1.14)), pygame.SRCALPHA)
         pygame.draw.ellipse(glow, (255, 255, 255, 42), glow.get_rect())
         screen.blit(glow, glow.get_rect(center=btn_rect.center))

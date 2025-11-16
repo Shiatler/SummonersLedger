@@ -11,6 +11,22 @@ from typing import Optional
 # Cache for generated names (token_name -> "FirstName LastName")
 _NAME_CACHE: dict[str, str] = {}
 
+# Public: prefer custom_name in stats if present
+def get_display_vessel_name(token_name: Optional[str], stats: Optional[dict]) -> str:
+    """
+    Resolve the display name for a vessel.
+    - If stats contains non-empty 'custom_name', use that.
+    - Otherwise fall back to deterministic generated name from token_name.
+    """
+    try:
+        if isinstance(stats, dict):
+            custom = (stats.get("custom_name") or "").strip()
+            if custom:
+                return custom
+    except Exception:
+        pass
+    return generate_vessel_name(token_name or "")
+
 # Cache for loaded name lists (vessels)
 _FIRST_NAMES_MALE: Optional[list[str]] = None
 _FIRST_NAMES_FEMALE: Optional[list[str]] = None

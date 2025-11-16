@@ -47,6 +47,7 @@ from screens import (
     menu_screen, char_select, name_entry,
     black_screen, intro_video, settings_screen, pause_screen, master_oak, leaderboard
 )
+from screens import help_screen
 from screens import boss_vs
 from screens import rest as rest_screen
 from world.Tavern import tavern as tavern_screen
@@ -105,6 +106,7 @@ MODE_GAMBLING = "GAMBLING"
 MODE_WHORE = "WHORE"
 MODE_REST = "REST"
 MODE_LEADERBOARD = "LEADERBOARD"
+MODE_HELP = "HELP"
 
 
 
@@ -787,10 +789,13 @@ if __name__ == "__main__":
     clock = pygame.time.Clock()
     
     # Initialize coordinate conversion system with ACTUAL physical dimensions
-    # For fullscreen, force scale to 1.0 if screen is >= 1920x1080
-    if use_fullscreen and actual_width >= S.LOGICAL_WIDTH and actual_height >= S.LOGICAL_HEIGHT:
+    # For fullscreen, force scale to 1.0 only if screen is EXACTLY 1920x1080 (or very close)
+    # For QHD (2560x1440) and other higher resolutions, calculate scale normally to fill screen
+    if use_fullscreen and actual_width == S.LOGICAL_WIDTH and actual_height == S.LOGICAL_HEIGHT:
+        # Native 1920x1080: use scale 1.0 (no scaling, perfect fit)
         coords.update_scale_factors(actual_width, actual_height, force_scale=1.0)
     else:
+        # QHD, 4K, or other resolutions: calculate scale to fill screen (maintains aspect ratio)
         coords.update_scale_factors(actual_width, actual_height)
     
     # Create virtual surface for rendering at logical resolution
@@ -992,10 +997,13 @@ def change_display_mode(mode_name: str, screen_ref) -> pygame.Surface:
     
     # Update coordinate system with ACTUAL surface dimensions
     # This ensures all coordinate conversions work correctly after mode change
-    # For fullscreen, force scale to 1.0 (user requested)
-    if mode_name == "fullscreen":
+    # For fullscreen, force scale to 1.0 only if screen is EXACTLY 1920x1080
+    # For QHD (2560x1440) and other higher resolutions, calculate scale normally to fill screen
+    if mode_name == "fullscreen" and actual_width == S.LOGICAL_WIDTH and actual_height == S.LOGICAL_HEIGHT:
+        # Native 1920x1080: use scale 1.0 (no scaling, perfect fit)
         coords.update_scale_factors(actual_width, actual_height, force_scale=1.0)
     else:
+        # QHD, 4K, or windowed: calculate scale to fill screen (maintains aspect ratio)
         coords.update_scale_factors(actual_width, actual_height)
     
     # Debug output to verify
@@ -1113,15 +1121,14 @@ def blit_virtual_to_screen(virtual_screen, screen):
             blit_virtual_to_screen._last_fullscreen_size = (screen_width, screen_height)
             print(f"🔍 Fullscreen: Using fresh physical size {screen_width}x{screen_height}")
         
-        # CRITICAL: For fullscreen with scale 1.0, screen MUST be >= 1920x1080
-        # If screen is smaller, we can't use scale 1.0 (content would be cut off)
-        if screen_width >= S.LOGICAL_WIDTH and screen_height >= S.LOGICAL_HEIGHT:
-            # Screen is large enough - use scale 1.0
+        # CRITICAL: For fullscreen, only force scale 1.0 if screen is EXACTLY 1920x1080
+        # For QHD (2560x1440) and other higher resolutions, calculate scale normally to fill screen
+        if screen_width == S.LOGICAL_WIDTH and screen_height == S.LOGICAL_HEIGHT:
+            # Native 1920x1080: use scale 1.0 (no scaling, perfect fit)
             coords.update_scale_factors(screen_width, screen_height, force_scale=1.0)
         else:
-            # Screen is too small - calculate scale normally (shouldn't happen in fullscreen)
-            print(f"⚠️ Fullscreen but screen {screen_width}x{screen_height} < logical {S.LOGICAL_WIDTH}x{S.LOGICAL_HEIGHT}")
-            print(f"   Calculating scale instead of forcing 1.0")
+            # QHD, 4K, or other resolutions: calculate scale to fill screen (maintains aspect ratio)
+            # This will scale the virtual screen to fit the physical screen while maintaining aspect ratio
             coords.update_scale_factors(screen_width, screen_height)
     else:
         coords.update_scale_factors(screen_width, screen_height)
@@ -1517,6 +1524,17 @@ while running:
                 del gs._pause_return_to  # Clear the stored mode
             else:
                 mode = next_mode
+
+    # ===================== HELP ===========================
+    elif mode == MODE_HELP:
+        next_mode = help_screen.handle(events, gs, **deps)
+        help_screen.draw(virtual_screen, gs, dt, **deps)
+        blit_virtual_to_screen(virtual_screen, screen)
+        mouse_pos = pygame.mouse.get_pos()
+        cursor_manager.draw_cursor(screen, mouse_pos, gs, mode)
+        pygame.display.flip()
+        if next_mode:
+            mode = next_mode
     
     # ===================== BOSS VS SCREEN =====================
     elif mode == MODE_BOSS_VS:

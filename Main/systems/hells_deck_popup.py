@@ -210,11 +210,8 @@ def handle_event(event, gs) -> bool:
                 return True
     
     elif event.type == pygame.MOUSEBUTTONDOWN:
-        # Convert mouse position to logical coordinates
-        try:
-            mx, my = coords.screen_to_logical(event.pos)
-        except:
-            mx, my = event.pos
+        # event.pos is already converted to logical coordinates by main.py - use directly
+        mx, my = event.pos
         
         if event.button == 1:  # Left click
             # Check arrow button clicks

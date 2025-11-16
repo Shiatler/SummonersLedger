@@ -1041,7 +1041,13 @@ def _draw_result_screen(screen: pygame.Surface, st: dict, dt: float):
     else:
         text = ""
 
-    # Text rendering (simple wrap, matches heal textbox)
+    # Check for type effectiveness info and extract it for color coding
+    effectiveness_info = st.get("last_type_effectiveness")
+    effectiveness_color = None
+    if effectiveness_info:
+        effectiveness_color = effectiveness_info.get("color")
+    
+    # Text rendering with effectiveness color support
     font = _get_dh_font(28)
     words = text.split(" ")
     lines, cur = [], ""
@@ -1058,7 +1064,40 @@ def _draw_result_screen(screen: pygame.Surface, st: dict, dt: float):
 
     y = rect.y + 20
     for line in lines:
-        surf = font.render(line, False, (16, 16, 16))
+        # Check if line contains effectiveness label (e.g., "[2x]", "[0.5x]")
+        line_text = line
+        color = (16, 16, 16)  # Default dark gray
+        
+        # If effectiveness info exists and line contains the label, use effectiveness color
+        if effectiveness_info and effectiveness_color:
+            label = effectiveness_info.get("label", "")
+            if label and f"[{label}]" in line:
+                # Render effectiveness label with color
+                parts = line.split(f"[{label}]")
+                if len(parts) == 2:
+                    # Render text before label
+                    if parts[0]:
+                        surf1 = font.render(parts[0], False, (16, 16, 16))
+                        screen.blit(surf1, (rect.x + 20, y))
+                        x_offset = surf1.get_width()
+                    else:
+                        x_offset = 0
+                    
+                    # Render effectiveness label with color
+                    surf2 = font.render(f"[{label}]", False, effectiveness_color)
+                    screen.blit(surf2, (rect.x + 20 + x_offset, y))
+                    x_offset += surf2.get_width()
+                    
+                    # Render text after label
+                    if parts[1]:
+                        surf3 = font.render(parts[1], False, (16, 16, 16))
+                        screen.blit(surf3, (rect.x + 20 + x_offset, y))
+                    
+                    y += surf2.get_height() + 6
+                    continue
+        
+        # Default rendering (no effectiveness label)
+        surf = font.render(line_text, False, color)
         screen.blit(surf, (rect.x + 20, y))
         y += surf.get_height() + 6
 
@@ -1917,7 +1956,8 @@ def draw(screen, gs, dt, **_):
     if isinstance(active_stats, dict):
         try: ally_lv = int(active_stats.get("level", 1))
         except Exception: ally_lv = 1
-    ally_name  = _pretty_name_from_token(active_name) if active_name else "Ally"
+    from systems.name_generator import get_display_vessel_name
+    ally_name  = get_display_vessel_name(active_name, active_stats) if active_name else "Ally"
     ally_label = f"{ally_name}  lvl {ally_lv}"
 
     # Enemy label

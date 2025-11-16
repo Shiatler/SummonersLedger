@@ -83,14 +83,26 @@ def draw(screen, gs, fonts=None, **kwargs):
     btn_font = fonts["button"]
     btn_y_start = (S.LOGICAL_HEIGHT // 2) + 60
     btn_spacing = 64
-    gs._menu_buttons = [
-        ui.Button("New Game",      (S.LOGICAL_WIDTH // 2, btn_y_start + 0 * btn_spacing), btn_font, enabled=True),
-        ui.Button("Continue Game", (S.LOGICAL_WIDTH // 2, btn_y_start + 1 * btn_spacing), btn_font, enabled=can_continue),
-        ui.Button("Leaderboard",   (S.LOGICAL_WIDTH // 2, btn_y_start + 2 * btn_spacing), btn_font, enabled=True),
-        ui.Button("Delete Save",   (S.LOGICAL_WIDTH // 2, btn_y_start + 3 * btn_spacing), btn_font, enabled=can_continue),
-        ui.Button("Settings",      (S.LOGICAL_WIDTH // 2, btn_y_start + 4 * btn_spacing), btn_font, enabled=True),
-        ui.Button("Quit",          (S.LOGICAL_WIDTH // 2, btn_y_start + 5 * btn_spacing), btn_font, enabled=True),
-    ]
+
+    # State: play submenu open?
+    play_open = bool(getattr(gs, "_menu_play_open", False))
+
+    if not play_open:
+        # Top-level menu: Play + other global options
+        gs._menu_buttons = [
+            ui.Button("Play",         (S.LOGICAL_WIDTH // 2, btn_y_start + 0 * btn_spacing), btn_font, enabled=True),
+            ui.Button("Leaderboard",  (S.LOGICAL_WIDTH // 2, btn_y_start + 1 * btn_spacing), btn_font, enabled=True),
+            ui.Button("Settings",     (S.LOGICAL_WIDTH // 2, btn_y_start + 2 * btn_spacing), btn_font, enabled=True),
+            ui.Button("Quit",         (S.LOGICAL_WIDTH // 2, btn_y_start + 3 * btn_spacing), btn_font, enabled=True),
+        ]
+    else:
+        # Play submenu: New/Continue/Delete (+ Back at the end)
+        gs._menu_buttons = [
+            ui.Button("New Game",      (S.LOGICAL_WIDTH // 2, btn_y_start + 0 * btn_spacing), btn_font, enabled=True),
+            ui.Button("Continue Game", (S.LOGICAL_WIDTH // 2, btn_y_start + 1 * btn_spacing), btn_font, enabled=can_continue),
+            ui.Button("Delete Save",   (S.LOGICAL_WIDTH // 2, btn_y_start + 2 * btn_spacing), btn_font, enabled=can_continue),
+            ui.Button("Back",          (S.LOGICAL_WIDTH // 2, btn_y_start + 3 * btn_spacing), btn_font, enabled=True),
+        ]
     # Store the save check result for handler (for debugging)
     gs._menu_has_save = can_continue
     for b in gs._menu_buttons: b.draw(screen)
@@ -246,6 +258,9 @@ def _draw_new_game_confirm_popup(screen, gs, fonts):
 def handle(events, gs, screen=None, fonts=None, audio_bank=None, **kwargs):
     if not hasattr(gs, "_menu_buttons"):
         return None
+
+    # Top-level vs Play submenu state
+    play_open = bool(getattr(gs, "_menu_play_open", False))
 
     # Check if confirmation popups are active
     delete_popup_active = getattr(gs, "_delete_save_popup_active", False)
@@ -430,13 +445,47 @@ def handle(events, gs, screen=None, fonts=None, audio_bank=None, **kwargs):
                         delattr(gs, "_new_game_confirm_no_rect")
                     return None
 
-    b_new, b_cont, b_leaderboard, b_delete, b_settings, b_quit = gs._menu_buttons
+    # Button tuple depends on current state
+    if not play_open:
+        # Play, Leaderboard, Settings, Quit
+        if len(gs._menu_buttons) < 4:
+            return None
+        b_play, b_leaderboard, b_settings, b_quit = gs._menu_buttons
+    else:
+        # New, Continue, Delete, Back
+        if len(gs._menu_buttons) < 4:
+            return None
+        b_new, b_cont, b_delete, b_back = gs._menu_buttons
 
     for event in events:
         if event.type == pygame.MOUSEBUTTONDOWN and event.button == 1:
 
+            # -------- TOP-LEVEL: PLAY --------
+            if not play_open and b_play.clicked(event):
+                audio_sys.play_click(audio_bank)
+                gs._menu_play_open = True
+                return None
+
+            # -------- TOP-LEVEL: LEADERBOARD --------
+            if not play_open and b_leaderboard.clicked(event):
+                audio_sys.play_click(audio_bank)
+                return "LEADERBOARD"
+
+            # -------- TOP-LEVEL: SETTINGS --------
+            if not play_open and b_settings.clicked(event):
+                audio_sys.play_click(audio_bank)
+                gs._settings_return_to = S.MODE_MENU
+                return "SETTINGS"
+
+            # -------- TOP-LEVEL: QUIT --------
+            if not play_open and b_quit.clicked(event):
+                audio_sys.play_click(audio_bank)
+                pygame.event.post(pygame.event.Event(pygame.QUIT))
+                return None
+
+            # ===== PLAY SUBMENU =====
             # -------- NEW GAME --------
-            if b_new.clicked(event):
+            if play_open and b_new.clicked(event):
                 audio_sys.play_click(audio_bank)
                 # Show confirmation popup
                 gs._new_game_popup_active = True
@@ -444,7 +493,7 @@ def handle(events, gs, screen=None, fonts=None, audio_bank=None, **kwargs):
 
             # -------- CONTINUE --------
             # FIRST: Check if click is on Continue button area
-            elif b_cont.rect.collidepoint(event.pos):
+            elif play_open and b_cont.rect.collidepoint(event.pos):
                 # Click detected on Continue button - NOW check if we should allow it
                 # CRITICAL: Check for valid save data FIRST, ignore button enabled state
                 try:
@@ -464,28 +513,17 @@ def handle(events, gs, screen=None, fonts=None, audio_bank=None, **kwargs):
                 # Return a special indicator that we're continuing (not starting new game)
                 return ("CONTINUE", S.MODE_GAME)
 
-            # -------- LEADERBOARD --------
-            elif b_leaderboard.clicked(event):
-                audio_sys.play_click(audio_bank)
-                return "LEADERBOARD"
-
-            # -------- SETTINGS --------
-            elif b_settings.clicked(event):
-                audio_sys.play_click(audio_bank)
-                gs._settings_return_to = S.MODE_MENU
-                return "SETTINGS"
-
             # -------- DELETE SAVE --------
-            elif b_delete.clicked(event):
+            elif play_open and b_delete.clicked(event):
                 audio_sys.play_click(audio_bank)
                 # Show confirmation popup
                 gs._delete_save_popup_active = True
                 return None
 
-            # -------- QUIT --------
-            elif b_quit.clicked(event):
+            # -------- BACK (close submenu) --------
+            elif play_open and b_back.clicked(event):
                 audio_sys.play_click(audio_bank)
-                pygame.event.post(pygame.event.Event(pygame.QUIT))
+                gs._menu_play_open = False
                 return None
 
     return None

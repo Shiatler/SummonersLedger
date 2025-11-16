@@ -12,6 +12,7 @@ import random
 import pygame
 import settings as S
 from systems import audio as audio_sys
+from systems import coords
 
 # Font helper for textbox
 def _get_dh_font(size: int, bold: bool = False) -> pygame.font.Font:
@@ -303,6 +304,11 @@ def _pretty_name(fname: str | None) -> str:
     from systems.name_generator import generate_vessel_name
     return generate_vessel_name(fname)
 
+def _display_name(token_name: str | None, stats: dict | None) -> str:
+    """Prefer stats['custom_name'] if present, else generated name from token."""
+    from systems.name_generator import get_display_vessel_name
+    return get_display_vessel_name(token_name or "", stats or {})
+
 def _hp_tuple(stats: dict | None) -> tuple[int, int]:
     if isinstance(stats, dict):
         hp = int(stats.get("hp", 10))
@@ -455,6 +461,13 @@ _ITEM_RECTS: list[pygame.Rect] = []
 _ITEM_INDEXES: list[int] = []
 _PANEL_RECT: pygame.Rect | None = None
 _SELECTED: int | None = None   # first click; second click swaps
+
+# --- Rename textbox state ---
+_RENAME_ACTIVE = False
+_RENAME_TEXT = ""
+_RENAME_BLINK_T = 0.0
+_RENAME_IDX: int | None = None
+_HOVER_IDX: int | None = None
 
 # --- Lightweight "use-on-click" mode (e.g., healing, revive) ---
 # mode example: {"kind":"heal", "dice":(1,8), "add_con":True, "revive":False}
@@ -675,6 +688,8 @@ def _set_active(gs, idx):
 # ---------------- Event handling ----------------
 def handle_event(e, gs) -> bool:
     global _SELECTED, _PANEL_RECT, _USE_MODE, _HEAL_TEXTBOX_ACTIVE
+    global _RENAME_ACTIVE, _RENAME_TEXT, _RENAME_BLINK_T, _RENAME_IDX
+    global _HOVER_IDX
     
     # Handle heal textbox dismissal first (modal) - works even when party manager is closed
     if _HEAL_TEXTBOX_ACTIVE:
@@ -700,7 +715,56 @@ def handle_event(e, gs) -> bool:
         
         # Block all other input while textbox is active
         return True
-    
+
+    # Inline rename mode (modal within Party Manager)
+    if _RENAME_ACTIVE:
+        if e.type == pygame.KEYDOWN:
+            if e.key == pygame.K_ESCAPE:
+                _RENAME_ACTIVE = False
+                _RENAME_IDX = None
+                _RENAME_TEXT = ""
+                _RENAME_BLINK_T = 0.0
+                _play_click()
+                return True
+            elif e.key in (pygame.K_RETURN, pygame.K_KP_ENTER):
+                try:
+                    idx = _RENAME_IDX if _RENAME_IDX is not None else -1
+                    stats_list = getattr(gs, "party_vessel_stats", None) or [None]*6
+                    if 0 <= idx < len(stats_list) and isinstance(stats_list[idx], dict):
+                        text = (_RENAME_TEXT or "").strip()
+                        # Empty string clears custom name (fallback to generated)
+                        if text:
+                            stats_list[idx]["custom_name"] = text
+                        else:
+                            if "custom_name" in stats_list[idx]:
+                                try: del stats_list[idx]["custom_name"]
+                                except Exception: stats_list[idx]["custom_name"] = None
+                        gs.party_vessel_stats = stats_list
+                        # Persist immediately
+                        try:
+                            from systems.save_system import save_game
+                            save_game(gs, force=True)
+                        except Exception as ex:
+                            print(f"⚠️ party_manager rename save failed: {ex}")
+                except Exception as ex:
+                    print(f"⚠️ party_manager rename failed: {ex}")
+                _RENAME_ACTIVE = False
+                _RENAME_IDX = None
+                _RENAME_TEXT = ""
+                _RENAME_BLINK_T = 0.0
+                _play_click()
+                return True
+            elif e.key == pygame.K_BACKSPACE:
+                _RENAME_TEXT = _RENAME_TEXT[:-1]
+                return True
+            else:
+                ch = getattr(e, "unicode", "")
+                if ch and ch.isprintable() and len(_RENAME_TEXT) < 30:
+                    _RENAME_TEXT += ch
+                    return True
+        # Block other inputs while renaming
+        return True
+
     if not _OPEN:
         return False
 
@@ -712,8 +776,43 @@ def handle_event(e, gs) -> bool:
         _play_click()
         return True
 
+    # Keyboard shortcuts for rename/reset
+    if e.type == pygame.KEYDOWN:
+        # Choose target index: prefer selected, else hovered
+        names = getattr(gs, "party_slots_names", None) or [None]*6
+        target_idx = _SELECTED if _SELECTED is not None else _HOVER_IDX
+        if e.key == pygame.K_r:
+            if target_idx is not None and 0 <= target_idx < len(names) and names[target_idx]:
+                # Start rename mode
+                stats_list = getattr(gs, "party_vessel_stats", None) or [None]*6
+                from systems.name_generator import get_display_vessel_name
+                prefill = get_display_vessel_name(names[target_idx], stats_list[target_idx] if target_idx < len(stats_list) else {})
+                _RENAME_ACTIVE = True
+                _RENAME_IDX = target_idx
+                _RENAME_TEXT = prefill[:30]
+                _RENAME_BLINK_T = 0.0
+                _play_click()
+                return True
+        if e.key == pygame.K_DELETE:
+            if target_idx is not None and 0 <= target_idx < len(names) and names[target_idx]:
+                # Clear custom name
+                stats_list = getattr(gs, "party_vessel_stats", None) or [None]*6
+                if 0 <= target_idx < len(stats_list) and isinstance(stats_list[target_idx], dict):
+                    if "custom_name" in stats_list[target_idx]:
+                        try: del stats_list[target_idx]["custom_name"]
+                        except Exception: stats_list[target_idx]["custom_name"] = None
+                    gs.party_vessel_stats = stats_list
+                    try:
+                        from systems.save_system import save_game
+                        save_game(gs, force=True)
+                    except Exception as ex:
+                        print(f"⚠️ party_manager reset name save failed: {ex}")
+                    _play_click()
+                    return True
+
     if e.type == pygame.MOUSEBUTTONDOWN:
-        mx, my = e.pos
+        # Convert mouse coordinates to logical coordinates for QHD support
+        mx, my = coords.screen_to_logical(e.pos)
 
         if _PANEL_RECT and not _PANEL_RECT.collidepoint(mx, my):
             # Don't close if textbox is active - let textbox handle the click
@@ -812,6 +911,7 @@ def handle_event(e, gs) -> bool:
 # ---------------- Drawing ----------------
 def draw(screen: pygame.Surface, gs, dt: float = 0.016):
     global _ITEM_RECTS, _ITEM_INDEXES, _PANEL_RECT, _FADE_START_MS
+    global _RENAME_BLINK_T  # incremented below when rename UI is active
     # Draw heal textbox even if party manager is closed (it's modal)
     _draw_heal_textbox(screen, dt)
     
@@ -896,8 +996,10 @@ def draw(screen: pygame.Surface, gs, dt: float = 0.016):
     active_idx = int(getattr(gs, "party_active_idx", 0))
 
     y = inner.y
-    mx, my = pygame.mouse.get_pos()
+    # Convert mouse coordinates to logical coordinates for QHD support
+    mx, my = coords.screen_to_logical(pygame.mouse.get_pos())
 
+    _HOVER_IDX = None
     for i in range(6):
         r = pygame.Rect(inner.x + x_shift, y, inner.w - x_shift, row_h)
         icon_rect = pygame.Rect(r.x, r.y + (row_h - icon)//2, icon, icon)
@@ -913,7 +1015,7 @@ def draw(screen: pygame.Surface, gs, dt: float = 0.016):
             if ico:
                 layer.blit(ico, ico.get_rect(center=icon_rect.center))
 
-            clean = _pretty_name(fname) or "Vessel"
+            clean = _display_name(fname, stats[i]) or "Vessel"
             lvl = int((stats[i] or {}).get("level", 1)) if isinstance(stats[i], dict) else 1
             label = f"{clean}   lvl {lvl}"
             lab_s = name_f.render(label, True, ink)
@@ -938,6 +1040,12 @@ def draw(screen: pygame.Surface, gs, dt: float = 0.016):
             if r.collidepoint(mx, my):
                 glow = pygame.Surface((r.w, r.h), pygame.SRCALPHA); glow.fill((255,255,255,28))
                 layer.blit(glow, r.topleft)
+                _HOVER_IDX = i
+                # Hints: Rename/Reset
+                hint_font = _get_dh_font(max(14, int(sr.h * 0.025)))
+                hint_text = "Rename (R)   Reset (Del)"
+                hint_surf = hint_font.render(hint_text, True, (80, 60, 40))
+                layer.blit(hint_surf, (text_x, bar_y + bar_h + 8))
 
             _ITEM_RECTS.append(r)
             _ITEM_INDEXES.append(i)
@@ -945,6 +1053,32 @@ def draw(screen: pygame.Surface, gs, dt: float = 0.016):
         y += row_h + gap
 
     layer.set_clip(old_clip)
+
+    # Draw rename textbox modal if active
+    if _RENAME_ACTIVE and _RENAME_IDX is not None:
+        _RENAME_BLINK_T += dt
+        sw2, sh2 = layer.get_size()
+        box_h = 140
+        margin_x = 60
+        rect = pygame.Rect(margin_x, sh2 - box_h - 36, sw2 - margin_x * 2, box_h)
+        pygame.draw.rect(layer, (245, 245, 245), rect)
+        pygame.draw.rect(layer, (0, 0, 0), rect, 4, border_radius=8)
+        inner_rect = rect.inflate(-8, -8)
+        pygame.draw.rect(layer, (60, 60, 60), inner_rect, 2, border_radius=6)
+
+        title_font = _get_dh_font(26, bold=True)
+        body_font = _get_dh_font(24, bold=False)
+        title = title_font.render("Rename Vessel", True, (16, 16, 16))
+        layer.blit(title, (inner_rect.x + 16, inner_rect.y + 12))
+
+        # Input text with blinking cursor
+        cursor_on = (int(_RENAME_BLINK_T * 2) % 2 == 0)
+        disp = _RENAME_TEXT + ("_" if cursor_on and len(_RENAME_TEXT) < 30 else "")
+        txt = body_font.render(disp, True, (20, 20, 20))
+        layer.blit(txt, (inner_rect.x + 16, inner_rect.y + 52))
+
+        hint = body_font.render("Enter to confirm • Esc to cancel • Backspace to delete", True, (80, 80, 80))
+        layer.blit(hint, (inner_rect.x + 16, inner_rect.bottom - 36))
 
     if _FADE_START_MS is None:
         alpha = 255

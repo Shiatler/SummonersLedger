@@ -68,10 +68,11 @@ def calculate_battle_currency(gs, enemy_team: Dict) -> int:
     # Team size bonus
     team_size_bonus = max(0, (len(enemy_levels) - 1) * TEAM_SIZE_BONUS_PER_ENEMY)
     
-    # Total bronze
+    # Total bronze (apply hard cap)
     total_bronze = base_bronze + difficulty_bonus + team_size_bonus
     
-    return max(0, total_bronze)  # Ensure non-negative
+    # Cap rewards to at most 300 bronze, never negative
+    return max(0, min(300, total_bronze))
 
 
 def distribute_to_denominations(total_bronze: int, player_level: int) -> Tuple[int, int, int]:

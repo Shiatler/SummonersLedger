@@ -167,7 +167,8 @@ def handle(events, gs, fonts=None, audio_bank=None, **kwargs):
                 return getattr(gs, "_settings_return_to", S.MODE_MENU)
 
         elif event.type == pygame.MOUSEBUTTONDOWN and event.button == 1:
-            mx, my = event.pos
+            # Convert mouse coordinates to logical coordinates for QHD support
+            mx, my = coords.screen_to_logical(event.pos)
             # Check if clicking dropdown button
             if _dropdown_rect and _dropdown_rect.collidepoint(mx, my):
                 _dropdown_open = not _dropdown_open
@@ -196,7 +197,8 @@ def handle(events, gs, fonts=None, audio_bank=None, **kwargs):
                 audio_sys.play_click(audio_bank, vol_scale=1.0)  # tiny feedback
 
         elif event.type == pygame.MOUSEMOTION and event.buttons[0]:
-            mx, my = event.pos
+            # Convert mouse coordinates to logical coordinates for QHD support
+            mx, my = coords.screen_to_logical(event.pos)
             if dragging.get("music") and music_bar:
                 val = _apply_from_mouse(mx, music_bar)
                 pygame.mixer.music.set_volume(val)

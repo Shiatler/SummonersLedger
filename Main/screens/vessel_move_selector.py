@@ -10,6 +10,7 @@ import pygame
 import settings as S
 from typing import Optional
 from systems import audio as audio_sys
+from systems import coords
 
 # Font helper (matches ledger.py)
 _FONT_CACHE: dict[tuple, pygame.font.Font] = {}
@@ -215,12 +216,14 @@ def handle_event(event, gs) -> bool:
             return True
     
     if event.type == pygame.MOUSEMOTION:
-        mx, my = event.pos
+        # Convert mouse coordinates to logical coordinates for QHD support
+        mx, my = coords.screen_to_logical(event.pos)
         _STATE["hovered_move"] = _get_move_at_position(mx, my)
         return False
     
     if event.type == pygame.MOUSEBUTTONDOWN and event.button == 1:
-        mx, my = event.pos
+        # Convert mouse coordinates to logical coordinates for QHD support
+        mx, my = coords.screen_to_logical(event.pos)
         clicked_move = _get_move_at_position(mx, my)
         if clicked_move is not None:
             move_data = _STATE["move_data"][clicked_move]

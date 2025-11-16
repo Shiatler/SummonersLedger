@@ -9,6 +9,7 @@ import pygame
 import settings as S
 from systems import buffs
 from systems import audio as audio_sys
+from systems import coords
 
 # Font helper
 _DH_FONT_PATH = None
@@ -88,13 +89,15 @@ def handle(events, gs, dt=None, **kwargs):
     for event in events:
         if event.type == pygame.MOUSEMOTION:
             # Update hover state
-            mouse_pos = event.pos
+            # Convert mouse coordinates to logical coordinates for QHD support
+            mouse_pos = coords.screen_to_logical(event.pos)
             hovered = _get_card_at_position(mouse_pos, st)
             st["hovered_index"] = hovered
         
         elif event.type == pygame.MOUSEBUTTONDOWN and event.button == 1:
             # Click on a card
-            mouse_pos = event.pos
+            # Convert mouse coordinates to logical coordinates for QHD support
+            mouse_pos = coords.screen_to_logical(event.pos)
             clicked = _get_card_at_position(mouse_pos, st)
             if clicked is not None:
                 st["selected_index"] = clicked

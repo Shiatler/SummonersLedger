@@ -222,6 +222,10 @@ def _pretty_name(fname: str | None) -> str:
     from systems.name_generator import generate_vessel_name
     return generate_vessel_name(fname)
 
+def _display_name(token_name: str | None, stats: dict | None) -> str:
+    """Prefer stats['custom_name'] if present, else generated name from token."""
+    from systems.name_generator import get_display_vessel_name
+    return get_display_vessel_name(token_name or "", stats or {})
 def _hp_tuple(stats: dict | None) -> tuple[int, int]:
     if isinstance(stats, dict):
         hp = int(stats.get("hp", 10))
@@ -329,7 +333,10 @@ def handle_event(e, gs) -> bool:
                 real_idx = _ITEM_INDEXES[j] if j < len(_ITEM_INDEXES) else j
                 names = getattr(gs, "party_slots_names", None) or [None]*6
                 fname = names[real_idx]
-                pretty = _pretty_name(fname) or "Vessel"
+                # Use custom name when available in stats
+                sl_stats = (getattr(gs, "party_vessel_stats", None) or [None]*6)
+                st = sl_stats[real_idx] if 0 <= real_idx < len(sl_stats) else None
+                pretty = _display_name(fname, st) or "Vessel"
                 _CONFIRM = {"slot": real_idx, "name": pretty}
                 _play_click()  # ✅ open confirm feedback
                 return True
@@ -402,7 +409,7 @@ def draw_popup(screen: pygame.Surface, gs):
 
         if has:
             # Name + level
-            clean = _pretty_name(fname) or "Vessel"
+            clean = _display_name(fname, stats[i]) or "Vessel"
             lvl = int((stats[i] or {}).get("level", 1)) if isinstance(stats[i], dict) else 1
 
             text_x = icon_rect.right + int(sr.w * 0.02)

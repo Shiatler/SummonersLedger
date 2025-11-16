@@ -77,7 +77,9 @@ def handle(events, gs, **_):
             
             # Check if back button clicked
             back_rect = st.get("back_button_rect")
-            if back_rect and back_rect.collidepoint(event.pos):
+            # Convert mouse coordinates to logical coordinates for QHD support
+            mx, my = coords.screen_to_logical(event.pos)
+            if back_rect and back_rect.collidepoint(mx, my):
                 return S.MODE_MENU
     
     return None
@@ -216,12 +218,16 @@ def draw(screen: pygame.Surface, gs, dt, **_):
     # Back button
     back_font = _get_font(32, bold=True)
     
-    # Hover effect
+    # Hover effect - Convert mouse coordinates to logical coordinates for QHD support
     try:
         screen_mx, screen_my = pygame.mouse.get_pos()
         mx, my = coords.screen_to_logical((screen_mx, screen_my))
     except:
-        mx, my = pygame.mouse.get_pos()
+        # Fallback: still try to convert even if coords module fails
+        try:
+            mx, my = coords.screen_to_logical(pygame.mouse.get_pos())
+        except:
+            mx, my = pygame.mouse.get_pos()
     
     back_rect = pygame.Rect(0, 0, 200, 50)
     back_rect.center = (S.LOGICAL_WIDTH // 2, S.LOGICAL_HEIGHT - 60)

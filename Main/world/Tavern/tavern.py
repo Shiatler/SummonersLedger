@@ -1498,11 +1498,14 @@ def _draw_whore_confirm_popup(screen, gs, dt: float, screen_w: int, screen_h: in
         (decline_rect, "decline"),
     ]
     
-    # Mouse position in logical coordinates
-    mouse_x, mouse_y = pygame.mouse.get_pos()
-    screen_surface = pygame.display.get_surface()
-    logical_mouse_x = mouse_x * screen_w // screen_surface.get_width() if screen_surface and screen_surface.get_width() != screen_w else mouse_x
-    logical_mouse_y = mouse_y * screen_h // screen_surface.get_height() if screen_surface and screen_surface.get_height() != screen_h else mouse_y
+    # Mouse position in logical coordinates - Convert to logical coordinates for QHD support
+    try:
+        from systems import coords
+        screen_mx, screen_my = pygame.mouse.get_pos()
+        logical_mouse_x, logical_mouse_y = coords.screen_to_logical((screen_mx, screen_my))
+    except (ImportError, AttributeError):
+        # Fallback if coords not available
+        logical_mouse_x, logical_mouse_y = pygame.mouse.get_pos()
     
     # Draw Accept button
     accept_hover = accept_rect.collidepoint(logical_mouse_x, logical_mouse_y)
