@@ -17,6 +17,7 @@ from dataclasses import dataclass
 from typing import Optional, Dict, Any, Iterable, Tuple, List
 
 from systems import audio as audio_sys
+from combat.animation import move_anim as move_anim_sys
 from rolling import roller  # calls are wrapped in try/except
 from combat.stats import proficiency_for_level
 from combat.type_chart import (
@@ -325,7 +326,12 @@ def _perform_enemy_basic_attack(gs, mv: Move) -> bool:
                 "t": 0.0, "alpha": 0, "played": False,
                 "exit_on_close": False,
             }
-            _play_move_sfx(mv.label); _click()
+            try:
+                setattr(gs, "_move_anim", {'target_side': 'ally'})
+                move_anim_sys.start_move_anim(gs, mv)
+            except Exception:
+                pass
+            _play_move_sfx(mv); _click()
             return True
 
         # Damage → target is ALLY
@@ -418,7 +424,12 @@ def _perform_enemy_basic_attack(gs, mv: Move) -> bool:
         else:
             st.pop("last_type_effectiveness", None)
         
-        _play_move_sfx(mv.label); _click()
+        try:
+            setattr(gs, "_move_anim", {'target_side': 'ally'})
+            move_anim_sys.start_move_anim(gs, mv)
+        except Exception:
+            pass
+        _play_move_sfx(mv); _click()
         return True
     finally:
         _set_resolving(False)
@@ -574,29 +585,120 @@ def _slugify_label(label: str) -> str:
     s = re.sub(r"_+", "_", s).strip("_")
     return s or "move"
 
-def _load_move_sfx(label: str):
-    """Load (and cache) a pygame Sound for this move label; return None on failure."""
-    slug = _slugify_label(label)
-    if slug in _SFX_CACHE:
-        return _SFX_CACHE[slug]
-    path = os.path.join(_SFX_DIR, f"{slug}.mp3")
+def _class_and_level_from_move_id(move_id: str) -> tuple[str | None, int | None]:
+    """
+    Extract normalized class key and level from a move id like 'barb_l1_wild_swing' or 'wizard_l20_fireball'.
+    Returns (ClassDisplayName, level_number) where ClassDisplayName is capitalized (e.g., 'Barbarian').
+    """
     try:
-        if not os.path.exists(path):
-            _SFX_CACHE[slug] = None
+        s = (move_id or "").lower()
+        # map prefixes used in ids to canonical class key
+        id_to_class_key = {
+            "barb": "barbarian",
+            "druid": "druid",
+            "rogue": "rogue",
+            "wizard": "wizard",
+            "cleric": "cleric",
+            "paladin": "paladin",
+            "ranger": "ranger",
+            "warlock": "warlock",
+            "monk": "monk",
+            "sorc": "sorcerer",
+            "arti": "artificer",
+            "bh": "bloodhunter",
+            "fighter": "fighter",
+            "bard": "bard",
+            # monsters (optional)
+            "dragon": "dragon",
+            "owlbear": "owlbear",
+            "beholder": "beholder",
+            "golem": "golem",
+            "ogre": "ogre",
+            "nothic": "nothic",
+            "myconid": "myconid",
+        }
+        class_key = None
+        for prefix, key in id_to_class_key.items():
+            if s.startswith(prefix + "_") or s.startswith(prefix + "l") or s.startswith(prefix):
+                class_key = key
+                break
+        lvl = None
+        m = re.search(r"_l(\d+)_", s)
+        if m:
+            try:
+                lvl = int(m.group(1))
+            except Exception:
+                lvl = None
+        # Display name → PascalCase without spaces (e.g., BloodHunter)
+        class_display = None
+        if class_key:
+            parts = re.split(r"[^a-zA-Z0-9]+", class_key)
+            class_display = "".join(p.capitalize() for p in parts if p)
+        return class_display, lvl
+    except Exception:
+        return None, None
+
+def _load_move_sfx(label_or_move) -> pygame.mixer.Sound | None:
+    """
+    Load (and cache) a pygame Sound for a move.
+    Supports two lookup schemes:
+      1) New: Assets/Music/Moves/<Class><Level>.mp3  (e.g., Barbarian1.mp3, Druid10.mp3)
+      2) Legacy: Assets/Music/Moves/<slug(label)>.mp3 (e.g., wild_swing.mp3)
+    Returns None on failure.
+    """
+    # Determine cache key and candidate filenames
+    cache_key = None
+    candidates: list[str] = []
+
+    # If we were passed a Move, try class+level first
+    try:
+        from dataclasses import is_dataclass
+        is_move_obj = is_dataclass(label_or_move) or hasattr(label_or_move, "id")
+    except Exception:
+        is_move_obj = False
+
+    if is_move_obj:
+        mv = label_or_move
+        cache_key = getattr(mv, "id", None) or getattr(mv, "label", None)
+        class_display, lvl = _class_and_level_from_move_id(str(getattr(mv, "id", "")))
+        if class_display and lvl is not None:
+            candidates.append(os.path.join(_SFX_DIR, f"{class_display}{lvl}.mp3"))
+        # fallback to label slug
+        slug = _slugify_label(str(getattr(mv, "label", "move")))
+        candidates.append(os.path.join(_SFX_DIR, f"{slug}.mp3"))
+    else:
+        # string label path (legacy behavior)
+        label = str(label_or_move or "move")
+        cache_key = _slugify_label(label)
+        candidates.append(os.path.join(_SFX_DIR, f"{cache_key}.mp3"))
+
+    # Cache hit?
+    if cache_key in _SFX_CACHE:
+        return _SFX_CACHE[cache_key]
+
+    try:
+        # Try candidates in order
+        chosen = None
+        for path in candidates:
+            if os.path.exists(path):
+                chosen = path
+                break
+        if not chosen:
+            _SFX_CACHE[cache_key] = None
             return None
         if not pygame.mixer.get_init():
             pygame.mixer.init()
-        snd = pygame.mixer.Sound(path)
-        _SFX_CACHE[slug] = snd
+        snd = pygame.mixer.Sound(chosen)
+        _SFX_CACHE[cache_key] = snd
         return snd
     except Exception as e:
-        print(f"⚠️ move SFX load fail {path}: {e}")
-        _SFX_CACHE[slug] = None
+        print(f"⚠️ move SFX load fail: {e}")
+        _SFX_CACHE[cache_key] = None
         return None
 
-def _play_move_sfx(label: str):
+def _play_move_sfx(label_or_move):
     try:
-        snd = _load_move_sfx(label)
+        snd = _load_move_sfx(label_or_move)
         if snd:
             # OLD: snd.play()
             audio_sys.play_sound(snd)   # honors SFX master
@@ -1068,7 +1170,13 @@ def _perform_basic_attack(gs, mv: Move) -> bool:
                 "t": 0.0, "alpha": 0, "played": False,
                 "exit_on_close": False,
             }
-            _play_move_sfx(mv.label)
+            # Start player-side animation towards enemy
+            try:
+                setattr(gs, "_move_anim", {'target_side': 'enemy'})
+                move_anim_sys.start_move_anim(gs, mv)
+            except Exception:
+                pass
+            _play_move_sfx(mv)
             return True
 
         # Damage (double dice on crit)
@@ -1178,7 +1286,13 @@ def _perform_basic_attack(gs, mv: Move) -> bool:
                 "exit_on_close": False,
             }
 
-        _play_move_sfx(mv.label)
+        # Start player-side animation towards enemy
+        try:
+            setattr(gs, "_move_anim", {'target_side': 'enemy'})
+            move_anim_sys.start_move_anim(gs, mv)
+        except Exception:
+            pass
+        _play_move_sfx(mv)
         return True
     finally:
         _set_resolving(False)

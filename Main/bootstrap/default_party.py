@@ -34,7 +34,7 @@ def add_default_on_new_game(gs, *, slot_index: int = 5, token_name: str = "FToke
     gs.party_slots[starter_idx]       = tok_png
     gs.party_tokens[starter_idx]      = tok_png
 
-    level = getattr(gs, "zone_level", 1)
+    level = getattr(gs, "zone_level", 10)
     seed  = getattr(gs, "seed", None)
     rng   = StatRoller(seed) if seed is not None else None
     gs.party_vessel_stats[starter_idx] = generate_vessel_stats_from_asset(tok_png, level=level, rng=rng)

@@ -35,6 +35,7 @@ from combat import moves
 from combat import turn_order
 from combat import enemy_ai
 from screens import party_manager
+from combat.animation import move_anim as move_anim_sys
 
 # ---------------- Tunables ----------------
 FADE_SECONDS   = 0.8
@@ -2085,6 +2086,15 @@ def draw(screen, gs, dt, **_):
 
     # Ally sprite
     if st.get("ally_img"): screen.blit(st["ally_img"], (ax, ay))
+
+    # --- Move animation overlay (draw after sprites and HP bars) ---
+    aw = st["ally_img"].get_width() if st.get("ally_img") else 0
+    ah = st["ally_img"].get_height() if st.get("ally_img") else 0
+    ew = st["enemy_img"].get_width() if st.get("enemy_img") else 0
+    eh = st["enemy_img"].get_height() if st.get("enemy_img") else 0
+    ally_rect = pygame.Rect(ax, ay, aw, ah)
+    enemy_rect = pygame.Rect(ex, ey, ew, eh)
+    move_anim_sys.update_and_draw(screen, gs, ally_rect, enemy_rect, dt)
     
     # Draw heal animation over active vessel (if healing animation is active)
     # Reset flag when animation stops (outside the draw function)

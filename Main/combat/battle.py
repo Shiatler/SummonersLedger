@@ -40,6 +40,7 @@ from combat.btn import run_action
 from combat.btn import bag_action, battle_action, party_action
 
 from screens import party_manager
+from combat.animation import move_anim as move_anim_sys
 
 
 # ---------------- Modes ----------------
@@ -2030,6 +2031,22 @@ def draw(screen: pygame.Surface, gs, dt: float, **_):
         _draw_hp_bar(screen, enemy_bar, st.get("enemy_hp_ratio", 1.0), enemy_label, "right",
                      current_hp=enemy_cur_hp, max_hp=enemy_max_hp)
         _draw_enemy_party_icons(screen, enemy_bar, st)
+
+    # --- Move animation overlay (draw after sprites and HP bars) ---
+    try:
+        aw = ally.get_width() if ally else 0
+        ah = ally.get_height() if ally else 0
+    except Exception:
+        aw = ah = 0
+    enemy_surface_tmp = st.get("enemy_img")
+    try:
+        ew = enemy_surface_tmp.get_width() if enemy_surface_tmp else 0
+        eh = enemy_surface_tmp.get_height() if enemy_surface_tmp else 0
+    except Exception:
+        ew = eh = 0
+    ally_rect = pygame.Rect(ax, ay, aw, ah)
+    enemy_rect = pygame.Rect(ex, ey, ew, eh)
+    move_anim_sys.update_and_draw(screen, gs, ally_rect, enemy_rect, dt)
 
     # Track last enemy hp
     st["last_enemy_hp"] = int(e_cur)
