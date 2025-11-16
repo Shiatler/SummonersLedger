@@ -30,8 +30,13 @@ def get_next_boss_threshold(current_score: int, defeated_bosses: List[int], spaw
     """
     Calculate the next boss threshold based on current score and defeated/spawned bosses.
     Returns None if no more bosses should spawn.
+    
+    Boss schedule:
+    - First boss: 5,000
+    - Second boss: 12,500
+    - After that: every 10,000 points (20k, 30k, 40k, 50k special, 60k, 70k, 80k, 90k, 100k special, then continues)
     """
-    # Check special bosses FIRST (they have priority over deterministic bosses)
+    # Check special bosses FIRST (they have priority over regular bosses)
     for threshold, name in SPECIAL_BOSSES.items():
         if threshold not in defeated_bosses and threshold not in spawned_bosses and current_score >= threshold:
             print(f"[get_next_boss_threshold] Returning special boss {name} at threshold {threshold}")
@@ -46,32 +51,34 @@ def get_next_boss_threshold(current_score: int, defeated_bosses: List[int], spaw
     if SECOND_BOSS_SCORE not in defeated_bosses and SECOND_BOSS_SCORE not in spawned_bosses and current_score >= SECOND_BOSS_SCORE:
         return SECOND_BOSS_SCORE
     
-    # After second boss, spawn every 5000-10000 points (deterministic per boss)
-    if defeated_bosses:
-        last_boss_score = max(defeated_bosses)
-        if last_boss_score >= SECOND_BOSS_SCORE:
-            # Calculate next threshold deterministically based on last boss score
-            # Use a deterministic seed to ensure same threshold each time for this boss
-            import random as _random
-            _random.seed(last_boss_score)
-            gap = _random.randint(5000, 10000)
-            _random.seed()  # Reset seed
-            next_threshold = last_boss_score + gap
-            
-            # Skip if this deterministic threshold conflicts with a special boss threshold
-            if next_threshold in SPECIAL_BOSSES:
-                # If the special boss hasn't been spawned/defeated, skip this deterministic boss
-                if next_threshold not in defeated_bosses and next_threshold not in spawned_bosses:
-                    # Don't return this threshold - let the special boss spawn instead
-                    pass
-                else:
-                    # Special boss already handled, so this deterministic threshold is valid
-                    if next_threshold not in spawned_bosses and current_score >= next_threshold:
-                        return next_threshold
-            else:
-                # Check if this threshold was already spawned
-                if next_threshold not in spawned_bosses and current_score >= next_threshold:
-                    return next_threshold
+    # After second boss, spawn every 10,000 points starting from 20,000
+    # Get all handled thresholds (defeated + spawned)
+    all_handled = set(defeated_bosses) | set(spawned_bosses)
+    
+    # Find the highest handled threshold
+    highest_handled = max(all_handled) if all_handled else SECOND_BOSS_SCORE
+    
+    # If we haven't reached 20k yet, next boss is at 20k
+    if highest_handled < 20000:
+        if 20000 not in all_handled and current_score >= 20000:
+            return 20000
+    
+    # After 20k, calculate next threshold: round up to next 10k interval
+    # Start checking from the next 10k after highest handled
+    next_threshold = ((highest_handled // 10000) + 1) * 10000
+    
+    # Special bosses (50k, 100k) are already checked at the top of this function
+    # If next_threshold is a special boss and hasn't been handled, it will be returned by the check at the top
+    # So if we reach here, either:
+    # 1. The special boss was already handled, so we continue to next 10k
+    # 2. The special boss will be handled by the check at the top (but we shouldn't reach here in that case)
+    # Actually, we can't reach here if next_threshold is a special boss that needs handling,
+    # because the check at the top would have returned it. So if we're here, the special boss
+    # must already be handled, and we should continue normally.
+    
+    # Check if this threshold should spawn
+    if next_threshold not in all_handled and current_score >= next_threshold:
+        return next_threshold
     
     return None
 

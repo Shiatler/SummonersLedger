@@ -490,9 +490,6 @@ def draw_popup(screen: pygame.Surface, gs):
         title = title_f.render("Confirm Swap", True, ink)
         layer.blit(title, title.get_rect(midtop=(panel.centerx, panel.y + int(ph * 0.10))))
 
-        msg = body_f.render(f"Swap to “{_CONFIRM['name']}”?", True, ink)
-        layer.blit(msg, msg.get_rect(midtop=(panel.centerx, panel.y + int(ph * 0.34))))
-
         # YES / NO buttons
         bw = int(pw * 0.30)
         bh = int(ph * 0.28)
@@ -503,8 +500,8 @@ def draw_popup(screen: pygame.Surface, gs):
 
         total_w = bw * 2 + gap
         left_x = panel.centerx - total_w // 2
-        yes_rect.topleft = (left_x, panel.y + int(ph * 0.58))
-        no_rect.topleft  = (left_x + bw + gap, panel.y + int(ph * 0.58))
+        yes_rect.topleft = (left_x, panel.y + int(ph * 0.45))
+        no_rect.topleft  = (left_x + bw + gap, panel.y + int(ph * 0.45))
 
         _CONFIRM_RECTS["yes"] = yes_rect
         _CONFIRM_RECTS["no"]  = no_rect
