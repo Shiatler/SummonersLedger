@@ -1278,10 +1278,14 @@ def draw(screen, gs, dt):
             screen.blit(ability_surf, (left_col_x, y_offset))
             y_offset += line_height
         
-        # Right column: Moves
+        # Right column: Moves + Type Info (stacked vertically: type info under moves)
         right_col_x = divider_x + 20
         right_col_width = (info_box_rect.width // 2) - 40
-        
+        moves_col_x = right_col_x
+        types_col_x = right_col_x
+        moves_col_width = right_col_width
+        types_col_width = right_col_width
+
         # Get moves for this vessel
         try:
             from combat.moves import _normalize_class, _MOVE_REGISTRY
@@ -1314,9 +1318,9 @@ def draw(screen, gs, dt):
         moves_title_font = _get_font(22, bold=True)
         moves_title_text = "Moves"
         moves_title_surf = moves_title_font.render(moves_title_text, True, COLOR_TEXT_HIGHLIGHT)
-        screen.blit(moves_title_surf, (right_col_x, info_box_rect.y + 25))
+        screen.blit(moves_title_surf, (moves_col_x, info_box_rect.y + 25))
         
-        # Draw moves
+        # Draw moves (top section)
         move_font = _get_font(20)
         move_y_offset = info_box_rect.y + 60
         move_line_height = 28
@@ -1328,8 +1332,60 @@ def draw(screen, gs, dt):
             # Move name and damage
             move_text = f"{move.label}: {damage_text}"
             move_surf = move_font.render(move_text, True, COLOR_TEXT)
-            screen.blit(move_surf, (right_col_x, move_y_offset))
+            screen.blit(move_surf, (moves_col_x, move_y_offset))
             move_y_offset += move_line_height
+        
+        # Horizontal divider between Moves and Type section
+        try:
+            sep_y = move_y_offset + 6
+            pygame.draw.rect(screen, COLOR_PANEL_BORDER_INNER, pygame.Rect(moves_col_x, sep_y, right_col_width, 2))
+            move_y_offset = sep_y + 10
+        except Exception:
+            pass
+        
+        # Type info box (damage type, weaknesses, resistances) — bottom section under moves
+        try:
+            from combat.type_chart import (
+                get_class_damage_type,
+                get_class_weaknesses,
+                get_class_resistances,
+                normalize_class_name,
+            )
+            # Normalize class name for type chart
+            class_for_types = stats.get("class_name", "")
+            norm_type_class = normalize_class_name(class_for_types)
+            type_title_font = _get_font(22, bold=True)
+            type_body_font = _get_font(20)
+            type_y = max(move_y_offset, info_box_rect.y + 25)
+
+            # Title
+            type_title_surf = type_title_font.render("Type", True, COLOR_TEXT_HIGHLIGHT)
+            screen.blit(type_title_surf, (types_col_x, type_y))
+            type_y += 34
+
+            if norm_type_class:
+                dmg_type = get_class_damage_type(norm_type_class) or "—"
+                weak_list = get_class_weaknesses(norm_type_class)
+                resist_list = get_class_resistances(norm_type_class)
+
+                # Deals
+                deals_text = f"Deals: {dmg_type}"
+                screen.blit(type_body_font.render(deals_text, True, COLOR_TEXT), (types_col_x, type_y))
+                type_y += 28
+
+                # Weak to
+                weak_text = "Weak to: " + (", ".join(weak_list) if weak_list else "—")
+                screen.blit(type_body_font.render(weak_text, True, COLOR_TEXT), (types_col_x, type_y))
+                type_y += 28
+
+                # Resists
+                resist_text = "Resists: " + (", ".join(resist_list) if resist_list else "—")
+                screen.blit(type_body_font.render(resist_text, True, COLOR_TEXT), (types_col_x, type_y))
+            else:
+                screen.blit(type_body_font.render("Type data unavailable", True, COLOR_TEXT_DIM), (types_col_x, type_y))
+        except Exception as e:
+            # Non-fatal; just skip type box if anything goes wrong
+            pass
     
     # ===================== RIGHT PANEL (Storage Grid) =====================
     right_panel_rect = pygame.Rect(LEFT_PANEL_WIDTH, HEADER_HEIGHT, RIGHT_PANEL_WIDTH, sh - HEADER_HEIGHT)

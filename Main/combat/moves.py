@@ -674,9 +674,29 @@ def _load_move_sfx(label_or_move) -> pygame.mixer.Sound | None:
         class_display, lvl = _class_and_level_from_move_id(str(getattr(mv, "id", "")))
         if class_display and lvl is not None:
             candidates.append(os.path.join(_SFX_DIR, f"{class_display}{lvl}.mp3"))
+        # also try class without level as fallback, e.g., Warlock.mp3
+        if class_display:
+            candidates.append(os.path.join(_SFX_DIR, f"{class_display}.mp3"))
         # fallback to label slug
         slug = _slugify_label(str(getattr(mv, "label", "move")))
         candidates.append(os.path.join(_SFX_DIR, f"{slug}.mp3"))
+        # try by damage type name (e.g., Piercing.mp3), if resolvable
+        try:
+            from combat.type_chart import get_class_damage_type
+            dmg_type = None
+            # prefer explicit damage_type if present on move
+            if getattr(mv, "damage_type", None):
+                dmg_type = mv.damage_type
+            else:
+                # attempt to infer from class_display
+                if class_display:
+                    dmg_type = get_class_damage_type(class_display)
+            if dmg_type:
+                candidates.append(os.path.join(_SFX_DIR, f"{dmg_type}.mp3"))
+        except Exception:
+            pass
+        # final generic fallback
+        candidates.append(os.path.join(_SFX_DIR, "attack.mp3"))
     else:
         # string label path (legacy behavior)
         label = str(label_or_move or "move")
@@ -695,6 +715,11 @@ def _load_move_sfx(label_or_move) -> pygame.mixer.Sound | None:
                 chosen = path
                 break
         if not chosen:
+            # Helpful debug so missing SFX are visible in logs
+            try:
+                print(f"ℹ️ No move SFX found. Tried: " + ", ".join(candidates))
+            except Exception:
+                pass
             _SFX_CACHE[cache_key] = None
             return None
         if not pygame.mixer.get_init():

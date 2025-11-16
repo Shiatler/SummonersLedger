@@ -852,6 +852,25 @@ def handle_event(e, gs) -> bool:
                                 _play_healing_sound(item_id)
                                 # Consume the specific item now (first time we actually use it)
                                 _decrement_inventory(gs, item_id)
+                                
+                                # Check if item count reached 0 - if so, force close party manager
+                                inv = getattr(gs, "inventory", None)
+                                item_count = 0
+                                if isinstance(inv, dict):
+                                    item_count = inv.get(item_id, 0)
+                                elif isinstance(inv, (list, tuple)):
+                                    for rec in inv:
+                                        if isinstance(rec, dict):
+                                            rid = rec.get("id") or rec.get("name")
+                                            if str(rid or "") == item_id:
+                                                item_count = int(rec.get("qty", 0))
+                                                break
+                                
+                                # If item count is 0, force close party manager
+                                if item_count <= 0:
+                                    clear_use_mode()
+                                    close()
+                                    return True
                             
                             # Show heal amount textbox (pass the vessel index to check if it's active)
                             vessel_name = _pretty_name(names[real_idx]) or "Vessel"
