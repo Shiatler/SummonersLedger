@@ -111,10 +111,46 @@ def _beep_fallback(volume=0.8, ms=80, freq=1000):
         return None
 
 def _play_on_free_channel(snd: pygame.mixer.Sound, fade_ms=0):
+    """
+    Play sound on a free channel. If all channels are busy, stop the oldest busy channel.
+    This ensures sounds always play, but long sounds (>2s) may get cut off if channels fill up.
+    """
+    # Try to find a free channel, forcing one if needed
     ch = pygame.mixer.find_channel(True)  # force a free one
     if ch:
         ch.play(snd, fade_ms=fade_ms)
         return True
+    # Fallback: try without forcing (might find an idle channel)
+    ch = pygame.mixer.find_channel(False)
+    if ch:
+        ch.play(snd, fade_ms=fade_ms)
+        return True
+    # Last resort: stop the oldest busy channel and use it
+    # This ensures sounds always play, even if channels are full
+    # NOTE: This can cut off long sounds (>2s) if many sounds play quickly
+    try:
+        num_channels = pygame.mixer.get_num_channels()
+        for i in range(num_channels):
+            ch = pygame.mixer.Channel(i)
+            if ch.get_busy():
+                # Check if this channel is playing a long sound (>2s) - prioritize stopping those
+                try:
+                    current_sound = ch.get_sound()
+                    if current_sound and current_sound.get_length() > 2.0:
+                        ch.stop()  # Stop long sound to make room
+                        ch.play(snd, fade_ms=fade_ms)
+                        return True
+                except Exception:
+                    pass
+        # If no long sounds found, just stop the first busy channel
+        for i in range(num_channels):
+            ch = pygame.mixer.Channel(i)
+            if ch.get_busy():
+                ch.stop()  # Stop the oldest busy channel
+                ch.play(snd, fade_ms=fade_ms)
+                return True
+    except Exception:
+        pass
     return False
 
 def play_sound(snd: pygame.mixer.Sound, vol_scale: float = 1.0, fade_ms: int = 0):
@@ -122,10 +158,25 @@ def play_sound(snd: pygame.mixer.Sound, vol_scale: float = 1.0, fade_ms: int = 0
     if not snd:
         return
     try:
-        snd.set_volume(max(0.0, min(1.0, get_sfx_volume() * float(vol_scale))))
-        _play_on_free_channel(snd, fade_ms=fade_ms)
+        # Ensure mixer is initialized
+        if not pygame.mixer.get_init():
+            init_audio()
+        
+        volume = max(0.0, min(1.0, get_sfx_volume() * float(vol_scale)))
+        snd.set_volume(volume)
+        
+        # Try to play the sound - ensure it actually plays
+        success = _play_on_free_channel(snd, fade_ms=fade_ms)
+        if not success:
+            # Last resort: try playing directly (will use any available channel)
+            try:
+                snd.play(fade_ms=fade_ms)
+            except Exception as e2:
+                print(f"⚠️ play_sound fallback failed: {e2}")
     except Exception as e:
         print(f"⚠️ play_sound failed: {e}")
+        import traceback
+        traceback.print_exc()
 
 # ---------- load ----------
 def load_all() -> AudioBank:

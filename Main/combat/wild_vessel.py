@@ -533,18 +533,24 @@ def _load_type_icon(icon_name: str) -> pygame.Surface | None:
     return None
 
 def _draw_hp_bar(surface: pygame.Surface, rect: pygame.Rect, hp_ratio: float, name: str, align: str,
-                 current_hp: int = None, max_hp: int = None, type_effectiveness: str = None):
+                 current_hp: int = None, max_hp: int = None, type_effectiveness: str = None, damage_type: str = None):
     """
-    Draw HP bar with optional type effectiveness icon.
+    Draw HP bar with optional type effectiveness icon and damage type text.
     type_effectiveness: "weakness" to show Weakness.png, "resist" to show Resist.png, None for nothing
+    damage_type: Damage type string (e.g., "Bludgeoning") to display below HP bar inside the frame
     """
     hp_ratio = max(0.0, min(1.0, hp_ratio))
     x, y, w, h = rect
+    
+    # Expand rect height if damage type is present (add space for damage type text)
+    damage_type_height = 22 if damage_type else 0
+    expanded_rect = pygame.Rect(x, y, w, h + damage_type_height)
+    
     frame, border, gold, inner = (70,45,30), (140,95,60), (185,150,60), (28,18,14)
     back, front = (60,24,24), (28,150,60)
-    pygame.draw.rect(surface, frame, rect, border_radius=10)
-    pygame.draw.rect(surface, border, rect, 3, border_radius=10)
-    inner_rect = rect.inflate(-10, -10)
+    pygame.draw.rect(surface, frame, expanded_rect, border_radius=10)
+    pygame.draw.rect(surface, border, expanded_rect, 3, border_radius=10)
+    inner_rect = expanded_rect.inflate(-10, -10)
     pygame.draw.rect(surface, gold, inner_rect, 2, border_radius=8)
     name_h = max(22, int(h*0.44))
     plate = pygame.Rect(inner_rect.x+8, inner_rect.y+6, inner_rect.w-16, name_h)
@@ -554,7 +560,9 @@ def _draw_hp_bar(surface: pygame.Surface, rect: pygame.Rect, hp_ratio: float, na
     pygame.draw.rect(surface, inner, plate, border_radius=6)
     pygame.draw.rect(surface, gold, plate, 2, border_radius=6)
     pygame.draw.rect(surface, frame, notch, border_radius=6)
-    trough = pygame.Rect(inner_rect.x+12, plate.bottom+8, inner_rect.w-24, inner_rect.h-name_h-20)
+    # Adjust trough height to account for damage type space
+    trough_height = inner_rect.h - name_h - 20 - (damage_type_height if damage_type else 0)
+    trough = pygame.Rect(inner_rect.x+12, plate.bottom+8, inner_rect.w-24, trough_height)
     pygame.draw.rect(surface, back, trough, border_radius=6)
     fw = int(trough.w * hp_ratio)
     if fw > 0:
@@ -562,8 +570,8 @@ def _draw_hp_bar(surface: pygame.Surface, rect: pygame.Rect, hp_ratio: float, na
     for i in range(1,4):
         tx = trough.x + (trough.w * i)//4
         pygame.draw.line(surface, (30,18,12), (tx, trough.y+3), (tx, trough.bottom-3), 2)
-    font = pygame.font.SysFont("georgia", max(20, int(h*0.32)), bold=True)
-    label = font.render(name, True, (230,210,180))
+    name_font = pygame.font.SysFont("georgia", max(20, int(h*0.32)), bold=True)
+    label = name_font.render(name, True, (230,210,180))
     if align=="left":
         surface.blit(label, label.get_rect(midleft=(plate.x+12, plate.centery)))
     else:
@@ -588,19 +596,35 @@ def _draw_hp_bar(surface: pygame.Surface, rect: pygame.Rect, hp_ratio: float, na
         icon_name = "Weakness" if type_effectiveness == "weakness" else "Resist"
         icon = _load_type_icon(icon_name)
         if icon:
-            # Scale icon to fit nicely in the HP bar (about 60% of bar height)
+            # Scale icon to fit nicely in the HP bar (about 60% of original bar height)
             icon_size = max(20, int(h * 0.6))
             scaled_icon = pygame.transform.smoothscale(icon, (icon_size, icon_size))
             # Position per side: ally (left bar) → right side; enemy (right bar) → left side
+            # Use original rect height (h) for vertical centering, not expanded_rect.height
             vertical_offset = -4  # nudge up slightly to level visually
             if align == "left":
                 # Ally HP bar
-                icon_x = rect.right - scaled_icon.get_width() - 8
+                icon_x = expanded_rect.right - scaled_icon.get_width() - 8
             else:
                 # Enemy HP bar
-                icon_x = rect.x + 8
-            icon_y = rect.y + (rect.height - scaled_icon.get_height()) // 2 + vertical_offset
+                icon_x = expanded_rect.x + 8
+            icon_y = expanded_rect.y + (h - scaled_icon.get_height()) // 2 + vertical_offset
             surface.blit(scaled_icon, (icon_x, icon_y))
+    
+    # Draw damage type text inside the frame, below the HP bar
+    if damage_type:
+        # Match the name font style (georgia, bold, similar size)
+        dmg_font = pygame.font.SysFont("georgia", max(20, int(h*0.32)), bold=True)
+        dmg_label = dmg_font.render(damage_type, True, (230, 210, 180))  # Match name color
+        # Position inside inner_rect, below the trough
+        dmg_y = trough.bottom + 2
+        if align == "left":
+            # Ally: position on the left
+            dmg_x = inner_rect.x + 12
+        else:
+            # Enemy: position on the right
+            dmg_x = inner_rect.right - dmg_label.get_width() - 12
+        surface.blit(dmg_label, (dmg_x, dmg_y))
         
 # ---------- XP strip (matches ledger style, compact) ----------
 def _xp_compute(stats: dict) -> tuple[int, int, int, float]:
@@ -2025,6 +2049,7 @@ def draw(screen, gs, dt, **_):
     # Calculate type effectiveness for HP bars
     # For enemy HP bar: Check if enemy is weak/resistant to ally's damage type
     enemy_type_effectiveness = None
+    enemy_damage_type = None
     if st.get("enemy_img") is not None:
         try:
             from combat.type_chart import get_class_damage_type, get_type_effectiveness
@@ -2032,6 +2057,10 @@ def draw(screen, gs, dt, **_):
             
             ally_class = _class_string(active_stats) if isinstance(active_stats, dict) else None
             enemy_class = _enemy_class_string(gs)
+            
+            # Get enemy's damage type for display
+            if enemy_class:
+                enemy_damage_type = get_class_damage_type(enemy_class)
             
             if ally_class and enemy_class:
                 ally_damage_type = get_class_damage_type(ally_class)
@@ -2046,12 +2075,17 @@ def draw(screen, gs, dt, **_):
     
     # For ally HP bar: Check if ally is weak/resistant to enemy's damage type
     ally_type_effectiveness = None
+    ally_damage_type = None
     try:
         from combat.type_chart import get_class_damage_type, get_type_effectiveness
         from combat.moves import _class_string, _enemy_class_string
         
         ally_class = _class_string(active_stats) if isinstance(active_stats, dict) else None
         enemy_class = _enemy_class_string(gs)
+        
+        # Get ally's damage type for display
+        if ally_class:
+            ally_damage_type = get_class_damage_type(ally_class)
         
         if ally_class and enemy_class:
             enemy_damage_type = get_class_damage_type(enemy_class)
@@ -2065,12 +2099,12 @@ def draw(screen, gs, dt, **_):
         print(f"⚠️ Failed to calculate ally type effectiveness: {e}")
     
     _draw_hp_bar(screen, ally_bar, st.get("ally_hp_ratio", 1.0), ally_label, "left",
-                 current_hp=ally_cur_hp, max_hp=ally_max_hp, type_effectiveness=ally_type_effectiveness)
+                 current_hp=ally_cur_hp, max_hp=ally_max_hp, type_effectiveness=ally_type_effectiveness, damage_type=ally_damage_type)
     # XP strip under ally HP plate
     if isinstance(active_stats, dict):
         xp_h = 22  # tweak height as you like
-        # XP strip position (HP text is now on top, so no adjustment needed)
-        xp_rect = pygame.Rect(ally_bar.x, ally_bar.bottom + 6, ally_bar.w, xp_h)
+        # XP strip position: HP bar expands when damage type is present, so always use consistent spacing
+        xp_rect = pygame.Rect(ally_bar.x, ally_bar.bottom + (24 if ally_damage_type else 6), ally_bar.w, xp_h)
         _draw_xp_strip(screen, xp_rect, active_stats)
 
     if st.get("enemy_img") is not None:
@@ -2078,7 +2112,7 @@ def draw(screen, gs, dt, **_):
         enemy_cur_hp = st.get("enemy_cur_hp")
         enemy_max_hp = st.get("enemy_max_hp")
         _draw_hp_bar(screen, enemy_bar, st.get("enemy_hp_ratio", 1.0), enemy_label, "right",
-                     current_hp=enemy_cur_hp, max_hp=enemy_max_hp, type_effectiveness=enemy_type_effectiveness)
+                     current_hp=enemy_cur_hp, max_hp=enemy_max_hp, type_effectiveness=enemy_type_effectiveness, damage_type=enemy_damage_type)
 
     # Enemy KO debounce & fade
     if st.get("last_enemy_hp") is None: st["last_enemy_hp"] = int(e_cur)

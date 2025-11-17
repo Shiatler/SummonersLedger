@@ -70,9 +70,21 @@ base_hud_height = (2 * BUTTON_SIZE) + (1 * GRID_GAP) + (HUD_PADDING * 2)
 HUD_WIDTH = base_hud_width
 HUD_HEIGHT = base_hud_height
 
+# ---------- Button Tooltip Descriptions ----------
+_BUTTON_DESCRIPTIONS = {
+    "bag": "Bag of Holding\n\nItem storage and inventory management. Access your collected scrolls, rations, and other consumables.",
+    "party": "Party Manager\n\nView and manage your summoned vessels. Organize your party and inspect their moves and equipment.",
+    "coinbag": "Merchant's Purse\n\nView your current gold reserves and currency holdings.",
+    "rest": "Campfire\n\nTake a rest to restore health and recover from battle. Requires a safe location.",
+    "book_of_bound": "Book of Bound\n\nA mystical tome that catalogs all vessels you have bound to your will. Contains detailed knowledge of their forms, natures, and the bonds that tie them to you.",
+    "archives": "Archives\n\nA repository where your bound vessels are stored and preserved. Access your collection of vessels that have been bound to your service.",
+    "hells_deck": "Hell's Deck\n\nReview the blessings and curses that have been drawn and chosen during your current journey. See what fate has already been dealt.",
+}
+
 # ---------- HUD State ----------
 _ENABLED = True
 _HUD_RECT = None  # Store the HUD rect for button positioning
+_HOVERED_BUTTON_ID = None  # Track which button is currently hovered
 
 def set_enabled(enabled: bool):
     """Enable or disable the HUD."""
@@ -86,6 +98,95 @@ def is_enabled() -> bool:
 def get_hud_rect() -> pygame.Rect | None:
     """Get the HUD panel rect. Returns None if not calculated yet."""
     return _HUD_RECT
+
+# ---------- Tooltip Drawing ----------
+
+def _draw_tooltip(screen: pygame.Surface, button_id: str, mouse_x: int, mouse_y: int):
+    """Draw a tooltip for the hovered button, similar to shop tooltip style."""
+    tooltip_text = _BUTTON_DESCRIPTIONS.get(button_id, "")
+    if not tooltip_text:
+        return
+    
+    # Use DH font for tooltip
+    tooltip_font = _get_dh_font(18)
+    name_font = _get_dh_font(22)  # Title font (larger size)
+    
+    # Split text into title and description
+    lines = tooltip_text.split("\n")
+    title = lines[0] if lines else ""
+    description = "\n".join(lines[1:]) if len(lines) > 1 else ""
+    
+    # Wrap description text
+    words = description.split() if description else []
+    wrapped_lines = []
+    current_line = ""
+    max_width = 320
+    
+    for word in words:
+        test_line = current_line + (" " if current_line else "") + word
+        if tooltip_font.size(test_line)[0] <= max_width:
+            current_line = test_line
+        else:
+            if current_line:
+                wrapped_lines.append(current_line)
+            current_line = word
+    if current_line:
+        wrapped_lines.append(current_line)
+    
+    # Calculate tooltip size
+    tooltip_padding = 12
+    title_width = name_font.size(title)[0] if title else 0
+    desc_width = max([tooltip_font.size(line)[0] for line in wrapped_lines]) if wrapped_lines else 0
+    tooltip_w = max(250, max(title_width, desc_width) + tooltip_padding * 2)
+    
+    # Calculate height: title + spacing + description lines
+    title_h = name_font.get_height() if title else 0
+    line_h = tooltip_font.get_height() + 2  # 2px spacing between lines
+    tooltip_h = tooltip_padding * 2
+    if title:
+        tooltip_h += title_h + 4  # 4px spacing after title
+    if wrapped_lines:
+        tooltip_h += len(wrapped_lines) * line_h
+    
+    # Position tooltip near mouse, but keep it on screen
+    tooltip_x = mouse_x + 20
+    tooltip_y = mouse_y - tooltip_h - 10
+    
+    # Make sure tooltip stays within logical screen bounds
+    if tooltip_x + tooltip_w > S.LOGICAL_WIDTH:
+        tooltip_x = mouse_x - tooltip_w - 20
+    if tooltip_x < 0:
+        tooltip_x = 10
+    
+    if tooltip_y < 0:
+        tooltip_y = mouse_y + 30
+    if tooltip_y + tooltip_h > S.LOGICAL_HEIGHT:
+        tooltip_y = S.LOGICAL_HEIGHT - tooltip_h - 10
+    
+    tooltip_rect = pygame.Rect(tooltip_x, tooltip_y, tooltip_w, tooltip_h)
+    
+    # Draw tooltip background (matching shop tooltip style)
+    tooltip_bg = pygame.Surface((tooltip_w, tooltip_h), pygame.SRCALPHA)
+    tooltip_bg.fill((245, 245, 245))  # Light background like textbox
+    pygame.draw.rect(tooltip_bg, (0, 0, 0), tooltip_bg.get_rect(), 4, border_radius=8)  # Outer black border
+    inner_tooltip = tooltip_bg.get_rect().inflate(-8, -8)
+    pygame.draw.rect(tooltip_bg, (60, 60, 60), inner_tooltip, 2, border_radius=6)  # Inner dark gray border
+    
+    # Draw text
+    text_y = tooltip_padding
+    if title:
+        title_surface = name_font.render(title, True, (16, 16, 16))
+        tooltip_bg.blit(title_surface, (tooltip_padding, text_y))
+        text_y += title_h + 4
+    
+    if wrapped_lines:
+        for line in wrapped_lines:
+            line_surface = tooltip_font.render(line, True, (16, 16, 16))
+            tooltip_bg.blit(line_surface, (tooltip_padding, text_y))
+            text_y += line_h
+    
+    # Blit tooltip to screen
+    screen.blit(tooltip_bg, tooltip_rect.topleft)
 
 # ---------- Public API ----------
 
@@ -152,6 +253,10 @@ def draw(screen: pygame.Surface, gs):
     except:
         mx, my = screen_mx, screen_my
     
+    # Track hovered button for tooltip
+    global _HOVERED_BUTTON_ID
+    _HOVERED_BUTTON_ID = None
+    
     for idx, btn_def in enumerate(hud_buttons.get_buttons_list()):
         btn_id = btn_def["id"]
         scaled_img = hud_buttons.get_scaled_buttons().get(btn_id)
@@ -186,7 +291,12 @@ def draw(screen: pygame.Surface, gs):
         if btn_rect.collidepoint(mx, my):
             glow = hud_buttons.get_hover_glow((btn_rect.w, btn_rect.h))
             screen.blit(glow, btn_rect.topleft)
+            _HOVERED_BUTTON_ID = btn_id
         
         # Update the button rect cache so clicks still work
         hud_buttons.get_button_rects()[btn_id] = btn_rect
+    
+    # Draw tooltip if hovering over a button
+    if _HOVERED_BUTTON_ID and _HOVERED_BUTTON_ID in _BUTTON_DESCRIPTIONS:
+        _draw_tooltip(screen, _HOVERED_BUTTON_ID, mx, my)
 

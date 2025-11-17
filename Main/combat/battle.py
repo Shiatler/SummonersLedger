@@ -445,6 +445,42 @@ def _resolve_sprite_surface(name: str | None) -> pygame.Surface | None:
 # Cache for type effectiveness icons
 _TYPE_ICON_CACHE = {}
 
+# --- Font helpers for DH font ---
+_DH_FONT_PATH = None
+def _resolve_dh_font() -> str | None:
+    """Find a font file in Assets/Fonts whose filename contains 'DH'."""
+    global _DH_FONT_PATH
+    if _DH_FONT_PATH is not None:
+        return _DH_FONT_PATH
+    
+    candidates = [
+        os.path.join("Assets", "Fonts"),
+        r"C:\Users\Frederik\Desktop\SummonersLedger\Assets\Fonts",
+    ]
+    for folder in candidates:
+        if os.path.isdir(folder):
+            for filename in os.listdir(folder):
+                if "DH" in filename.upper() and filename.lower().endswith((".ttf", ".otf")):
+                    _DH_FONT_PATH = os.path.join(folder, filename)
+                    return _DH_FONT_PATH
+    
+    return None
+
+def _get_dh_font(size: int, bold: bool = False) -> pygame.font.Font:
+    """Prefer DH font; fall back to a system font if missing."""
+    try:
+        path = _resolve_dh_font()
+        if path:
+            return pygame.font.Font(path, size)
+    except Exception:
+        pass
+    
+    # Fallback to system font
+    try:
+        return pygame.font.SysFont("arial", size, bold=bold)
+    except Exception:
+        return pygame.font.Font(None, size)
+
 def _load_type_icon(icon_name: str) -> pygame.Surface | None:
     """Load and cache type effectiveness icon."""
     if icon_name in _TYPE_ICON_CACHE:
@@ -461,18 +497,24 @@ def _load_type_icon(icon_name: str) -> pygame.Surface | None:
     return None
 
 def _draw_hp_bar(surface: pygame.Surface, rect: pygame.Rect, hp_ratio: float, name: str, align: str, 
-                 current_hp: int = None, max_hp: int = None, type_effectiveness: str = None):
+                 current_hp: int = None, max_hp: int = None, type_effectiveness: str = None, damage_type: str = None):
     """
-    Draw HP bar with optional type effectiveness icon.
+    Draw HP bar with optional type effectiveness icon and damage type text.
     type_effectiveness: "weakness" to show Weakness.png, "resist" to show Resist.png, None for nothing
+    damage_type: Damage type string (e.g., "Bludgeoning") to display below HP bar inside the frame
     """
     hp_ratio = max(0.0, min(1.0, hp_ratio))
     x, y, w, h = rect
+    
+    # Expand rect height if damage type is present (add space for damage type text)
+    damage_type_height = 22 if damage_type else 0
+    expanded_rect = pygame.Rect(x, y, w, h + damage_type_height)
+    
     frame, border, gold, inner = (70,45,30), (140,95,60), (185,150,60), (28,18,14)
     back, front = (60,24,24), (28,150,60)
-    pygame.draw.rect(surface, frame, rect, border_radius=10)
-    pygame.draw.rect(surface, border, rect, 3, border_radius=10)
-    inner_rect = rect.inflate(-10, -10)
+    pygame.draw.rect(surface, frame, expanded_rect, border_radius=10)
+    pygame.draw.rect(surface, border, expanded_rect, 3, border_radius=10)
+    inner_rect = expanded_rect.inflate(-10, -10)
     pygame.draw.rect(surface, gold, inner_rect, 2, border_radius=8)
     name_h = max(22, int(h*0.44))
     plate = pygame.Rect(inner_rect.x+8, inner_rect.y+6, inner_rect.w-16, name_h)
@@ -482,7 +524,9 @@ def _draw_hp_bar(surface: pygame.Surface, rect: pygame.Rect, hp_ratio: float, na
     pygame.draw.rect(surface, inner, plate, border_radius=6)
     pygame.draw.rect(surface, gold, plate, 2, border_radius=6)
     pygame.draw.rect(surface, frame, notch, border_radius=6)
-    trough = pygame.Rect(inner_rect.x+12, plate.bottom+8, inner_rect.w-24, inner_rect.h-name_h-20)
+    # Adjust trough height to account for damage type space
+    trough_height = inner_rect.h - name_h - 20 - (damage_type_height if damage_type else 0)
+    trough = pygame.Rect(inner_rect.x+12, plate.bottom+8, inner_rect.w-24, trough_height)
     pygame.draw.rect(surface, back, trough, border_radius=6)
     fw = int(trough.w * hp_ratio)
     if fw > 0:
@@ -490,8 +534,8 @@ def _draw_hp_bar(surface: pygame.Surface, rect: pygame.Rect, hp_ratio: float, na
     for i in range(1,4):
         tx = trough.x + (trough.w * i)//4
         pygame.draw.line(surface, (30,18,12), (tx, trough.y+3), (tx, trough.bottom-3), 2)
-    font = pygame.font.SysFont("georgia", max(20, int(h*0.32)), bold=True)
-    label = font.render(name, True, (230,210,180))
+    name_font = pygame.font.SysFont("georgia", max(20, int(h*0.32)), bold=True)
+    label = name_font.render(name, True, (230,210,180))
     if align=="left":
         surface.blit(label, label.get_rect(midleft=(plate.x+12, plate.centery)))
     else:
@@ -516,19 +560,35 @@ def _draw_hp_bar(surface: pygame.Surface, rect: pygame.Rect, hp_ratio: float, na
         icon_name = "Weakness" if type_effectiveness == "weakness" else "Resist"
         icon = _load_type_icon(icon_name)
         if icon:
-            # Scale icon to fit nicely in the HP bar (about 60% of bar height)
+            # Scale icon to fit nicely in the HP bar (about 60% of original bar height)
             icon_size = max(20, int(h * 0.6))
             scaled_icon = pygame.transform.smoothscale(icon, (icon_size, icon_size))
             # Position per side: ally (left bar) → right side; enemy (right bar) → left side
+            # Use original rect height (h) for vertical centering, not expanded_rect.height
             vertical_offset = -4  # nudge up slightly to level visually
             if align == "left":
                 # Ally HP bar
-                icon_x = rect.right - scaled_icon.get_width() - 8
+                icon_x = expanded_rect.right - scaled_icon.get_width() - 8
             else:
                 # Enemy HP bar
-                icon_x = rect.x + 8
-            icon_y = rect.y + (rect.height - scaled_icon.get_height()) // 2 + vertical_offset
+                icon_x = expanded_rect.x + 8
+            icon_y = expanded_rect.y + (h - scaled_icon.get_height()) // 2 + vertical_offset
             surface.blit(scaled_icon, (icon_x, icon_y))
+    
+    # Draw damage type text inside the frame, below the HP bar
+    if damage_type:
+        # Match the name font style (georgia, bold, similar size)
+        dmg_font = pygame.font.SysFont("georgia", max(20, int(h*0.32)), bold=True)
+        dmg_label = dmg_font.render(damage_type, True, (230, 210, 180))  # Match name color
+        # Position inside inner_rect, below the trough
+        dmg_y = trough.bottom + 2
+        if align == "left":
+            # Ally: position on the left
+            dmg_x = inner_rect.x + 12
+        else:
+            # Enemy: position on the right
+            dmg_x = inner_rect.right - dmg_label.get_width() - 12
+        surface.blit(dmg_label, (dmg_x, dmg_y))
 
 # ---------- XP strip ----------
 def _xp_compute(stats: dict) -> tuple[int, int, int, float]:
@@ -1506,6 +1566,21 @@ def _advance_to_next_enemy(gs, st):
     idx   = prev_idx + 1
 
     if idx >= len(names) or idx >= len(stats):
+        # All enemies defeated - play victory music if not already played
+        if not st.get("victory_music_played", False):
+            victory_path = os.path.join("Assets", "Music", "Sounds", "Victory.mp3")
+            if os.path.exists(victory_path):
+                try:
+                    pygame.mixer.music.stop()
+                    pygame.mixer.music.load(victory_path)
+                    pygame.mixer.music.play(loops=-1)
+                    st["victory_music_played"] = True
+                    print(f"🎵 Victory music started (all enemies defeated): {victory_path}")
+                except Exception as e:
+                    print(f"⚠️ Failed to play victory music: {e}")
+            else:
+                print(f"⚠️ Victory music not found at: {victory_path}")
+        
         st["suppress_enemy_draw"] = True
         _finalize_battle_xp(gs, st)
         return
@@ -1793,10 +1868,12 @@ def handle(events, gs, dt=None, **_):
                 print(f"⚠️ enemy_ai failure: {_e}")
 
             # 👉 Mirror wild_vessel: play move SFX ...
+            # NOTE: Enemy move sounds are already played in moves.py during _perform_enemy_basic_attack
+            # This is a fallback in case the sound didn't play there. Use vol_scale=1.5 to match ally volume.
             try:
                 lbl = st.pop("last_enemy_move_label", None) or getattr(gs, "_last_enemy_move_label", None)
                 if lbl:
-                    moves._play_move_sfx(lbl)
+                    moves._play_move_sfx(lbl, vol_scale=1.5)  # Boost volume to match ally moves
             except Exception as _e:
                 print(f"⚠️ enemy move sfx fallback error: {_e}")
 
@@ -2075,6 +2152,7 @@ def draw(screen: pygame.Surface, gs, dt: float, **_):
     
     # For enemy HP bar: Check if enemy is weak/resistant to ally's damage type
     enemy_type_effectiveness = None
+    enemy_damage_type = None
     if st.get("enemy_img") is not None and not suppress_enemy:
         try:
             from combat.type_chart import get_class_damage_type, get_type_effectiveness
@@ -2087,35 +2165,24 @@ def draw(screen: pygame.Surface, gs, dt: float, **_):
             ally_class = _clean_class_name(ally_class_raw) if ally_class_raw else None
             enemy_class = _clean_class_name(enemy_class_raw) if enemy_class_raw else None
             
-            # Debug output
-            if ally_class_raw or enemy_class_raw:
-                print(f"🔍 Type icon debug - Ally: '{ally_class_raw}' -> '{ally_class}', Enemy: '{enemy_class_raw}' -> '{enemy_class}'")
+            # Get enemy's damage type for display
+            if enemy_class:
+                enemy_damage_type = get_class_damage_type(enemy_class)
             
             if ally_class and enemy_class:
                 ally_damage_type = get_class_damage_type(ally_class)
                 if ally_damage_type:
                     effectiveness = get_type_effectiveness(ally_damage_type, enemy_class)
-                    print(f"🔍 Type effectiveness: {ally_damage_type} vs {enemy_class} = {effectiveness}x")
                     if effectiveness >= 1.9:  # Super effective (2x)
                         enemy_type_effectiveness = "weakness"
-                        print(f"✅ Setting enemy_type_effectiveness = 'weakness'")
                     elif effectiveness <= 0.6:  # Not very effective (0.5x)
                         enemy_type_effectiveness = "resist"
-                        print(f"✅ Setting enemy_type_effectiveness = 'resist'")
-                else:
-                    print(f"⚠️ No damage type found for ally class '{ally_class}'")
-            else:
-                if not ally_class:
-                    print(f"⚠️ No ally class found (raw: '{ally_class_raw}')")
-                if not enemy_class:
-                    print(f"⚠️ No enemy class found (raw: '{enemy_class_raw}')")
-        except Exception as e:
-            print(f"⚠️ Failed to calculate enemy type effectiveness: {e}")
-            import traceback
-            traceback.print_exc()
+        except Exception:
+            pass  # Silently fail
     
     # For ally HP bar: Check if ally is weak/resistant to enemy's damage type
     ally_type_effectiveness = None
+    ally_damage_type = None
     try:
         from combat.type_chart import get_class_damage_type, get_type_effectiveness
         from combat.moves import _class_string, _enemy_class_string
@@ -2127,30 +2194,27 @@ def draw(screen: pygame.Surface, gs, dt: float, **_):
         ally_class = _clean_class_name(ally_class_raw) if ally_class_raw else None
         enemy_class = _clean_class_name(enemy_class_raw) if enemy_class_raw else None
         
+        # Get ally's damage type for display
+        if ally_class:
+            ally_damage_type = get_class_damage_type(ally_class)
+        
         if ally_class and enemy_class:
             enemy_damage_type = get_class_damage_type(enemy_class)
             if enemy_damage_type:
                 effectiveness = get_type_effectiveness(enemy_damage_type, ally_class)
-                print(f"🔍 Ally type effectiveness: {enemy_damage_type} vs {ally_class} = {effectiveness}x")
                 if effectiveness >= 1.9:  # Super effective (2x)
                     ally_type_effectiveness = "weakness"
-                    print(f"✅ Setting ally_type_effectiveness = 'weakness'")
                 elif effectiveness <= 0.6:  # Not very effective (0.5x)
                     ally_type_effectiveness = "resist"
-                    print(f"✅ Setting ally_type_effectiveness = 'resist'")
-            else:
-                print(f"⚠️ No damage type found for enemy class '{enemy_class}'")
-    except Exception as e:
-        print(f"⚠️ Failed to calculate ally type effectiveness: {e}")
-        import traceback
-        traceback.print_exc()
+    except Exception:
+        pass  # Silently fail
     
     _draw_hp_bar(screen, ally_bar, st.get("ally_hp_ratio", 1.0), ally_label, "left",
-                 current_hp=ally_cur_hp, max_hp=ally_max_hp, type_effectiveness=ally_type_effectiveness)
+                 current_hp=ally_cur_hp, max_hp=ally_max_hp, type_effectiveness=ally_type_effectiveness, damage_type=ally_damage_type)
     if isinstance(active_stats, dict):
         xp_h = 22
-        # XP strip position (HP text is now on top, so no adjustment needed)
-        xp_rect = pygame.Rect(ally_bar.x, ally_bar.bottom + 6, ally_bar.w, xp_h)
+        # XP strip position: HP bar expands when damage type is present, so always use consistent spacing
+        xp_rect = pygame.Rect(ally_bar.x, ally_bar.bottom + (24 if ally_damage_type else 6), ally_bar.w, xp_h)
         _draw_xp_strip(screen, xp_rect, active_stats)
 
     # Gate enemy HP bar by suppression too
@@ -2159,8 +2223,8 @@ def draw(screen: pygame.Surface, gs, dt: float, **_):
         enemy_cur_hp = st.get("enemy_cur_hp")
         enemy_max_hp = st.get("enemy_max_hp")
         _draw_hp_bar(screen, enemy_bar, st.get("enemy_hp_ratio", 1.0), enemy_label, "right",
-                     current_hp=enemy_cur_hp, max_hp=enemy_max_hp, type_effectiveness=enemy_type_effectiveness)
-        _draw_enemy_party_icons(screen, enemy_bar, st)
+                     current_hp=enemy_cur_hp, max_hp=enemy_max_hp, type_effectiveness=enemy_type_effectiveness, damage_type=enemy_damage_type)
+        _draw_enemy_party_icons(screen, enemy_bar, st, enemy_damage_type)
 
     # Enemy fade & draw — completely suppressed during result/exit
     if st.get("enemy_img") and not suppress_enemy:
@@ -2217,31 +2281,8 @@ def draw(screen: pygame.Surface, gs, dt: float, **_):
     except Exception:
         moves_busy = False
 
-    # Play victory music immediately when last enemy HP hits 0
-    if (e_cur <= 0 and st.get("enemy_img") is not None and
-        not st.get("victory_music_played", False) and
-        not st.get("result", None) and
-        not suppress_enemy):
-        # Check if this is the last enemy
-        team = st.get("enemy_team") or {}
-        names = team.get("names") or []
-        current_idx = int(st.get("enemy_idx", 0))
-        is_last_enemy = (current_idx + 1 >= len(names))
-        
-        if is_last_enemy:
-            victory_path = os.path.join("Assets", "Music", "Sounds", "Victory.mp3")
-            if os.path.exists(victory_path):
-                try:
-                    # Stop current battle music immediately and play victory music
-                    pygame.mixer.music.stop()
-                    pygame.mixer.music.load(victory_path)
-                    pygame.mixer.music.play(loops=-1)  # Loop until exit
-                    st["victory_music_played"] = True
-                    print(f"🎵 Victory music started: {victory_path}")
-                except Exception as e:
-                    print(f"⚠️ Failed to play victory music: {e}")
-            else:
-                print(f"⚠️ Victory music not found at: {victory_path}")
+    # Victory music is now handled in _advance_to_next_enemy when all enemies are defeated
+    # This ensures it only plays when we actually advance past the last enemy, not when checking HP
 
     should_consider_ko = (
         e_cur <= 0 and st.get("enemy_img") is not None and
@@ -2411,7 +2452,7 @@ def _set_enemy_party_slot_status(st: dict, slot_index: int, status: str) -> None
         slots[target] = status
 
 
-def _draw_enemy_party_icons(surface: pygame.Surface, enemy_bar: pygame.Rect, st: dict) -> None:
+def _draw_enemy_party_icons(surface: pygame.Surface, enemy_bar: pygame.Rect, st: dict, damage_type: str = None) -> None:
     statuses = st.get("enemy_party_status")
     if not isinstance(statuses, list) or not statuses:
         return
@@ -2430,7 +2471,9 @@ def _draw_enemy_party_icons(surface: pygame.Surface, enemy_bar: pygame.Rect, st:
     )
 
     start_x = enemy_bar.centerx - total_width // 2
-    y = enemy_bar.bottom + 8
+    # Move icons down to account for expanded HP bar (add 22px if damage type is present)
+    damage_type_offset = 22 if damage_type else 0
+    y = enemy_bar.bottom + 8 + damage_type_offset
 
     for icon in icons:
         if icon is not None:

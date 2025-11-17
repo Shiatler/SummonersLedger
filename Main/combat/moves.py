@@ -331,7 +331,7 @@ def _perform_enemy_basic_attack(gs, mv: Move) -> bool:
                 move_anim_sys.start_move_anim(gs, mv)
             except Exception:
                 pass
-            _play_move_sfx(mv); _click()
+            _play_move_sfx(mv, vol_scale=1.5); _click()  # Boost enemy move volume to match ally moves
             return True
 
         # Damage → target is ALLY
@@ -440,7 +440,7 @@ def _perform_enemy_basic_attack(gs, mv: Move) -> bool:
             move_anim_sys.start_move_anim(gs, mv)
         except Exception:
             pass
-        _play_move_sfx(mv); _click()
+        _play_move_sfx(mv, vol_scale=1.5); _click()  # Boost enemy move volume to match ally moves
         return True
     finally:
         _set_resolving(False)
@@ -725,6 +725,19 @@ def _load_move_sfx(label_or_move) -> pygame.mixer.Sound | None:
         if not pygame.mixer.get_init():
             pygame.mixer.init()
         snd = pygame.mixer.Sound(chosen)
+        
+        # Check sound length - if it's too long (>2 seconds), it might block other sounds
+        try:
+            length_seconds = snd.get_length()
+            if length_seconds > 2.0:
+                print(f"⚠️ [move SFX] {os.path.basename(chosen)} is {length_seconds:.2f}s long - may block other sounds")
+        except Exception:
+            pass
+        
+        # Note: Sound files are NOT volume-normalized when loaded
+        # If some sounds are quieter than others, it's because the source files have different volumes
+        # Consider normalizing all move sound files to the same peak volume
+        
         _SFX_CACHE[cache_key] = snd
         return snd
     except Exception as e:
@@ -732,12 +745,19 @@ def _load_move_sfx(label_or_move) -> pygame.mixer.Sound | None:
         _SFX_CACHE[cache_key] = None
         return None
 
-def _play_move_sfx(label_or_move):
+def _play_move_sfx(label_or_move, vol_scale: float = 1.0):
+    """
+    Play move sound effect.
+    
+    Args:
+        label_or_move: Move object or string label
+        vol_scale: Volume multiplier (default 1.0). Use 1.5 for enemy moves to match ally volume.
+    """
     try:
         snd = _load_move_sfx(label_or_move)
         if snd:
             # OLD: snd.play()
-            audio_sys.play_sound(snd)   # honors SFX master
+            audio_sys.play_sound(snd, vol_scale=vol_scale)   # honors SFX master
     except Exception:
         pass
 
@@ -1162,7 +1182,13 @@ def queue(gs, move_id: str) -> bool:
 
 def _perform_basic_attack(gs, mv: Move) -> bool:
     """d20 vs AC, then mv.dice + ability mod damage on hit. Info result card on hit/miss."""
+    # Check both _wild and _battle (battle.py uses _battle, wild_vessel uses _wild)
     st = getattr(gs, "_wild", None)
+    if not isinstance(st, dict):
+        st = getattr(gs, "_battle", None)
+        # Sync _battle to _wild so they stay in sync
+        if isinstance(st, dict):
+            gs._wild = st
     if not isinstance(st, dict):
         return False
 
@@ -1212,7 +1238,11 @@ def _perform_basic_attack(gs, mv: Move) -> bool:
                 move_anim_sys.start_move_anim(gs, mv)
             except Exception:
                 pass
-            _play_move_sfx(mv)
+            # Play move sound - ensure it plays even if channels are busy
+            try:
+                _play_move_sfx(mv)
+            except Exception as e:
+                print(f"⚠️ Failed to play ally move sound for {mv.label}: {e}")
             return True
 
         # Damage (double dice on crit)
@@ -1322,13 +1352,17 @@ def _perform_basic_attack(gs, mv: Move) -> bool:
                 "exit_on_close": False,
             }
 
-        # Start player-side animation towards enemy
+        # Start player-side animation towards enemy (for both KO and non-KO cases)
         try:
             setattr(gs, "_move_anim", {'target_side': 'enemy'})
             move_anim_sys.start_move_anim(gs, mv)
         except Exception:
             pass
-        _play_move_sfx(mv)
+        # Play move sound - ensure it plays even if channels are busy (for both KO and non-KO cases)
+        try:
+            _play_move_sfx(mv)
+        except Exception as e:
+            print(f"⚠️ Failed to play ally move sound (hit) for {mv.label}: {e}")
         return True
     finally:
         _set_resolving(False)
