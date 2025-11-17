@@ -320,11 +320,13 @@ def enter(gs, **_):
     # Use logical resolution for virtual screen dimensions (not physical screen size)
     sw, sh = S.LOGICAL_WIDTH, S.LOGICAL_HEIGHT
 
-    # Music - check if this is a boss encounter
-    is_boss = getattr(gs, "encounter_type", None) == "BOSS"
+    # Music - check if this is a boss or rival encounter
+    encounter_type = getattr(gs, "encounter_type", None)
+    is_boss = encounter_type == "BOSS"
+    is_rival = encounter_type == "RIVAL"
     # If coming from VS screen, music is already playing - don't restart it
-    coming_from_vs = getattr(gs, "_coming_from_boss_vs", False) and is_boss
-    print(f"🎵 [summoner_battle.enter] is_boss={is_boss}, coming_from_vs={coming_from_vs}, flag={getattr(gs, '_coming_from_boss_vs', False)}")
+    coming_from_vs = getattr(gs, "_coming_from_boss_vs", False) and (is_boss or is_rival)
+    print(f"🎵 [summoner_battle.enter] is_boss={is_boss}, is_rival={is_rival}, coming_from_vs={coming_from_vs}, flag={getattr(gs, '_coming_from_boss_vs', False)}")
     track = None
     
     if not coming_from_vs:
@@ -333,8 +335,8 @@ def enter(gs, **_):
             pygame.mixer.music.fadeout(200)
         except Exception:
             pass
-        if is_boss:
-            track = _pick_boss_track()
+        if is_boss or is_rival:
+            track = _pick_boss_track()  # Rivals use boss music
         else:
             track = _pick_summoner_track()
         if track:
@@ -383,9 +385,11 @@ def enter(gs, **_):
 
     # Sprites
     ally_img  = _load_player_summoner_big(gs)
-    # Check if this is a boss encounter - use boss sprite directly
-    is_boss = getattr(gs, "encounter_type", None) == "BOSS"
-    if is_boss:
+    # Check if this is a boss or rival encounter - use boss sprite directly
+    encounter_type = getattr(gs, "encounter_type", None)
+    is_boss = encounter_type == "BOSS"
+    is_rival = encounter_type == "RIVAL"
+    if is_boss or is_rival:
         # For bosses, use the sprite directly from encounter_sprite or boss_data
         boss_data = getattr(gs, "encounter_boss_data", None)
         if boss_data and boss_data.get("sprite"):
@@ -444,11 +448,16 @@ def enter(gs, **_):
     ally_stats = party_stats[active_idx] if 0 <= active_idx < len(party_stats) else None
 
     # Enemy name for the challenge line
-    # Check if this is a boss encounter
-    is_boss = getattr(gs, "encounter_type", None) == "BOSS"
-    if is_boss:
-        # Boss name is already set in encounter_name
-        enemy_name = getattr(gs, "encounter_name", "Boss")
+    # Check if this is a boss or rival encounter
+    if is_boss or is_rival:
+        # For rivals, use gs.rival_name (set during name entry), fallback to encounter_name, then "Rival"
+        if is_rival:
+            rival_name_from_gs = getattr(gs, "rival_name", None)
+            encounter_name = getattr(gs, "encounter_name", None)
+            enemy_name = rival_name_from_gs or encounter_name or "Rival"
+            print(f"🔍 [summoner_battle] is_rival=True, gs.rival_name='{rival_name_from_gs}', encounter_name='{encounter_name}', final='{enemy_name}'")
+        else:
+            enemy_name = getattr(gs, "encounter_name", "Boss")
         st_text = f"You are challenged by {enemy_name}!"
     else:
         # Regular summoner - use name generator
@@ -525,12 +534,14 @@ def handle(events, gs, dt=None, **_):
         # (keep music playing seamlessly — no fade/stop here)
 
         # Clear encounter-related flags so overworld can trigger again later
-        # BUT preserve boss data - battle.py needs it for team generation
+        # BUT preserve boss/rival data - battle.py needs it for team generation
         gs.in_encounter = False
-        # Preserve boss data - battle.py will use it and then clear it
-        is_boss = getattr(gs, "encounter_type", None) == "BOSS"
-        if not is_boss:
-            # Only clear these for regular summoners
+        # Preserve boss/rival data - battle.py will use it and then clear it
+        encounter_type = getattr(gs, "encounter_type", None)
+        is_boss = encounter_type == "BOSS"
+        is_rival = encounter_type == "RIVAL"
+        if not is_boss and not is_rival:
+            # Only clear these for regular summoners (not bosses or rivals)
             gs.encounter_name = ""
             gs.encounter_sprite = None
             # Clear boss flags if they somehow exist
@@ -538,7 +549,7 @@ def handle(events, gs, dt=None, **_):
                 delattr(gs, "encounter_type")
             if hasattr(gs, "encounter_boss_data"):
                 delattr(gs, "encounter_boss_data")
-        # For bosses, keep encounter_type and encounter_boss_data - battle.py will handle them
+        # For bosses and rivals, keep encounter_type and encounter_boss_data - battle.py will handle them
         setattr(gs, "_went_to_summoner", False)
         setattr(gs, "_went_to_wild", False)
 

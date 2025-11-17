@@ -88,57 +88,103 @@ def spawn_rival_ahead(gs, start_x, summoners):
         "pos": Vector2(x, y),
         "side": side,
     })
+    print(f"✅ Spawned summoner '{display_name}' at ({x:.1f}, {y:.1f}), side={side}, total_on_map={len(gs.rivals_on_map)}")
 
 
 def update_rivals(gs, dt, player_half: Vector2):
-    """Trigger encounter when the player overlaps a rival in the same lane."""
+    """Check if player is close to a rival and trigger encounter (similar to bosses)."""
     if gs.in_encounter:
         return
-
+    
+    # Don't check for collisions during rival intro animation
+    if getattr(gs, "rival_intro_active", False):
+        return
+    
+    if not hasattr(gs, "rivals_on_map"):
+        gs.rivals_on_map = []
+        return
+    
     SIZE_W, SIZE_H = S.PLAYER_SIZE
+    # Rivals are same size as player
+    RIVAL_SIZE_W = SIZE_W
+    RIVAL_SIZE_H = SIZE_H
+    
+    # Check proximity - use same threshold as vessels (LANE_OFFSET + SIZE_W)
+    # This accounts for summoners spawning on left/right lanes
     x_threshold = S.LANE_OFFSET + SIZE_W
     triggered_index = None
-
-    player_top    = gs.player_pos.y - player_half.y
+    
+    player_top = gs.player_pos.y - player_half.y
     player_bottom = gs.player_pos.y + player_half.y
-
-    for i, r in enumerate(gs.rivals_on_map):
-        same_lane = abs(r["pos"].x - gs.player_pos.x) <= x_threshold
-
-        rival_top    = r["pos"].y - SIZE_H // 2
-        rival_bottom = r["pos"].y + SIZE_H // 2
-
+    
+    for i, rival_data in enumerate(gs.rivals_on_map):
+        same_lane = abs(rival_data["pos"].x - gs.player_pos.x) <= x_threshold
+        
+        rival_top = rival_data["pos"].y - RIVAL_SIZE_H // 2
+        rival_bottom = rival_data["pos"].y + RIVAL_SIZE_H // 2
+        
         in_front = player_top <= (rival_bottom + S.FRONT_TOLERANCE)
         overlapping_vertically = player_bottom >= (rival_top - S.FRONT_TOLERANCE)
-
+        
         if same_lane and in_front and overlapping_vertically:
-            gs.in_encounter     = True
-            gs.encounter_timer  = S.ENCOUNTER_SHOW_TIME
-            # Store both generated name and original filename
-            gs.encounter_summoner_filename = r.get("filename", r.get("name", "MSummoner1"))  # Original filename for sprite
-            gs.encounter_name = r.get("name", "MSummoner1")  # Generated name (already generated in spawn_rival_ahead)
-            gs.encounter_sprite = r["sprite"]
-            gs.encounter_stats  = None  # rivals can have stats later if you want
-            triggered_index     = i
+            # Check if this is a rival (has encounter_number) or regular summoner
+            encounter_number = rival_data.get("encounter_number")
+            
+            if encounter_number is not None:
+                # This is a rival - trigger rival intro animation
+                from world import rival
+                rival.trigger_rival_intro_animation(gs, encounter_number, rival_data)
+                print(f"🎯 Rival encounter triggered (encounter #{encounter_number})")
+            else:
+                # This is a regular summoner - go directly to battle (no popup)
+                summoner_name = rival_data.get("name", "Summoner")
+                print(f"⚔️ Regular summoner encounter triggered: {summoner_name}")
+                gs.encounter_name = summoner_name
+                gs.encounter_sprite = rival_data.get("sprite")
+                gs.encounter_stats = None  # No stats for summoner battles (team is generated in battle)
+                gs.encounter_summoner_filename = rival_data.get("filename")  # Store filename for battle
+                # Explicitly clear encounter_type to ensure it's not set to something else
+                if hasattr(gs, "encounter_type"):
+                    delattr(gs, "encounter_type")
+                # Don't set in_encounter - go directly to battle
+                # The main loop will detect encounter_sprite and transition to MODE_SUMMONER_BATTLE
+                print(f"   Ready for battle: name={summoner_name}, filename={rival_data.get('filename')}")
+            
+            triggered_index = i
             break
-
+    
     if triggered_index is not None:
+        milestone = gs.rivals_on_map[triggered_index].get("milestone")
         gs.rivals_on_map.pop(triggered_index)
-
+        # Mark milestone as completed after battle (will be handled in battle completion)
+    
     # Cull far below player
     cutoff = gs.player_pos.y + S.HEIGHT * 1.5
     gs.rivals_on_map[:] = [r for r in gs.rivals_on_map if r["pos"].y < cutoff]
 
 
 def draw_rivals(screen, cam, gs):
-    SIZE_W, SIZE_H = S.PLAYER_SIZE
-    for r in gs.rivals_on_map:
-        pos = r["pos"]
-        screen.blit(
-            r["sprite"],
-            (pos.x - cam.x - SIZE_W // 2,
-             pos.y - cam.y - SIZE_H // 2)
-        )
+    """Draw rival sprites on the map (similar to bosses)."""
+    if not hasattr(gs, "rivals_on_map"):
+        return
+    
+    for rival_data in gs.rivals_on_map:
+        pos = rival_data["pos"]
+        sprite = rival_data.get("sprite")
+        
+        # Use rival image if available, otherwise use idle sprite
+        if not sprite:
+            # Try to get rival image from gs
+            if hasattr(gs, "rival_image") and gs.rival_image:
+                sprite = gs.rival_image
+            elif hasattr(gs, "rival_idle") and gs.rival_idle:
+                sprite = gs.rival_idle
+        
+        if sprite:
+            sprite_half = Vector2(sprite.get_width() / 2, sprite.get_height() / 2)
+            screen_x = int(pos.x - cam.x - sprite_half.x)
+            screen_y = int(pos.y - cam.y - sprite_half.y)
+            screen.blit(sprite, (screen_x, screen_y))
 
 
 # ===================== Vessels (mist shadows) =================
@@ -223,8 +269,10 @@ def update_vessels(gs, dt, player_half: Vector2, vessels, rare_vessels):
             gs.encounter_stats  = stats
             # Store original token name for stat generation
             gs.encounter_token_name = asset_name
-            gs.in_encounter     = True
-            gs.encounter_timer  = S.ENCOUNTER_SHOW_TIME
+            gs.encounter_type = "WILD_VESSEL"  # Mark as wild vessel encounter
+            # Don't set in_encounter - go directly to battle (no popup)
+            # The main loop will detect encounter_stats and transition to MODE_WILD_VESSEL
+            print(f"🎯 Wild vessel encounter triggered: {gs.encounter_name}")
             triggered_index     = i
             break
 
@@ -354,8 +402,9 @@ def update_monsters(gs, dt, player_half: Vector2):
             # Store original asset name for stat generation
             gs.encounter_token_name = asset_name
             gs.encounter_type = "MONSTER"  # Mark as monster encounter
-            gs.in_encounter     = True
-            gs.encounter_timer  = S.ENCOUNTER_SHOW_TIME
+            # Don't set in_encounter - go directly to battle (no popup)
+            # The main loop will detect encounter_stats and transition to MODE_WILD_VESSEL
+            print(f"🎯 Monster encounter triggered: {gs.encounter_name}")
             triggered_index     = i
             break
 
@@ -703,13 +752,15 @@ def update_bosses(gs, dt, player_half: Vector2):
         overlapping_vertically = player_bottom >= (boss_top - S.FRONT_TOLERANCE)
         
         if same_lane and in_front and overlapping_vertically:
-            # Trigger boss encounter - main loop will route to VS screen
-            gs.in_encounter = True
-            gs.encounter_timer = S.ENCOUNTER_SHOW_TIME
+            # Trigger boss encounter - go directly to VS screen (no popup)
             gs.encounter_name = boss.get("name", "Boss")
             gs.encounter_sprite = boss.get("sprite")
+            gs.encounter_stats = None  # No stats for boss battles (team is generated/pre-generated)
             gs.encounter_type = "BOSS"  # Mark as boss encounter
             gs.encounter_boss_data = boss  # Store full boss data for battle
+            # Don't set in_encounter - go directly to VS screen
+            # The main loop will detect encounter_type == "BOSS" and transition to MODE_BOSS_VS
+            print(f"🎯 Boss encounter triggered: {boss.get('name', 'Boss')}")
             triggered_index = i
             break
     

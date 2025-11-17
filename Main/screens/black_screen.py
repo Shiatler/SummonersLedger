@@ -167,6 +167,45 @@ def _ensure_revealed_starter_for_class(gs, class_key: str):
     if not starter_img:
         print(f"[starter] No candidates found for {prefix} in {_STARTERS_DIR}")
 
+def _assign_rival_starter(gs, player_class: str):
+    """
+    Assign rival starter based on player starter weakness.
+    Weakness mapping:
+    - Player Barbarian (weak to Slashing) → Rival Rogue (deals Slashing)
+    - Player Druid (weak to Bludgeoning) → Rival Barbarian (deals Bludgeoning)
+    - Player Rogue (weak to Piercing) → Rival Druid (deals Piercing)
+    """
+    if not player_class:
+        return
+    
+    # Map player class to rival class based on weakness
+    rival_class_map = {
+        "barbarian": "rogue",    # Barbarian weak to Slashing → Rogue deals Slashing
+        "druid": "barbarian",     # Druid weak to Bludgeoning → Barbarian deals Bludgeoning
+        "rogue": "druid",         # Rogue weak to Piercing → Druid deals Piercing
+    }
+    
+    rival_class = rival_class_map.get(player_class.lower())
+    if not rival_class:
+        print(f"⚠️ Unknown player class '{player_class}' for rival starter assignment")
+        return
+    
+    # Store rival starter class
+    gs.rival_starter_class = rival_class
+    
+    # Pick random starter from rival's class
+    prefix = _PREFIX_MAP.get(rival_class)
+    if not prefix:
+        print(f"⚠️ No prefix found for rival class '{rival_class}'")
+        return
+    
+    _, starter_name, _ = _pick_random_starter(prefix)
+    if starter_name:
+        gs.rival_starter_name = starter_name
+        print(f"✅ Assigned rival starter: {starter_name} (class: {rival_class})")
+    else:
+        print(f"⚠️ Failed to pick rival starter for class '{rival_class}'")
+
 # ---------- Screen lifecycle ----------
 def enter(gs, **_):
     if hasattr(gs, "_class_select"):
@@ -310,6 +349,9 @@ def handle(events, gs, saves=None, audio_bank=None, **_):
                                     print("ℹ️ No empty party slots available.")
 
                             # No autosave - user must manually save via "Save Game" button
+                            
+                            # Determine rival starter based on player starter weakness
+                            _assign_rival_starter(gs, gs.revealed_class)
                         else:
                             print(f"ℹ️ Token file not found for '{starter_name}' in {_STARTERS_DIR}")
                     else:

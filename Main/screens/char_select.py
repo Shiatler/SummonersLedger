@@ -18,6 +18,11 @@ def enter(gs, screen=None, fonts=None, menu_bg=None, audio_bank=None, player_var
     gs._char_male_btn = None
     gs._char_fem_btn  = None
     gs._char_buttons  = None
+    # Clear rival data when entering character select (fresh start)
+    gs.rival_gender = None
+    gs.rival_name = None
+    gs.rival_starter_class = None
+    gs.rival_starter_name = None
 
 def draw(screen, gs, fonts=None, menu_bg=None, player_variants=None, **_):
     # Prefer current deps, fallback to cached set on gs
@@ -50,6 +55,7 @@ def handle(events, gs, screen=None, fonts=None, audio_bank=None, **_):
             if male and male.clicked(event):
                 audio_sys.play_click(audio_bank)
                 gs.chosen_gender = "male"
+                gs.rival_gender = "female"  # Rival is opposite gender
                 # (optional) prime token so HUD can show correct portrait later
                 gs.player_token = party_ui.load_player_token("male")
                 gs.player_name = ""
@@ -59,6 +65,7 @@ def handle(events, gs, screen=None, fonts=None, audio_bank=None, **_):
             if fem and fem.clicked(event):
                 audio_sys.play_click(audio_bank)
                 gs.chosen_gender = "female"
+                gs.rival_gender = "male"  # Rival is opposite gender
                 gs.player_token = party_ui.load_player_token("female")
                 gs.player_name = ""
                 gs._name_state = {"text": "", "blink_timer": 0.0, "cursor_on": True}

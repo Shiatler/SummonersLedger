@@ -56,16 +56,43 @@ def get_next_boss_threshold(current_score: int, defeated_bosses: List[int], spaw
     all_handled = set(defeated_bosses) | set(spawned_bosses)
     
     # Find the highest handled threshold
-    highest_handled = max(all_handled) if all_handled else SECOND_BOSS_SCORE
+    # Start from FIRST_BOSS_SCORE if no bosses have been handled yet
+    highest_handled = max(all_handled) if all_handled else (FIRST_BOSS_SCORE - 1)
     
-    # If we haven't reached 20k yet, next boss is at 20k
+    # If we haven't reached 20k yet, next boss is at 20k (but only after second boss)
     if highest_handled < 20000:
-        if 20000 not in all_handled and current_score >= 20000:
-            return 20000
+        # Make sure second boss has been handled before spawning at 20k
+        if SECOND_BOSS_SCORE in all_handled:
+            if 20000 not in all_handled and current_score >= 20000:
+                return 20000
     
     # After 20k, calculate next threshold: round up to next 10k interval
     # Start checking from the next 10k after highest handled
+    # But ensure we don't spawn before second boss (12,500)
     next_threshold = ((highest_handled // 10000) + 1) * 10000
+    
+    # Rival milestones where bosses should NOT spawn (rivals spawn at these points)
+    # Rivals spawn at: 10k, 25k, 35k, 45k, 55k, 65k, 75k, 85k, 95k, 105k
+    RIVAL_MILESTONES = [10000, 25000, 35000, 45000, 55000, 65000, 75000, 85000, 95000, 105000]
+    
+    # Safety check: don't spawn bosses at rival milestone points
+    # Keep skipping until we find a non-rival milestone (or hit a special boss)
+    max_attempts = 10  # Prevent infinite loop
+    attempts = 0
+    while next_threshold in RIVAL_MILESTONES and attempts < max_attempts:
+        # Skip this threshold (rival will spawn here instead)
+        next_threshold = next_threshold + 10000
+        attempts += 1
+        # Special bosses (50k, 100k) are already checked at the top of the function,
+        # so if next_threshold becomes a special boss, it will be handled there
+    
+    # Additional safety check: don't spawn bosses between 10k and 12.5k (rival territory)
+    if 10000 <= next_threshold < 12500:
+        # Skip to 20k if second boss hasn't been handled yet
+        if SECOND_BOSS_SCORE not in all_handled:
+            if current_score >= 20000:
+                return 20000
+            return None
     
     # Special bosses (50k, 100k) are already checked at the top of this function
     # If next_threshold is a special boss and hasn't been handled, it will be returned by the check at the top

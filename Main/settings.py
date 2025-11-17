@@ -58,7 +58,7 @@ PLAYER_RUN_ANIM_MULT  = 1.5
 SPRITE_SIZE           = PLAYER_SIZE  # temporary compatibility alias
 
 # ===================== Points / Score ========================
-BOOTSTRAP_TOTAL_POINTS = 0  # Starting score awarded on new game
+BOOTSTRAP_TOTAL_POINTS = 9000  # Starting score awarded on new game
 BOOTSTRAP_GOLD = 100  # Starting gold awarded on new game
 
 

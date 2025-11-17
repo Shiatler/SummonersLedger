@@ -1,13 +1,14 @@
 # =============================================================
-# name_entry.py
+# rival_name_entry.py
 # =============================================================
 
 import pygame
 import settings as S
+from systems import name_generator
 
 def enter(gs, **_):
-    if not hasattr(gs, "_name_state"):
-        gs._name_state = {
+    if not hasattr(gs, "_rival_name_state"):
+        gs._rival_name_state = {
             "text": "", 
             "blink_timer": 0.0, 
             "cursor_on": True,
@@ -15,6 +16,16 @@ def enter(gs, **_):
             "key_repeat_timer": 0.0,  # Timer for key repeat
             "key_repeat_delay": 0.05  # Repeat every 50ms when held
         }
+    
+    # Generate default name if not set (based on rival gender)
+    if not hasattr(gs, "rival_name") or not gs.rival_name:
+        # Use a deterministic name generator based on gender
+        # For now, use a simple default
+        if gs.rival_gender == "male":
+            default_name = "Rival"
+        else:
+            default_name = "Rival"
+        # Could use name_generator.generate_summoner_name() here if we had a summoner filename
 
 def draw(screen, gs, dt, fonts=None, menu_bg=None, **_):
     if menu_bg:
@@ -28,7 +39,7 @@ def draw(screen, gs, dt, fonts=None, menu_bg=None, **_):
 
     title_font = fonts["title"]
     font_normal = fonts["normal"]
-    title = title_font.render("Enter Your Name", True, (220, 200, 200))
+    title = title_font.render("Enter Your Rival's Name", True, (220, 200, 200))
     screen.blit(title, title.get_rect(center=(S.LOGICAL_WIDTH // 2, S.LOGICAL_HEIGHT // 4)))
 
     box_w, box_h = 720, 80
@@ -36,7 +47,7 @@ def draw(screen, gs, dt, fonts=None, menu_bg=None, **_):
     pygame.draw.rect(screen, (40, 30, 30), box_rect, border_radius=12)
     pygame.draw.rect(screen, (200, 60, 60), box_rect, 3, border_radius=12)
 
-    st = gs._name_state
+    st = gs._rival_name_state
     disp = st["text"] + ("_" if st["cursor_on"] and len(st["text"]) < 30 else "")
     txt = font_normal.render(disp, True, (240, 220, 220))
     screen.blit(txt, txt.get_rect(center=box_rect.center))
@@ -45,7 +56,7 @@ def draw(screen, gs, dt, fonts=None, menu_bg=None, **_):
     screen.blit(hint, hint.get_rect(center=(S.LOGICAL_WIDTH // 2, S.LOGICAL_HEIGHT // 2 + 120)))
 
 def handle(events, gs, dt, **_):
-    st = gs._name_state
+    st = gs._rival_name_state
     st["blink_timer"] += dt
     if st["blink_timer"] >= 0.5:
         st["blink_timer"] = 0.0
@@ -73,20 +84,17 @@ def handle(events, gs, dt, **_):
             st["key_repeat_timer"] = 0.0  # Reset timer on new key press
             
             if event.key == pygame.K_ESCAPE:
-                return "CHAR_SELECT"
+                return "NAME_ENTRY"  # Go back to player name entry
             elif event.key in (pygame.K_RETURN, pygame.K_KP_ENTER):
-                gs.player_name = (st["text"].strip() or "Summoner")
-                # Initialize rival name state for next screen
-                if not hasattr(gs, "_rival_name_state"):
-                    gs._rival_name_state = {
-                        "text": "", 
-                        "blink_timer": 0.0, 
-                        "cursor_on": True,
-                        "keys_pressed": set(),
-                        "key_repeat_timer": 0.0,
-                        "key_repeat_delay": 0.05
-                    }
-                return "RIVAL_NAME_ENTRY"  # Go to rival name entry instead of Master Oak
+                entered_name = st["text"].strip()
+                gs.rival_name = entered_name if entered_name else "Rival"
+                print(f"✅ Rival name set to: '{gs.rival_name}' (entered: '{entered_name}')")
+                # force fresh randomization next screen
+                if hasattr(gs, "_class_select"):
+                    delattr(gs, "_class_select")
+                gs.selected_class = None
+                gs.revealed_class = None
+                return "MASTER_OAK"
             elif event.key == pygame.K_BACKSPACE:
                 st["text"] = st["text"][:-1]
             else:
@@ -97,3 +105,4 @@ def handle(events, gs, dt, **_):
             st["keys_pressed"].discard(event.key)  # Remove key when released
             st["key_repeat_timer"] = 0.0  # Reset timer when key is released
     return None
+

@@ -339,6 +339,14 @@ def save_game(gs, *, force: bool = False):
         "active_buffs": getattr(gs, "active_buffs", []),
         "buffs_history": getattr(gs, "buffs_history", []),
         "first_overworld_blessing_given": getattr(gs, "first_overworld_blessing_given", False),
+        
+        # Rival system
+        "rival_gender": getattr(gs, "rival_gender", None),
+        "rival_name": getattr(gs, "rival_name", None),
+        "rival_starter_class": getattr(gs, "rival_starter_class", None),
+        "rival_starter_name": getattr(gs, "rival_starter_name", None),
+        "rival_encounters_completed": getattr(gs, "rival_encounters_completed", []),
+        "first_rival_encounter_complete": getattr(gs, "first_rival_encounter_complete", False),
     }
     
     # 🍺 Save tavern state if saving in tavern mode
@@ -533,6 +541,25 @@ def load_game(
         
         # First overworld blessing flag
         gs.first_overworld_blessing_given = bool(data.get("first_overworld_blessing_given", False))
+        
+        # 🎯 Rival system
+        gs.rival_gender = data.get("rival_gender")
+        gs.rival_name = data.get("rival_name")
+        gs.rival_starter_class = data.get("rival_starter_class")
+        gs.rival_starter_name = data.get("rival_starter_name")
+        rival_encounters = data.get("rival_encounters_completed", [])
+        if not isinstance(rival_encounters, list):
+            rival_encounters = []
+        gs.rival_encounters_completed = rival_encounters
+        gs.first_rival_encounter_complete = bool(data.get("first_rival_encounter_complete", False))
+        
+        # Initialize rival animations if rival data exists
+        if gs.rival_name and gs.rival_gender:
+            try:
+                from world import rival
+                rival.initialize_rival_animations(gs)
+            except Exception as e:
+                print(f"⚠️ Failed to initialize rival animations on load: {e}")
 
         # ----- Party tokens: rebuild surfaces from filenames -----
         names = data.get("party_slots_names", [None] * 6)

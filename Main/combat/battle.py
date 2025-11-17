@@ -878,17 +878,25 @@ def _build_initial_state(gs, preserved_bg=None, preserved_ally_pos=None, preserv
         return st
 
     # Team
-    # Check if this is a boss encounter - use pre-generated team if available
-    is_boss = getattr(gs, "encounter_type", None) == "BOSS"
-    print(f"[_build_initial_state] Starting build. is_boss={is_boss}, encounter_type={getattr(gs, 'encounter_type', None)}")
+    # Check if this is a boss or rival encounter - use pre-generated team if available
+    encounter_type = getattr(gs, "encounter_type", None)
+    is_boss = encounter_type == "BOSS"
+    is_rival = encounter_type == "RIVAL"
+    print(f"[_build_initial_state] Starting build. is_boss={is_boss}, is_rival={is_rival}, encounter_type={encounter_type}")
     
-    if is_boss:
+    if is_boss or is_rival:
         boss_data = getattr(gs, "encounter_boss_data", None)
         print(f"[_build_initial_state] boss_data exists: {boss_data is not None}")
         if boss_data:
             print(f"[_build_initial_state] boss_data keys: {list(boss_data.keys()) if isinstance(boss_data, dict) else 'not a dict'}")
             print(f"[_build_initial_state] team_data exists: {boss_data.get('team_data') is not None}")
-            if boss_data.get("team_data"):
+            # For rivals, team is stored directly in boss_data, not in team_data
+            if is_rival and boss_data.get("team"):
+                team = boss_data["team"]
+                print(f"🎯 Using pre-generated rival team for {boss_data.get('name', 'Rival')}")
+                print(f"   Team size: {len(team.get('names', []))} vessels")
+                print(f"   Team names: {team.get('names', [])}")
+            elif boss_data.get("team_data"):
                 team_data = boss_data["team_data"]
                 print(f"[_build_initial_state] team_data type: {type(team_data)}")
                 print(f"[_build_initial_state] team_data keys: {list(team_data.keys()) if isinstance(team_data, dict) else 'not a dict'}")
@@ -1109,13 +1117,20 @@ def enter(gs, audio_bank=None, **_):
     temp_boss_data = getattr(gs, "encounter_boss_data", None)
     print(f"[battle.enter] Before clear: encounter_type={temp_boss_type}, boss_data exists={temp_boss_data is not None}")
     _clear_encounter_flags(gs)
-    # Restore boss data temporarily
-    if temp_boss_type == "BOSS":
+    # Restore boss/rival data temporarily
+    if temp_boss_type == "BOSS" or temp_boss_type == "RIVAL":
         gs.encounter_type = temp_boss_type
         gs.encounter_boss_data = temp_boss_data
-        print(f"[battle.enter] Restored boss data: encounter_type={gs.encounter_type}, boss_data keys={list(temp_boss_data.keys()) if temp_boss_data else 'None'}")
+        print(f"[battle.enter] Restored {'rival' if temp_boss_type == 'RIVAL' else 'boss'} data: encounter_type={gs.encounter_type}, boss_data keys={list(temp_boss_data.keys()) if temp_boss_data else 'None'}")
+        
+        # Mark as rival battle and store encounter info
+        if temp_boss_type == "RIVAL":
+            gs._was_rival_battle = True
+            if temp_boss_data:
+                gs._rival_encounter_number = temp_boss_data.get("encounter_number", 1)
+                gs._rival_milestone = temp_boss_data.get("milestone")
     else:
-        print(f"[battle.enter] Not a boss encounter (type={temp_boss_type})")
+        print(f"[battle.enter] Not a boss/rival encounter (type={temp_boss_type})")
 
     # Close popups just in case
     try:
@@ -1202,6 +1217,77 @@ def enter(gs, audio_bank=None, **_):
 
 
 def _exit_battle(gs):
+    # Check if this was a rival battle
+    was_rival_battle = getattr(gs, "_was_rival_battle", False)
+    encounter_number = getattr(gs, "_rival_encounter_number", None)
+    milestone = getattr(gs, "_rival_milestone", None)
+    
+    # Check if player lost (all vessels dead) - for normal battles (including bosses), let death gate handle it
+    stats = getattr(gs, "party_vessel_stats", None) or []
+    has_living = any(
+        isinstance(st, dict) and int(st.get("current_hp", st.get("hp", 0)) or 0) > 0
+        for st in stats
+    )
+    
+    # If player died, clear buff selection flag (death gate should trigger, not buff selection)
+    if not has_living:
+        if hasattr(gs, "pending_buff_selection"):
+            gs.pending_buff_selection = False
+            print(f"💀 Player died - cleared pending_buff_selection to allow death gate")
+    
+    # Clear boss/rival encounter flags after battle (boss battles are treated like normal battles)
+    # Only rival battles have special handling below
+    if hasattr(gs, "encounter_type"):
+        delattr(gs, "encounter_type")
+    if hasattr(gs, "encounter_boss_data"):
+        delattr(gs, "encounter_boss_data")
+    
+    # Handle rival battle completion
+    if was_rival_battle:
+        # Mark first encounter as complete if it was encounter #1
+        if encounter_number == 1:
+            gs.first_rival_encounter_complete = True
+            print(f"✅ First rival encounter completed")
+        
+        # Mark milestone as completed
+        if milestone is not None:
+            if not hasattr(gs, "rival_encounters_completed"):
+                gs.rival_encounters_completed = []
+            if milestone not in gs.rival_encounters_completed:
+                gs.rival_encounters_completed.append(milestone)
+                print(f"✅ Rival encounter at milestone {milestone} marked as completed")
+        
+        if not has_living:
+            # Only FIRST rival encounter sets vessels to 1 HP (special treatment)
+            # Subsequent rival encounters and normal battles go to death saves
+            if encounter_number == 1:
+                # First rival encounter loss: set all vessels to 1 HP (don't go to death saves)
+                print(f"💔 First rival encounter lost - setting all vessels to 1 HP")
+                for i, st in enumerate(stats):
+                    if isinstance(st, dict):
+                        st["current_hp"] = 1
+                        print(f"   Vessel {i+1} set to 1 HP")
+                
+                # Set flag to prevent death gate from triggering (only for first encounter)
+                gs._just_finished_rival_battle = True
+                print(f"🛡️ Set _just_finished_rival_battle flag to prevent death gate (first encounter loss)")
+            else:
+                # Subsequent rival encounters: DON'T set flag - let death gate trigger death saves
+                print(f"💀 Rival encounter #{encounter_number} lost - NOT setting flag, death gate will trigger death saves")
+                # Don't set _just_finished_rival_battle - let death gate handle it
+        
+        # For first encounter wins, also set the flag to prevent death gate (in case vessels are at low HP)
+        if encounter_number == 1 and has_living:
+            gs._just_finished_rival_battle = True
+            print(f"🛡️ Set _just_finished_rival_battle flag to prevent death gate (first encounter win)")
+        
+        if hasattr(gs, "_was_rival_battle"):
+            delattr(gs, "_was_rival_battle")
+        if hasattr(gs, "_rival_encounter_number"):
+            delattr(gs, "_rival_encounter_number")
+        if hasattr(gs, "_rival_milestone"):
+            delattr(gs, "_rival_milestone")
+    
     # Check if we should trigger score animation (summoner battle victory)
     st = getattr(gs, "_battle", None)
     trigger_animation = False
@@ -1257,8 +1343,16 @@ def _exit_battle(gs):
     _nuke_summoner_ui(gs)
 
     gs._went_to_wild = False
+    gs._went_to_summoner = False  # Reset summoner flag so new encounters can trigger
     gs.in_encounter = False
     gs.encounter_stats = None
+    # Clear encounter sprite and name to prevent auto-triggering summoner battles
+    gs.encounter_sprite = None
+    gs.encounter_name = ""
+    if hasattr(gs, "encounter_type"):
+        # Only clear if it's a wild vessel or monster (keep boss/rival types for their own cleanup)
+        if getattr(gs, "encounter_type", None) in ("WILD_VESSEL", "MONSTER"):
+            delattr(gs, "encounter_type")
 
     # 👉 Clean up alias & battle blob so new encounters start fresh
     if hasattr(gs, "_wild"):

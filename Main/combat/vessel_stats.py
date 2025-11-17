@@ -81,11 +81,19 @@ def generate_vessel_stats_from_asset(
         hit_die = hit_die_for_class(cls)
         milestone_hp = compute_hp_milestone_only(level, con_mod, hit_die, rng=rng)
         stats_dict["hp"] = milestone_hp
-        # Set current_hp to max_hp if not already set
-        if "current_hp" not in stats_dict or stats_dict.get("current_hp") is None:
-            stats_dict["current_hp"] = milestone_hp
+        # ALWAYS set current_hp to max_hp (vessels start at full HP)
+        stats_dict["current_hp"] = milestone_hp
     except Exception as e:
         print(f"⚠️ Failed to recalculate milestone HP for {asset_name} level {level}: {e}")
         # Keep original HP if recalculation fails
+        # But still ensure current_hp is set
+        if "current_hp" not in stats_dict:
+            stats_dict["current_hp"] = stats_dict.get("hp", 10)
+    
+    # Final safety check: ensure current_hp is always set and > 0
+    if "current_hp" not in stats_dict or stats_dict.get("current_hp", 0) <= 0:
+        max_hp = stats_dict.get("hp", 10)
+        stats_dict["current_hp"] = max_hp
+        print(f"⚠️ Fixed missing/invalid current_hp for {asset_name}: set to {max_hp}")
     
     return stats_dict

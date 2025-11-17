@@ -96,14 +96,24 @@ def enter(gs, **_):
     # Get player name
     player_name = getattr(gs, "player_name", "Player") or "Player"
     
-    # Get boss data
+    # Get boss/rival data
     boss_data = getattr(gs, "encounter_boss_data", None)
     if not boss_data:
         # Fallback - shouldn't happen but handle gracefully
-        print("⚠️ No boss data for VS screen!")
+        print("⚠️ No boss/rival data for VS screen!")
         return
     
-    boss_name = boss_data.get("name", "Boss")
+    # Check if this is a rival encounter
+    is_rival = getattr(gs, "encounter_type", None) == "RIVAL"
+    
+    # For rivals, use gs.rival_name (set during name entry), fallback to boss_data name, then "Rival"
+    if is_rival:
+        rival_name_from_gs = getattr(gs, "rival_name", None)
+        boss_name_from_data = boss_data.get("name")
+        boss_name = rival_name_from_gs or boss_name_from_data or "Rival"
+        print(f"🔍 [boss_vs] is_rival=True, gs.rival_name='{rival_name_from_gs}', boss_data.name='{boss_name_from_data}', final='{boss_name}'")
+    else:
+        boss_name = boss_data.get("name", "Boss")
     boss_sprite = boss_data.get("sprite")
     
     # Load player sprite

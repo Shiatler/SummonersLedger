@@ -18,9 +18,11 @@ def clamp(v, lo, hi):
 
 
 def update_player(gs, dt, player_half):
-    """Simple vertical walking movement logic (disabled when Party Manager is open)."""
+    """Simple vertical walking movement logic (disabled when Party Manager is open or rival intro is active)."""
     if party_manager.is_open():
         return  # freeze movement while modal is open
+    if getattr(gs, "rival_intro_active", False):
+        return  # freeze movement during rival intro walk-down
 
     # Debug: Log position on first update after loading
     if not hasattr(update_player, "_logged_first_update"):

@@ -65,3 +65,17 @@ class GameState:
     active_buffs: list = field(default_factory=list)  # List of active buffs
     buffs_history: list = field(default_factory=list)  # Track all buffs received
     first_overworld_blessing_given: bool = False  # Track if first overworld blessing was given this run
+    
+    # rival system
+    rival_gender: str = None  # "male" or "female" (opposite of player)
+    rival_name: str = None  # Player-entered rival name
+    rival_starter_class: str = None  # "barbarian", "druid", or "rogue"
+    rival_starter_name: str = None  # e.g., "StarterRogue1"
+    rival_encounters_completed: list = field(default_factory=list)  # List of milestone scores
+    first_rival_encounter_complete: bool = False
+    rival_walk_anim: object = None  # Animator instance
+    rival_idle: object = None  # pygame.Surface
+    rival_image: object = None  # pygame.Surface (current frame)
+    rival_sprite: object = None  # pygame.Surface (boss sprite for battles)
+    rival_intro_active: bool = False  # Flag for walk-down animation
+    rivals_on_map: list = field(default_factory=list)  # List of rival spawns (similar to bosses_on_map)

@@ -44,7 +44,7 @@ PLAYER_VISUAL_X_OFFSET = getattr(S, "PLAYER_VISUAL_X_OFFSET", 30)  # pixels to s
 
 # screens
 from screens import (
-    menu_screen, char_select, name_entry,
+    menu_screen, char_select, name_entry, rival_name_entry,
     black_screen, intro_video, settings_screen, pause_screen, master_oak, leaderboard
 )
 from screens import help_screen
@@ -90,6 +90,7 @@ MODE_CHAR_SELECT  = "CHAR_SELECT"
 MODE_SETTINGS     = "SETTINGS"
 MODE_PAUSE        = "PAUSE"
 MODE_NAME_ENTRY   = "NAME_ENTRY"
+MODE_RIVAL_NAME_ENTRY = "RIVAL_NAME_ENTRY"
 MODE_MASTER_OAK   = "MASTER_OAK"
 MODE_BLACK_SCREEN = "BLACK_SCREEN"
 MODE_INTRO_VIDEO  = "INTRO_VIDEO"
@@ -241,6 +242,206 @@ def apply_player_variant(gs, variant_key, variants_dict):
     gs.walk_anim = Animator(walk_frames, fps=8, loop=True)
 
 
+def _trigger_first_rival_encounter(gs):
+    """
+    Trigger the first rival encounter after buff selection completes.
+    Sets up the walk-down animation and battle.
+    """
+    from world import rival
+    rival.trigger_rival_intro_animation(gs, encounter_number=1)
+
+
+def _update_rival_intro(gs, dt):
+    """
+    Update the first rival encounter walk-down animation and dialogue.
+    """
+    if not hasattr(gs, "rival_intro_state"):
+        gs.rival_intro_active = False
+        return
+    
+    state = gs.rival_intro_state
+    phase = state.get("phase", "walk_down")
+    
+    # Initialize walking sound channel if needed
+    if not hasattr(gs, "rival_walking_channel"):
+        gs.rival_walking_channel = None
+    
+    if phase == "walk_down":
+        # Update walk animation
+        if hasattr(gs, "rival_walk_anim") and gs.rival_walk_anim:
+            gs.rival_walk_anim.update(dt)
+            frame = gs.rival_walk_anim.current()
+            if frame:
+                gs.rival_image = frame
+        
+        # Move rival down
+        rival_pos = state["rival_pos"]
+        target_y = state["target_y"]
+        walk_speed = state["walk_speed"]
+        
+        # Check if rival is moving
+        is_walking = rival_pos.y < target_y
+        
+        # Play walking sound when moving
+        if is_walking and not gs.rival_walking_channel:
+            # Start playing walking sound (same as player)
+            sfx = (
+                AUDIO.sfx.get("Walking")
+                or AUDIO.sfx.get("walking")
+                or AUDIO.sfx.get("WALKING")
+            )
+            if sfx:
+                gs.rival_walking_channel = sfx.play(loops=-1, fade_ms=80)
+        elif not is_walking and gs.rival_walking_channel:
+            # Stop walking sound when reached target
+            gs.rival_walking_channel.stop()
+            gs.rival_walking_channel = None
+        
+        if is_walking:
+            rival_pos.y += walk_speed * dt
+            rival_pos.y = min(rival_pos.y, target_y)
+            # Only transition to dialogue when we've actually reached the target
+            if rival_pos.y >= target_y:
+                # Reached halfway point - transition to dialogue
+                state["phase"] = "dialogue"
+                # Switch to idle sprite when dialogue starts
+                if hasattr(gs, "rival_idle") and gs.rival_idle:
+                    gs.rival_image = gs.rival_idle
+                # Stop walking sound
+                if gs.rival_walking_channel:
+                    gs.rival_walking_channel.stop()
+                    gs.rival_walking_channel = None
+                print(f"💬 Rival reached halfway point, starting dialogue")
+    
+    elif phase == "dialogue":
+        # Update dialogue blink timer
+        state["dialogue_blink_t"] = state.get("dialogue_blink_t", 0.0) + dt
+
+
+def _draw_rival_dialogue(screen, gs, dt):
+    """Draw the rival dialogue textbox."""
+    if not getattr(gs, "rival_intro_active", False):
+        return
+    
+    state = getattr(gs, "rival_intro_state", None)
+    if not state or state.get("phase") != "dialogue":
+        return
+    
+    dialogue_text = state.get("dialogue_text", "")
+    blink_t = state.get("dialogue_blink_t", 0.0)
+    
+    # Use logical dimensions for consistency
+    sw, sh = S.LOGICAL_WIDTH, S.LOGICAL_HEIGHT
+    box_h = 120
+    margin_x = 36
+    margin_bottom = 28
+    rect = pygame.Rect(margin_x, sh - box_h - margin_bottom, sw - margin_x * 2, box_h)
+    
+    # Box styling (matches other textboxes)
+    pygame.draw.rect(screen, (245, 245, 245), rect)
+    pygame.draw.rect(screen, (0, 0, 0), rect, 4, border_radius=8)
+    inner = rect.inflate(-8, -8)
+    pygame.draw.rect(screen, (60, 60, 60), inner, 2, border_radius=6)
+    
+    # Text rendering with word wrap
+    def _get_dh_font(size: int):
+        try:
+            dh_font_path = os.path.join(S.ASSETS_FONTS_DIR, S.DND_FONT_FILE)
+            if os.path.exists(dh_font_path):
+                return pygame.font.Font(dh_font_path, size)
+        except:
+            pass
+        return pygame.font.SysFont("arial", size)
+    
+    font = _get_dh_font(28)
+    words = dialogue_text.split(" ")
+    lines, cur = [], ""
+    max_w = rect.w - 40
+    for w in words:
+        test = (cur + " " + w).strip()
+        if not cur or font.size(test)[0] <= max_w:
+            cur = test
+        else:
+            lines.append(cur)
+            cur = w
+    if cur:
+        lines.append(cur)
+    
+    y = rect.y + 20
+    for line in lines:
+        surf = font.render(line, False, (16, 16, 16))
+        screen.blit(surf, (rect.x + 20, y))
+        y += surf.get_height() + 6
+    
+    # Blinking prompt
+    blink_on = int(blink_t * 2) % 2 == 0
+    if blink_on:
+        prompt_font = _get_dh_font(20)
+        prompt = "Press Enter or Click to continue"
+        psurf = prompt_font.render(prompt, False, (40, 40, 40))
+        px = rect.right - psurf.get_width() - 16
+        py = rect.bottom - psurf.get_height() - 12
+        shadow = prompt_font.render(prompt, False, (235, 235, 235))
+        screen.blit(shadow, (px - 1, py - 1))
+        screen.blit(psurf, (px, py))
+
+
+def _handle_rival_dialogue_input(events, gs):
+    """Handle input to dismiss rival dialogue and transition to VS screen."""
+    if not getattr(gs, "rival_intro_active", False):
+        return False
+    
+    state = getattr(gs, "rival_intro_state", None)
+    if not state or state.get("phase") != "dialogue":
+        return False
+    
+    for event in events:
+        if event.type == pygame.KEYDOWN:
+            if event.key in (pygame.K_RETURN, pygame.K_KP_ENTER, pygame.K_SPACE):
+                # Stop walking sound if still playing
+                if hasattr(gs, "rival_walking_channel") and gs.rival_walking_channel:
+                    gs.rival_walking_channel.stop()
+                    gs.rival_walking_channel = None
+                
+                # Dismiss dialogue and transition to VS screen
+                gs.rival_intro_active = False
+                
+                # Set up encounter flags for VS screen
+                gs.in_encounter = True
+                gs.encounter_timer = S.ENCOUNTER_SHOW_TIME
+                # Use gs.rival_name (set during name entry) instead of encounter_data name
+                gs.encounter_name = getattr(gs, "rival_name", None) or gs.rival_encounter_data.get("name") or "Rival"
+                # Update encounter_boss_data with correct name
+                gs.rival_encounter_data["name"] = gs.encounter_name
+                gs.encounter_sprite = gs.rival_encounter_data["sprite"]
+                gs.encounter_type = "RIVAL"  # Mark as rival encounter
+                gs.encounter_boss_data = gs.rival_encounter_data  # Store full data for battle
+                
+                print(f"💬 Rival dialogue dismissed, transitioning to VS screen: {gs.encounter_name}")
+                return True  # Signal that we should transition to VS screen
+        elif event.type == pygame.MOUSEBUTTONDOWN and event.button == 1:
+            # Stop walking sound if still playing
+            if hasattr(gs, "rival_walking_channel") and gs.rival_walking_channel:
+                gs.rival_walking_channel.stop()
+                gs.rival_walking_channel = None
+            
+            # Click to dismiss
+            gs.rival_intro_active = False
+            
+            # Set up encounter flags for VS screen
+            gs.in_encounter = True
+            gs.encounter_timer = S.ENCOUNTER_SHOW_TIME
+            gs.encounter_name = gs.rival_encounter_data["name"]
+            gs.encounter_sprite = gs.rival_encounter_data["sprite"]
+            gs.encounter_type = "RIVAL"  # Mark as rival encounter
+            gs.encounter_boss_data = gs.rival_encounter_data  # Store full data for battle
+            
+            print(f"💬 Rival dialogue dismissed (click), transitioning to VS screen: {gs.encounter_name}")
+            return True  # Signal that we should transition to VS screen
+    
+    return False
+
+
 def try_trigger_encounter(gs, summoners, merchant_frames, tavern_sprite=None, monsters=None):
     if gs.in_encounter:
         return
@@ -357,10 +558,8 @@ def update_encounter_popup(screen, dt, gs, mist_frame, width, height, pg_instanc
     if gs.encounter_sprite:
         screen.blit(gs.encounter_sprite, (px + 16, py + 48))
 
-    if gs.encounter_timer <= 0:
-        gs.in_encounter = False
-        gs.encounter_name = ""
-        gs.encounter_sprite = None
+    # Don't clear encounter state here - let main loop handle transition to battle
+    # The timer expiring will be checked in main loop, which will then transition to battle
     return True
 
 
@@ -547,6 +746,30 @@ def start_new_game(gs):
     gs.bosses_on_map = []
     gs.monsters_on_map = []
     
+    # Reset rival tracking for new game
+    # NOTE: Don't reset rival_name here - it's already set during name entry BEFORE start_new_game is called
+    # Preserve rival_name if it was already set during name entry
+    existing_rival_name = getattr(gs, "rival_name", None)
+    if existing_rival_name:
+        print(f"✅ Preserving existing rival_name: '{existing_rival_name}'")
+    # Only reset rival_gender if not already set (it's set during character selection)
+    if not hasattr(gs, "rival_gender") or gs.rival_gender is None:
+        gs.rival_gender = None  # Will be set when player chooses character
+    gs.rival_starter_class = None  # Reset rival starter class
+    gs.rival_starter_name = None  # Reset rival starter name
+    gs.rival_encounters_completed = []
+    gs.first_rival_encounter_complete = False
+    gs.rivals_on_map = []
+    # Clear rival animation/sprite state
+    if hasattr(gs, "rival_walk_anim"):
+        gs.rival_walk_anim = None
+    if hasattr(gs, "rival_idle"):
+        gs.rival_idle = None
+    if hasattr(gs, "rival_image"):
+        gs.rival_image = None
+    if hasattr(gs, "rival_sprite"):
+        gs.rival_sprite = None
+    
     # Restore Book of Bound discoveries (persistent across new games)
     gs.book_of_bound_discovered = preserved_book_of_bound
 
@@ -635,6 +858,8 @@ def enter_mode(mode, gs, deps):
         char_select.enter(gs, **deps)
     elif mode == MODE_NAME_ENTRY:
         name_entry.enter(gs, **deps)
+    elif mode == MODE_RIVAL_NAME_ENTRY:
+        rival_name_entry.enter(gs, **deps)
     elif mode == MODE_MASTER_OAK:
         master_oak.enter(gs, **deps)
     elif mode == MODE_BLACK_SCREEN:
@@ -1401,6 +1626,17 @@ while running:
     elif mode == MODE_NAME_ENTRY:
         next_mode = name_entry.handle(events, gs, dt, **deps)
         name_entry.draw(virtual_screen, gs, dt, **deps)
+        blit_virtual_to_screen(virtual_screen, screen)
+        mouse_pos = pygame.mouse.get_pos()
+        cursor_manager.draw_cursor(screen, mouse_pos, gs, mode)
+        pygame.display.flip()
+        if next_mode:
+            mode = next_mode
+
+    # ===================== RIVAL NAME ENTRY ======================
+    elif mode == MODE_RIVAL_NAME_ENTRY:
+        next_mode = rival_name_entry.handle(events, gs, dt, **deps)
+        rival_name_entry.draw(virtual_screen, gs, dt, **deps)
         blit_virtual_to_screen(virtual_screen, screen)
         mouse_pos = pygame.mouse.get_pos()
         cursor_manager.draw_cursor(screen, mouse_pos, gs, mode)
@@ -2181,30 +2417,48 @@ while running:
                 gs.first_overworld_blessing_given = True
                 print(f"🎁 First overworld blessing triggered!")
         
-        # ===== Death gate: only when we actually have a party and none are alive =====
-        stats = getattr(gs, "party_vessel_stats", None) or []
-        has_any_member = any(isinstance(st, dict) for st in stats)
-        has_living = any(
-            isinstance(st, dict) and int(st.get("current_hp", st.get("hp", 0)) or 0) > 0
-            for st in stats
-        )
-        if has_any_member and not has_living:
-            # Save game when all vessels hit 0 HP (prevents save scumming)
-            try:
-                saves.save_game(gs, force=True)
-                print("💾 Game saved: All vessels at 0 HP - entering death saves")
-            except Exception as e:
-                print(f"⚠️ Save failed on death: {e}")
+        # Clear the "just finished rival battle" flag timer (but don't check death gate yet)
+        # This needs to run every frame to update the timer
+        just_finished_rival_battle = getattr(gs, "_just_finished_rival_battle", False)
+        if just_finished_rival_battle:
+            if not hasattr(gs, "_rival_battle_exit_timer"):
+                gs._rival_battle_exit_timer = 0.0
+            gs._rival_battle_exit_timer += dt
             
-            mode = MODE_DEATH_SAVES
-            enter_mode(mode, gs, deps)
-            # Draw once to avoid a 1-frame flash of overworld under black
-            death_saves_screen.draw(virtual_screen, gs, dt, **deps)
-            blit_virtual_to_screen(virtual_screen, screen)
-            mouse_pos = pygame.mouse.get_pos()
-            cursor_manager.draw_cursor(screen, mouse_pos, gs, MODE_DEATH_SAVES)
-            pygame.display.flip()
-            continue
+            # Check if any vessels are at low HP (<= 1 HP) - if so, extend the protection
+            stats = getattr(gs, "party_vessel_stats", None) or []
+            has_low_hp = any(
+                isinstance(st, dict) and int(st.get("current_hp", st.get("hp", 0)) or 0) <= 1
+                for st in stats
+            )
+            
+            # Clear flag after 30 seconds, but only if vessels are healthy
+            clear_delay = 30.0
+            if gs._rival_battle_exit_timer >= clear_delay:
+                # Before clearing, ensure ALL vessels have at least 1 HP
+                for st in stats:
+                    if isinstance(st, dict):
+                        current_hp = int(st.get("current_hp", st.get("hp", 0)) or 0)
+                        max_hp = int(st.get("hp", 0) or 0)
+                        if current_hp <= 0 and max_hp > 0:
+                            st["current_hp"] = 1
+                            print(f"   Safety before flag clear: Vessel set to 1 HP")
+                
+                # Only clear if vessels are NOT at low HP
+                has_low_hp_after_delay = any(
+                    isinstance(st, dict) and int(st.get("current_hp", st.get("hp", 0)) or 0) <= 1
+                    for st in stats
+                )
+                
+                if not has_low_hp_after_delay:
+                    delattr(gs, "_just_finished_rival_battle")
+                    if hasattr(gs, "_rival_battle_exit_timer"):
+                        delattr(gs, "_rival_battle_exit_timer")
+                    print(f"✅ Cleared _just_finished_rival_battle flag after {clear_delay}s delay (vessels healthy)")
+                else:
+                    # Reset timer to keep protection active
+                    gs._rival_battle_exit_timer = 0.0
+                    print(f"🛡️ Keeping _just_finished_rival_battle flag active (vessels at low HP)")
 
 
         
@@ -2313,17 +2567,49 @@ while running:
             buff_popup.start_buff_selection(gs)
         
         # --- Update buff popup animation ---
-        if buff_popup.is_active():
+        buff_was_active = buff_popup.is_active()
+        if buff_was_active:
             buff_popup.update(dt, gs)
         
-        # --- Route events to modals (priority: Buff Popup → Bag → Party Manager → Ledger) ---
+        # Check if buff popup just finished and we need to trigger first rival encounter
+        buff_now_active = buff_popup.is_active()
+        if (buff_was_active and not buff_now_active and 
+            not getattr(gs, "first_rival_encounter_complete", False) and
+            getattr(gs, "first_overworld_blessing_given", False)):
+            # First buff selection just completed - trigger first rival encounter
+            # Ensure rival_name and rival_gender are set (they should be from character selection flow)
+            # Check if rival_name is set - only set default if it's truly missing (not just empty string)
+            current_rival_name = getattr(gs, "rival_name", None)
+            print(f"🔍 [First rival encounter check] gs.rival_name = '{current_rival_name}'")
+            if not current_rival_name:
+                # Fallback: set default rival name if somehow missing
+                rival_gender = getattr(gs, "rival_gender", "male")
+                gs.rival_name = "Rival"
+                print(f"⚠️ Rival name was missing, set to default 'Rival' (gender: {rival_gender})")
+            else:
+                print(f"✅ Rival name found: '{current_rival_name}'")
+            if not getattr(gs, "rival_gender", None):
+                # Fallback: set opposite of player gender
+                player_gender = getattr(gs, "chosen_gender") or getattr(gs, "player_gender", "male")
+                gs.rival_gender = "female" if player_gender == "male" else "male"
+                print(f"⚠️ Rival gender was missing, set to opposite of player ({gs.rival_gender})")
+            _trigger_first_rival_encounter(gs)
+        
+        # --- Route events to modals (priority: Rival Dialogue → Buff Popup → Bag → Party Manager → Ledger) ---
         for e in events:
             # Skip mouse clicks that were HUD button clicks (prevent immediate close)
             if e.type == pygame.MOUSEBUTTONDOWN and e.button == 1:
                 if e.pos in hud_button_click_positions:
                     continue  # Skip this event, already handled by HUD button
             
-            # Buff popup has highest priority (blocks all other input)
+            # Rival dialogue has highest priority (blocks all other input)
+            if _handle_rival_dialogue_input([e], gs):
+                # Dialogue dismissed, transition to VS screen
+                mode = MODE_BOSS_VS
+                enter_mode(mode, gs, deps)
+                continue
+            
+            # Buff popup has second priority (blocks all other input)
             if buff_popup.is_active():
                 if buff_popup.handle_event(e, gs):
                     continue
@@ -2637,7 +2923,12 @@ while running:
 
         # --- Encounters / world update ---
         if gs.in_encounter:
-            if gs.encounter_stats and not getattr(gs, "_went_to_wild", False):
+            # Show popup while timer is active
+            if gs.encounter_timer > 0:
+                update_encounter_popup(virtual_screen, dt, gs, mist_frame, S.LOGICAL_WIDTH, S.LOGICAL_HEIGHT, pg)
+            # Timer expired - transition to battle
+            elif gs.encounter_stats and not getattr(gs, "_went_to_wild", False):
+                # Wild vessel encounter
                 try:
                     pygame.mixer.music.fadeout(200)
                 except Exception:
@@ -2651,11 +2942,18 @@ while running:
                 gs.movement_sfx_state = None
                 gs.walking_channel = None
                 gs._went_to_wild = True
+                # Clear encounter state
+                gs.in_encounter = False
                 mode = MODE_WILD_VESSEL
 
-            # NEW: summoner (trainer) encounter – no stats attached
+            # Summoner (trainer) encounter – no stats attached
             # Boss encounters go to VS screen first, then summoner_battle
-            elif gs.encounter_sprite is not None and not getattr(gs, "_went_to_summoner", False):
+            # Rival encounters also go to VS screen first
+            # NOTE: This should not trigger for wild vessels/monsters (they have encounter_stats)
+            elif (gs.encounter_sprite is not None 
+                  and gs.encounter_stats is None 
+                  and not getattr(gs, "_went_to_summoner", False)
+                  and getattr(gs, "encounter_type", None) not in ("WILD_VESSEL", "MONSTER")):
                 try:
                     pygame.mixer.music.fadeout(200)
                 except Exception:
@@ -2669,27 +2967,110 @@ while running:
                 gs.movement_sfx_state = None
                 gs.walking_channel = None
                 gs._went_to_summoner = True
-                # Check if this is a boss encounter - go to VS screen first
+                # Clear encounter state (but keep encounter_name, encounter_sprite, encounter_summoner_filename for battle)
+                gs.in_encounter = False
+                # Check if this is a boss or rival encounter - go to VS screen first
                 is_boss = getattr(gs, "encounter_type", None) == "BOSS"
-                if is_boss:
+                is_rival = getattr(gs, "encounter_type", None) == "RIVAL"
+                if is_boss or is_rival:
                     mode = MODE_BOSS_VS
                 else:
                     mode = MODE_SUMMONER_BATTLE
-
-            else:
-                update_encounter_popup(virtual_screen, dt, gs, mist_frame, S.LOGICAL_WIDTH, S.LOGICAL_HEIGHT, pg)
         else:
-            if not any_modal_open:
+            # Handle first rival encounter walk-down animation
+            if getattr(gs, "rival_intro_active", False):
+                _update_rival_intro(gs, dt)
+                # Lock player movement during rival intro
+            elif not any_modal_open:
                 world.update_player(gs, dt, gs.player_half)
             actors.update_rivals(gs, dt, gs.player_half)
+            actors.update_bosses(gs, dt, gs.player_half)
             actors.update_vessels(gs, dt, gs.player_half, VESSELS, RARE_VESSELS)
             actors.update_monsters(gs, dt, gs.player_half)
+            
+            # Check if a wild vessel or monster encounter was triggered (no popup, go directly to battle)
+            if (gs.encounter_stats is not None 
+                and not getattr(gs, "_went_to_wild", False)
+                and not gs.in_encounter):
+                # Wild vessel or monster encounter - go directly to battle
+                encounter_type = getattr(gs, "encounter_type", None)
+                if encounter_type in ("WILD_VESSEL", "MONSTER", None):  # None for backwards compatibility
+                    try:
+                        pygame.mixer.music.fadeout(200)
+                    except Exception:
+                        pass
+                    ch = getattr(gs, "walking_channel", None)
+                    if ch:
+                        try: ch.stop()
+                        except Exception: pass
+                    gs.is_walking = False
+                    gs.is_running = False
+                    gs.movement_sfx_state = None
+                    gs.walking_channel = None
+                    gs._went_to_wild = True
+                    # Clear encounter state
+                    gs.in_encounter = False
+                    mode = MODE_WILD_VESSEL
+            
+            # Check if a boss encounter was triggered (no popup, go directly to VS screen)
+            elif (getattr(gs, "encounter_type", None) == "BOSS"
+                and gs.encounter_sprite is not None
+                and not getattr(gs, "_went_to_summoner", False)
+                and not gs.in_encounter):
+                # Boss encounter - go directly to VS screen
+                try:
+                    pygame.mixer.music.fadeout(200)
+                except Exception:
+                    pass
+                ch = getattr(gs, "walking_channel", None)
+                if ch:
+                    try: ch.stop()
+                    except Exception: pass
+                gs.is_walking = False
+                gs.is_running = False
+                gs.movement_sfx_state = None
+                gs.walking_channel = None
+                gs._went_to_summoner = True
+                mode = MODE_BOSS_VS
+            
+            # Check if a regular summoner encounter was triggered (no popup, go directly to battle)
+            elif (gs.encounter_sprite is not None 
+                and gs.encounter_stats is None 
+                and not getattr(gs, "_went_to_summoner", False)
+                and not getattr(gs, "_went_to_wild", False)
+                and not gs.in_encounter
+                and getattr(gs, "encounter_type", None) != "BOSS"
+                and getattr(gs, "encounter_type", None) != "RIVAL"
+                and getattr(gs, "encounter_type", None) != "WILD_VESSEL"
+                and getattr(gs, "encounter_type", None) != "MONSTER"
+                and hasattr(gs, "encounter_summoner_filename")
+                and getattr(gs, "encounter_summoner_filename", None) is not None):  # Regular summoners have filename set
+                # Regular summoner encounter - go directly to battle
+                print(f"🎯 Regular summoner battle triggered: {getattr(gs, 'encounter_name', 'Unknown')}")
+                try:
+                    pygame.mixer.music.fadeout(200)
+                except Exception:
+                    pass
+                ch = getattr(gs, "walking_channel", None)
+                if ch:
+                    try: ch.stop()
+                    except Exception: pass
+                gs.is_walking = False
+                gs.is_running = False
+                gs.movement_sfx_state = None
+                gs.walking_channel = None
+                gs._went_to_summoner = True
+                mode = MODE_SUMMONER_BATTLE
             actors.update_merchants(gs, dt, gs.player_half)
             actors.update_taverns(gs, dt, gs.player_half)
-            actors.update_bosses(gs, dt, gs.player_half)
             # Check for boss spawns based on score
             from world import bosses
             bosses.check_and_spawn_bosses(gs)
+            # Check for rival spawns based on milestones
+            from world import rival
+            if getattr(gs, "first_rival_encounter_complete", False):
+                # Only check for subsequent encounters after first one is complete
+                rival.check_and_spawn_rival(gs)
             try_trigger_encounter(gs, RIVAL_SUMMONERS, MERCHANT_FRAMES, TAVERN_SPRITE, MONSTERS)
 
             cam = world.get_camera_offset(gs.player_pos, S.LOGICAL_WIDTH, S.LOGICAL_HEIGHT, gs.player_half)
@@ -2702,6 +3083,18 @@ while running:
             actors.draw_merchants(virtual_screen, cam, gs)
             actors.draw_taverns(virtual_screen, cam, gs)
             actors.draw_bosses(virtual_screen, cam, gs)
+            
+            # Draw rival during intro walk-down
+            if getattr(gs, "rival_intro_active", False) and hasattr(gs, "rival_intro_state"):
+                state = gs.rival_intro_state
+                rival_pos = state["rival_pos"]
+                if hasattr(gs, "rival_image") and gs.rival_image:
+                    rival_half = Vector2(gs.rival_image.get_width() / 2, gs.rival_image.get_height() / 2)
+                    virtual_screen.blit(
+                        gs.rival_image,
+                        (rival_pos.x - cam.x - rival_half.x + PLAYER_VISUAL_X_OFFSET,
+                         rival_pos.y - cam.y - rival_half.y)
+                    )
 
             virtual_screen.blit(
                 gs.player_image,
@@ -2726,6 +3119,13 @@ while running:
             bag_ui.draw_popup(virtual_screen, gs)
         # Always draw party manager to show heal textbox even when closed
         party_manager.draw(virtual_screen, gs)
+        
+        # Draw rival dialogue textbox LAST (on top of everything) if in dialogue phase
+        if getattr(gs, "rival_intro_active", False) and hasattr(gs, "rival_intro_state"):
+            state = gs.rival_intro_state
+            if state.get("phase") == "dialogue":
+                _draw_rival_dialogue(virtual_screen, gs, dt)
+        
         if ledger.is_open():
             ledger.draw(virtual_screen, gs)
         if gs.shop_open:
@@ -2747,3 +3147,78 @@ while running:
         cursor_manager.draw_cursor(screen, mouse_pos, gs, S.MODE_GAME)
         
         pygame.display.flip()
+        
+        # ===== Death gate check: AFTER all normal game logic =====
+        # This runs AFTER events, updates, and drawing, so it doesn't block normal gameplay
+        # Skip death saves check if we're in a rival battle (rival battles handle loss differently)
+        # Also skip if we just started a new game (vessels might not be initialized yet)
+        # Also skip if rival intro is active or buff selection is pending
+        # Also skip if we just finished a rival battle (prevents death gate from triggering after rival battle)
+        is_rival_battle = getattr(gs, "_was_rival_battle", False) or getattr(gs, "encounter_type", None) == "RIVAL"
+        just_finished_rival_battle = getattr(gs, "_just_finished_rival_battle", False)
+        game_was_loaded = getattr(gs, "_game_was_loaded_from_save", False)
+        just_started_new_game = not game_was_loaded and getattr(gs, "distance_travelled", 0.0) == 0.0
+        rival_intro_active = getattr(gs, "rival_intro_active", False)
+        buff_selection_pending = getattr(gs, "pending_buff_selection", False) or buff_popup.is_active()
+        waiting_for_first_blessing = not getattr(gs, "first_overworld_blessing_given", False)
+        
+        # Skip death gate check entirely if no vessels exist yet (e.g., right after intro video)
+        stats = getattr(gs, "party_vessel_stats", None) or []
+        has_any_member = any(isinstance(st, dict) and st.get("hp", 0) > 0 for st in stats)
+        
+        # Debug: Check if we're in battle mode (shouldn't run death gate during battle)
+        in_battle_mode = getattr(gs, "mode", None) == MODE_BATTLE
+        
+        # Debug output for death gate check
+        if has_any_member:
+            # Check vessel HP status
+            all_dead = not any(
+                isinstance(st, dict) and int(st.get("current_hp", st.get("hp", 0)) or 0) > 0
+                for st in stats
+            )
+            if all_dead:
+                print(f"🔍 Death gate check: All vessels dead, conditions:")
+                print(f"   in_battle_mode={in_battle_mode}")
+                print(f"   is_rival_battle={is_rival_battle}")
+                print(f"   just_finished_rival_battle={just_finished_rival_battle}")
+                print(f"   just_started_new_game={just_started_new_game}")
+                print(f"   rival_intro_active={rival_intro_active}")
+                print(f"   buff_selection_pending={buff_selection_pending}")
+                print(f"   waiting_for_first_blessing={waiting_for_first_blessing}")
+                print(f"   has_any_member={has_any_member}")
+        
+        # Skip death gate if: in battle mode, rival battle, just finished rival battle, just started, rival intro active, buff selection pending, or waiting for first blessing
+        if not in_battle_mode and not is_rival_battle and not just_finished_rival_battle and not just_started_new_game and not rival_intro_active and not buff_selection_pending and not waiting_for_first_blessing and has_any_member:
+            # Only initialize current_hp if it's completely missing (not if it's 0 - that means vessel is dead!)
+            for st in stats:
+                if isinstance(st, dict):
+                    if "current_hp" not in st:  # Only fix if completely missing, not if it's 0
+                        max_hp = st.get("hp", 10)
+                        if max_hp > 0:  # Only fix if vessel has valid max HP
+                            st["current_hp"] = max_hp
+                            print(f"⚠️ Fixed missing current_hp in death gate check: set to {max_hp}")
+                    # Don't fix vessels that are at 0 HP - that means they're dead and death saves should trigger
+            
+            has_living = any(
+                isinstance(st, dict) and int(st.get("current_hp", st.get("hp", 0)) or 0) > 0
+                for st in stats
+            )
+            if not has_living:
+                # Debug: print vessel HP before triggering death saves
+                print(f"💀 Death gate triggered! Vessel HP status:")
+                for i, st in enumerate(stats):
+                    if isinstance(st, dict):
+                        hp = st.get("hp", 0)
+                        current_hp = st.get("current_hp", 0)
+                        print(f"   Vessel {i+1}: HP={hp}, current_hp={current_hp}")
+                
+                # Save game when all vessels hit 0 HP (prevents save scumming)
+                try:
+                    saves.save_game(gs, force=True)
+                    print("💾 Game saved: All vessels at 0 HP - entering death saves")
+                except Exception as e:
+                    print(f"⚠️ Save failed on death: {e}")
+                
+                mode = MODE_DEATH_SAVES
+                enter_mode(mode, gs, deps)
+                # Don't use continue here - let the loop continue normally to process the mode change
