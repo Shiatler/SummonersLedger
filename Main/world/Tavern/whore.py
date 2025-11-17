@@ -154,9 +154,12 @@ def _load_bedroom_music():
         return
     
     try:
-        pygame.mixer.music.load(path)
-        pygame.mixer.music.set_volume(0.5)
-        pygame.mixer.music.play(loops=-1)
+        # Use audio.play_music to respect volume settings
+        from systems import audio
+        audio.play_music(None, path, loop=True, fade_ms=0)
+        # Set volume to 50% of music volume
+        current_vol = pygame.mixer.music.get_volume() or 0.6
+        pygame.mixer.music.set_volume(current_vol * 0.5)
         print(f"✅ Playing bedroom music at 50% volume")
         _BEDROOM_MUSIC_PLAYING = True
     except Exception as e:
@@ -175,10 +178,9 @@ def _play_sex_sound():
     try:
         if _SEX_SOUND is None:
             _SEX_SOUND = pygame.mixer.Sound(path)
-        channel = pygame.mixer.find_channel(True)
-        if channel:
-            channel.play(_SEX_SOUND)
-            print(f"🔊 Playing sex sound")
+        # Use audio.play_sound to respect volume settings
+        audio.play_sound(_SEX_SOUND)
+        print(f"🔊 Playing sex sound")
     except Exception as e:
         print(f"⚠️ Failed to play sex sound: {e}")
 
@@ -334,8 +336,9 @@ def handle(events, gs, dt: float, **_):
     st = gs._whore_state
     
     if st.get("return_to_tavern", False):
-        # Stop music
-        pygame.mixer.music.stop()
+        # Stop music using audio system
+        from systems import audio
+        audio.stop_music(fade_ms=300)
         global _BEDROOM_MUSIC_PLAYING
         _BEDROOM_MUSIC_PLAYING = False
 

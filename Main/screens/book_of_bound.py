@@ -583,8 +583,10 @@ def draw_fade_overlay(screen):
         return
     
     # Create fade surface if needed
-    if _fade_surface is None or _fade_surface.get_size() != screen.get_size():
-        _fade_surface = pygame.Surface(screen.get_size(), pygame.SRCALPHA)
+    # Use logical dimensions for consistency (per screen development guide)
+    logical_size = (S.LOGICAL_WIDTH, S.LOGICAL_HEIGHT)
+    if _fade_surface is None or _fade_surface.get_size() != logical_size:
+        _fade_surface = pygame.Surface(logical_size, pygame.SRCALPHA)
     
     # Draw fade overlay
     _fade_surface.fill((0, 0, 0, int(_fade_alpha)))

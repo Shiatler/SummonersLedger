@@ -1636,8 +1636,15 @@ while running:
         
         if next_mode:
             if next_mode == "TAVERN":
-                # Return to tavern
+                # Return to tavern - restart tavern music
                 mode = MODE_TAVERN
+                # Restart tavern music after whore interaction
+                tavern_music_path = os.path.join("Assets", "Tavern", "Tavern.mp3")
+                if os.path.exists(tavern_music_path):
+                    audio.play_music(AUDIO, tavern_music_path, loop=True, fade_ms=600)
+                else:
+                    # Fallback: try to find it in the audio bank
+                    audio.play_music(AUDIO, "tavern", loop=True, fade_ms=600)
             else:
                 mode = next_mode
     
@@ -1715,6 +1722,14 @@ while running:
         if gs.shop_open:
             for e in events:
                 purchase_result = shop.handle_event(e, gs)
+                # Check if purchase was confirmed (needs laugh sound for merchants)
+                if purchase_result == "purchase_confirmed":
+                    # Play random laugh after purchase (merchant shops only)
+                    laugh_num = random.randint(1, 5)
+                    laugh_key = f"laugh{laugh_num}"
+                    laugh_sound = AUDIO.sfx.get(laugh_key)
+                    if laugh_sound:
+                        audio.play_sound(laugh_sound)
                 if purchase_result:
                     consumed_event_ids.add(id(e))
 
@@ -1748,19 +1763,8 @@ while running:
                 elif button_clicked == 'currency':
                     if not currency_display.is_open() and not bag_ui.is_open() and not party_manager.is_open() and not ledger.is_open():
                         currency_display.toggle()
-                        # Play Coin.mp3 sound
-                        coin_sound = AUDIO.sfx.get("Coin") or AUDIO.sfx.get("coin")
-                        if coin_sound:
-                            coin_sound.play()
-                        else:
-                            # Try to load from the path
-                            coin_path = os.path.join("Assets", "Music", "Sounds", "Coin.mp3")
-                            if os.path.exists(coin_path):
-                                try:
-                                    coin_sfx = pygame.mixer.Sound(coin_path)
-                                    coin_sfx.play()
-                                except:
-                                    pass
+                        # Play Coin.mp3 sound (using audio.play_sfx to respect volume settings)
+                        audio.play_sfx(AUDIO, "Coin")
                     elif currency_display.is_open():
                         currency_display.close()
                     hud_button_click_positions_tavern.add(e.pos)
@@ -1930,19 +1934,8 @@ while running:
             if e.type == pygame.KEYDOWN and e.key == pygame.K_c:
                 if not currency_display.is_open() and not bag_ui.is_open() and not party_manager.is_open() and not ledger.is_open() and not gs.shop_open:
                     currency_display.toggle()
-                    # Play Coin.mp3 sound
-                    coin_sound = AUDIO.sfx.get("Coin") or AUDIO.sfx.get("coin")
-                    if coin_sound:
-                        coin_sound.play()
-                    else:
-                        # Try to load from the path
-                        coin_path = os.path.join("Assets", "Music", "Sounds", "Coin.mp3")
-                        if os.path.exists(coin_path):
-                            try:
-                                coin_sfx = pygame.mixer.Sound(coin_path)
-                                coin_sfx.play()
-                            except:
-                                pass
+                    # Play Coin.mp3 sound (using audio.play_sfx to respect volume settings)
+                    audio.play_sfx(AUDIO, "Coin")
                 elif currency_display.is_open():
                     currency_display.close()
         
@@ -2251,19 +2244,8 @@ while running:
                 elif button_clicked == 'currency':
                     if not currency_display.is_open() and not bag_ui.is_open() and not party_manager.is_open() and not ledger.is_open():
                         currency_display.toggle()
-                        # Play Coin.mp3 sound
-                        coin_sound = AUDIO.sfx.get("Coin") or AUDIO.sfx.get("coin")
-                        if coin_sound:
-                            coin_sound.play()
-                        else:
-                            # Try to load from the path
-                            coin_path = os.path.join("Assets", "Music", "Sounds", "Coin.mp3")
-                            if os.path.exists(coin_path):
-                                try:
-                                    coin_sfx = pygame.mixer.Sound(coin_path)
-                                    coin_sfx.play()
-                                except:
-                                    pass
+                        # Play Coin.mp3 sound (using audio.play_sfx to respect volume settings)
+                        audio.play_sfx(AUDIO, "Coin")
                     elif currency_display.is_open():
                         currency_display.close()
                     hud_button_click_positions.add(e.pos)
@@ -2312,19 +2294,8 @@ while running:
             if e.type == pygame.KEYDOWN and e.key == pygame.K_c:
                 if not currency_display.is_open() and not bag_ui.is_open() and not party_manager.is_open() and not ledger.is_open():
                     currency_display.toggle()
-                    # Play Coin.mp3 sound
-                    coin_sound = AUDIO.sfx.get("Coin") or AUDIO.sfx.get("coin")
-                    if coin_sound:
-                        coin_sound.play()
-                    else:
-                        # Try to load from the path
-                        coin_path = os.path.join("Assets", "Music", "Sounds", "Coin.mp3")
-                        if os.path.exists(coin_path):
-                            try:
-                                coin_sfx = pygame.mixer.Sound(coin_path)
-                                coin_sfx.play()
-                            except:
-                                pass
+                    # Play Coin.mp3 sound (using audio.play_sfx to respect volume settings)
+                    audio.play_sfx(AUDIO, "Coin")
                 elif currency_display.is_open():
                     currency_display.close()
         
@@ -2507,27 +2478,17 @@ while running:
                             # Store current music track to restore later
                             if not hasattr(gs, "_shop_previous_music_track"):
                                 gs._shop_previous_music_track = getattr(gs, "last_overworld_track", None)
-                            # Play random laugh sound
+                            # Play shop music immediately (no delay)
+                            audio.play_music(AUDIO, "shopm1", loop=True, fade_ms=400)
+                            gs._shop_music_playing = True
+                            
+                            # Play random laugh sound in background (doesn't block shop music)
                             laugh_num = random.randint(1, 5)
                             laugh_key = f"laugh{laugh_num}"
                             laugh_sound = AUDIO.sfx.get(laugh_key)
                             if laugh_sound:
-                                # Play laugh sound
-                                laugh_channel = audio.play_sound(laugh_sound)
-                                # Get laugh duration
-                                try:
-                                    laugh_length = laugh_sound.get_length()
-                                    # Set timer to play shop music after laugh
-                                    gs._shop_music_timer = laugh_length
-                                    gs._waiting_for_shop_music = True
-                                except:
-                                    # If can't get length, wait a bit then play
-                                    gs._shop_music_timer = 2.0  # Default 2 seconds
-                                    gs._waiting_for_shop_music = True
-                            else:
-                                # If laugh not found, play shop music immediately
-                                audio.play_music(AUDIO, "shopm1", loop=True, fade_ms=800)
-                                gs._shop_music_playing = True
+                                # Play laugh sound (will play over shop music)
+                                audio.play_sound(laugh_sound)
                         elif not gs.shop_open and was_open:
                             # Closing shop - restore overworld music
                             audio.stop_music(fade_ms=600)

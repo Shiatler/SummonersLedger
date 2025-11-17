@@ -128,7 +128,9 @@ def toggle_popup():
 
 # ------------- Layout helpers -------------
 def _panel_rect_for(screen: pygame.Surface) -> pygame.Rect:
-    sw, sh = screen.get_size()
+    # Use logical dimensions for consistency (per screen development guide)
+    import settings as S
+    sw, sh = S.LOGICAL_WIDTH, S.LOGICAL_HEIGHT
     w = int(sw * _BOX_W)
     h = int(sh * _BOX_H)
     offset_x = int(sw * 0.2)  # shift right to clear HP bars

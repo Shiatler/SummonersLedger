@@ -1,0 +1,52 @@
+Remove all bootstrap vessel, also starter barbarian.
+Change bootstrap items and gold to:
+5 scroll of command
+5 scroll of mending
+1 rations
+1 alcohol 
+10 gold pieces
+
+Make the game an exe application
+
+You run all commands.
+
+3) Put your icon in place
+
+Make sure it’s an .ico (not “.icon”). Example path:
+
+Assets\Icons\PlayButton.ico
+
+4) One-command build (quick start)
+
+From project root:
+
+pyinstaller ^
+  --noconfirm ^
+  --clean ^
+  --onefile ^
+  --windowed ^
+  --icon "Assets\Icons\PlayButton.ico" ^
+  --name "SummonersLedger" ^
+  --add-data "Assets;Assets" ^
+  --add-data "Saves;Saves" ^
+  main.py
+
+
+--onefile = single EXE (easy to share)
+
+--windowed = no console window
+
+--add-data = bundle your asset folders (Windows uses ; between src and dest)
+
+Output appears in dist\SummonersLedger.exe
+
+Tip: If MoviePy is in use and you rely on ffmpeg, either ship ffmpeg.exe yourself and point MoviePy to it, or prefer imageio-ffmpeg which PyInstaller can bundle more easily.
+
+5) Spec file (repeatable, cleaner)
+
+Generate once:
+
+pyinstaller main.py --name SummonersLedger --icon "Assets\Icons\PlayButton.ico" --windowed --onefile --add-data "Assets;Assets" --add-data "Saves;Saves"
+
+
+This creates SummonersLedger.spec

@@ -289,7 +289,8 @@ def _wrap_text(text: str, font: pygame.font.Font, max_width: int) -> list[str]:
 
 def _draw_textbox(screen: pygame.Surface, text: str, dt: float, blink_t: float):
     """Draw the textbox with word-by-word typing effect."""
-    sw, sh = screen.get_size()
+    # Use logical dimensions for consistency (per screen development guide)
+    sw, sh = S.LOGICAL_WIDTH, S.LOGICAL_HEIGHT
     box_h = 120
     margin_x = 36
     margin_bottom = 28

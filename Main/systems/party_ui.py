@@ -207,11 +207,17 @@ def handle_event(e, gs) -> bool:
     if ledger.is_open():
         return ledger.handle_event(e, gs)
     
-    # Convert mouse position to logical coordinates
+    # Events are already converted to logical coordinates in main.py
+    # Use e.pos directly if available (already in logical coordinates)
     if e.type in (pygame.MOUSEBUTTONDOWN, pygame.MOUSEBUTTONUP, pygame.MOUSEMOTION):
-        screen_mx, screen_my = e.pos if hasattr(e, 'pos') else pygame.mouse.get_pos()
-        mx, my = coords.screen_to_logical((screen_mx, screen_my))
+        if hasattr(e, 'pos') and e.pos is not None:
+            # Event pos is already in logical coordinates (converted in main.py)
+            mx, my = e.pos
+        else:
+            # Fallback: convert from screen coordinates
+            mx, my = coords.screen_to_logical(pygame.mouse.get_pos())
     else:
+        # For non-mouse events, get current mouse position and convert
         mx, my = coords.screen_to_logical(pygame.mouse.get_pos())
     
     # Handle drag end (mouse button up)

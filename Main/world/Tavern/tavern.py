@@ -1152,8 +1152,8 @@ def _play_laugh_sound():
         sound_path = os.path.join("Assets", "Tavern", "Laugh.mp3")
         if os.path.exists(sound_path):
             sfx = pygame.mixer.Sound(sound_path)
-            ch = pygame.mixer.find_channel(True)
-            ch.play(sfx)
+            # Use audio.play_sound to respect volume settings
+            audio.play_sound(sfx)
             print("🎵 Playing laugh sound (Laugh.mp3)")
         else:
             print(f"⚠️ Laugh sound not found at {sound_path}")
@@ -1163,20 +1163,21 @@ def _play_laugh_sound():
 def _play_barkeeper_sound():
     """Play a random barkeeper greeting sound."""
     try:
+        # Check correct path first: Assets/Tavern/Barkeeper1.mp3 etc.
         choices = [
-            os.path.join("Assets", "Tavern Barkeeper1.mp3"),
-            os.path.join("Assets", "Tavern Barkeeper2.mp3"),
-            os.path.join("Assets", "Tavern Barkeeper3.mp3"),
-            os.path.join("Assets", "Tavern Barkeeper4.mp3"),
+            os.path.join("Assets", "Tavern", "Barkeeper1.mp3"),
+            os.path.join("Assets", "Tavern", "Barkeeper2.mp3"),
+            os.path.join("Assets", "Tavern", "Barkeeper3.mp3"),
+            os.path.join("Assets", "Tavern", "Barkeeper4.mp3"),
         ]
         existing = [p for p in choices if os.path.exists(p)]
         if not existing:
-            # Try legacy paths inside Assets/Tavern
+            # Try fallback paths (legacy format with space)
             fallback = [
-                os.path.join("Assets", "Tavern", "Barkeeper1.mp3"),
-                os.path.join("Assets", "Tavern", "Barkeeper2.mp3"),
-                os.path.join("Assets", "Tavern", "Barkeeper3.mp3"),
-                os.path.join("Assets", "Tavern", "Barkeeper4.mp3"),
+                os.path.join("Assets", "Tavern Barkeeper1.mp3"),
+                os.path.join("Assets", "Tavern Barkeeper2.mp3"),
+                os.path.join("Assets", "Tavern Barkeeper3.mp3"),
+                os.path.join("Assets", "Tavern Barkeeper4.mp3"),
             ]
             existing = [p for p in fallback if os.path.exists(p)]
         if not existing:
@@ -1184,8 +1185,8 @@ def _play_barkeeper_sound():
             return
         sound_path = random.choice(existing)
         sfx = pygame.mixer.Sound(sound_path)
-        ch = pygame.mixer.find_channel(True)
-        ch.play(sfx)
+        # Use audio.play_sound to respect volume settings
+        audio.play_sound(sfx)
         print(f"🎵 Playing barkeeper sound ({os.path.basename(sound_path)})")
     except Exception as e:
         print(f"⚠️ Failed to play barkeeper sound: {e}")

@@ -344,6 +344,11 @@ def _repair_existing_stats_if_needed(gs, slot_index: int, token_name: str):
                 needs_rebuild = True
 
         if needs_rebuild:
+            # CRITICAL: Preserve HP values before rebuilding (vessels use milestone-only HP, not level-based)
+            # build_stats() uses compute_hp() which calculates HP differently, so we must preserve existing HP
+            old_hp = st.get("hp")
+            old_current_hp = st.get("current_hp")
+            
             fixed = build_stats(
                 name=vessel_asset,
                 class_name=expected_cls,
@@ -351,6 +356,16 @@ def _repair_existing_stats_if_needed(gs, slot_index: int, token_name: str):
                 abilities={k.upper(): int(v) for k, v in (abilities.items() if isinstance(abilities, dict) else [])},
                 notes="Migrated to current AC/HP rules (ledger auto-repair)",
             ).to_dict()
+            
+            # Restore original HP values (don't recalculate - vessels use milestone-only system)
+            if old_hp is not None:
+                fixed["hp"] = old_hp
+            if old_current_hp is not None:
+                fixed["current_hp"] = old_current_hp
+            elif old_hp is not None:
+                # If we have old_hp but no old_current_hp, set current_hp to max
+                fixed["current_hp"] = old_hp
+            
             gs.party_vessel_stats[slot_index] = fixed
             # No autosave - user must manually save via "Save Game" button
     except Exception as e:

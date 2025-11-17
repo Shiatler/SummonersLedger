@@ -299,7 +299,9 @@ def draw(screen: pygame.Surface, gs) -> None:
     """Draw the shop UI."""
     global _ITEM_RECTS, _HOVERED_ITEM_INDEX, _LAST_ITEMS, _SCROLL_Y, _CURRENT_CATEGORY_INDEX, _LEFT_ARROW_RECT, _RIGHT_ARROW_RECT
     
-    width, height = screen.get_size()
+    # Use logical dimensions for consistency (per screen development guide)
+    import settings as S
+    width, height = S.LOGICAL_WIDTH, S.LOGICAL_HEIGHT
     
     # Semi-transparent overlay
     overlay = pygame.Surface((width, height), pygame.SRCALPHA)
@@ -861,10 +863,11 @@ def handle_event(event, gs) -> bool:
                 elif _PURCHASE_CONFIRM_RECT and _PURCHASE_CONFIRM_RECT.collidepoint(mx, my):
                     # Confirm purchase
                     if _PURCHASE_ITEM_ID:
-                        success = _confirm_purchase(gs, _PURCHASE_ITEM_ID, _PURCHASE_QUANTITY)
+                        result = _confirm_purchase(gs, _PURCHASE_ITEM_ID, _PURCHASE_QUANTITY)
                         _close_purchase_selector()
-                        if success:
-                            return "purchase_confirmed"  # Signal to main.py to play laugh
+                        # _confirm_purchase returns "purchase_confirmed" for merchants, True for barkeeper
+                        if result:
+                            return result  # Return the result (either True or "purchase_confirmed")
                     return True
                 elif _PURCHASE_CANCEL_RECT and _PURCHASE_CANCEL_RECT.collidepoint(mx, my):
                     # Cancel purchase
@@ -1007,14 +1010,19 @@ def _confirm_purchase(gs, item_id: str, quantity: int) -> bool:
     
     gs.inventory[item_id] = gs.inventory.get(item_id, 0) + quantity
 
-    # Play barkeeper sound if available
-    try:
-        from world.Tavern.tavern import _play_barkeeper_sound
-        _play_barkeeper_sound()
-    except Exception:
-        pass
-    
-    return True
+    # Play sound based on shop type (barkeeper vs merchant)
+    if _OVERRIDE_TITLE is not None:
+        # Barkeeper shop - play barkeeper sound
+        try:
+            from world.Tavern.tavern import _play_barkeeper_sound
+            _play_barkeeper_sound()
+            print(f"🔊 Played barkeeper sound on purchase (title: {_OVERRIDE_TITLE})")
+        except Exception as e:
+            print(f"⚠️ Failed to play barkeeper sound on purchase: {e}")
+        return True
+    else:
+        # Merchant shop - return signal to main.py to play laugh sound
+        return "purchase_confirmed"
 
 def _purchase_item(gs, item_id: str) -> bool:
     """Purchase an item. Returns True if purchase was successful."""
@@ -1055,21 +1063,17 @@ def _purchase_item(gs, item_id: str) -> bool:
     
     gs.inventory[item_id] = gs.inventory.get(item_id, 0) + 1
     
-    # Play purchase sound
-    try:
-        from systems import audio
-        from settings import S
-        audio_sys = audio.AudioSystem()
-        audio_sys.play_click(audio_sys.get_global_bank())
-    except:
-        pass
-
-    # Play barkeeper sound if available
-    try:
-        from world.Tavern.tavern import _play_barkeeper_sound
-        _play_barkeeper_sound()
-    except Exception:
-        pass
-    
-    return True
+    # Play sound based on shop type (barkeeper vs merchant)
+    if _OVERRIDE_TITLE is not None:
+        # Barkeeper shop - play barkeeper sound
+        try:
+            from world.Tavern.tavern import _play_barkeeper_sound
+            _play_barkeeper_sound()
+            print(f"🔊 Played barkeeper sound on purchase (title: {_OVERRIDE_TITLE})")
+        except Exception as e:
+            print(f"⚠️ Failed to play barkeeper sound on purchase: {e}")
+        return True
+    else:
+        # Merchant shop - return signal to main.py to play laugh sound
+        return "purchase_confirmed"
 

@@ -470,6 +470,18 @@ def _is_hovering_clickable(mouse_pos, gs=None, mode=None):
             except:
                 pass
         
+        # ==================== LEADERBOARD SCREEN ====================
+        if mode and "LEADERBOARD" in mode_str:
+            try:
+                if gs and hasattr(gs, '_leaderboard'):
+                    st = gs._leaderboard
+                    # Check back button rect (stored in leaderboard state)
+                    back_rect = st.get("back_button_rect")
+                    if back_rect and back_rect.collidepoint(logical_pos):
+                        return True
+            except:
+                pass
+        
         # ==================== BLACK SCREEN (STARTER SELECTION) ====================
         if mode and "BLACK_SCREEN" in mode_str:
             try:

@@ -11,7 +11,7 @@ def play_dice():
     """Play dice roll sound if available."""
     if os.path.exists(DICE_SFX_PATH):
         sfx = pygame.mixer.Sound(DICE_SFX_PATH)
-        ch = pygame.mixer.find_channel(True)
-        ch.play(sfx)
+        # Use audio_sys.play_sound to respect volume settings
+        audio_sys.play_sound(sfx)
     else:
         audio_sys.play_click()  # fallback small sound

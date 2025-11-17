@@ -1,123 +1,26 @@
 {
-  "player_y": 68668.99999998862,
-  "distance_travelled": 31252.00000001138,
-  "next_event_at": 31278.0,
+  "player_y": 88280.0199999917,
+  "distance_travelled": 11679.460000008316,
+  "next_event_at": 11689.0,
   "player_gender": "male",
   "party_slots_names": [
-    "MTokenBarbarian3.png",
-    "MTokenWarlock1.png",
-    "FTokenPaladin2.png",
-    "MTokenSorcerer2.png",
+    "FTokenSorcerer1.png",
+    "StarterTokenBarbarian5.png",
+    null,
+    null,
     "RTokenRanger1.png",
     "FTokenBarbarian1.png"
   ],
   "party_vessel_stats": [
     {
-      "name": "MVesselBarbarian3.png",
-      "class_name": "Barbarian",
-      "level": 7,
-      "abilities": {
-        "STR": 16,
-        "DEX": 16,
-        "CON": 16,
-        "INT": 13,
-        "WIS": 11,
-        "CHA": 8
-      },
-      "mods": {
-        "STR": 3,
-        "DEX": 3,
-        "CON": 3,
-        "INT": 1,
-        "WIS": 0,
-        "CHA": -1
-      },
-      "prof": 2,
-      "ac": 17,
-      "hp": 15,
-      "initiative": 3,
-      "attack_stat": "STR",
-      "attack_bonus": 5,
-      "notes": "Level up rebuild (milestone HP handled in XP)",
-      "current_hp": 11,
-      "xp_current": 7,
-      "xp_needed": 11,
-      "xp_total": 41,
-      "custom_name": "Nigger Bitch"
-    },
-    {
-      "name": "MVesselWarlock1",
-      "class_name": "Warlock",
-      "level": 12,
-      "abilities": {
-        "STR": 13,
-        "DEX": 13,
-        "CON": 14,
-        "INT": 9,
-        "WIS": 5,
-        "CHA": 16
-      },
-      "mods": {
-        "STR": 1,
-        "DEX": 1,
-        "CON": 2,
-        "INT": -1,
-        "WIS": -3,
-        "CHA": 3
-      },
-      "prof": 2,
-      "ac": 12,
-      "hp": 16,
-      "initiative": 1,
-      "attack_stat": "CHA",
-      "attack_bonus": 5,
-      "notes": "Generated from asset name",
-      "current_hp": 0,
-      "xp_current": 0,
-      "xp_needed": 23,
-      "xp_total": 0
-    },
-    {
-      "name": "FVesselPaladin2",
-      "class_name": "Paladin",
-      "level": 11,
-      "abilities": {
-        "STR": 16,
-        "DEX": 11,
-        "CON": 12,
-        "INT": 9,
-        "WIS": 6,
-        "CHA": 13
-      },
-      "mods": {
-        "STR": 3,
-        "DEX": 0,
-        "CON": 1,
-        "INT": -1,
-        "WIS": -2,
-        "CHA": 1
-      },
-      "prof": 2,
-      "ac": 14,
-      "hp": 14,
-      "initiative": 0,
-      "attack_stat": "STR",
-      "attack_bonus": 5,
-      "notes": "Level up rebuild (milestone HP handled in XP)",
-      "current_hp": 13,
-      "xp_total": 23,
-      "xp_current": 6,
-      "xp_needed": 20
-    },
-    {
-      "name": "MVesselSorcerer2",
+      "name": "FVesselSorcerer1.png",
       "class_name": "Sorcerer",
-      "level": 10,
+      "level": 1,
       "abilities": {
-        "STR": 14,
+        "STR": 15,
         "DEX": 16,
         "CON": 16,
-        "INT": 12,
+        "INT": 14,
         "WIS": 12,
         "CHA": 17
       },
@@ -125,227 +28,280 @@
         "STR": 2,
         "DEX": 3,
         "CON": 3,
-        "INT": 1,
+        "INT": 2,
         "WIS": 1,
         "CHA": 3
       },
       "prof": 2,
       "ac": 13,
-      "hp": 18,
+      "hp": 9,
       "initiative": 3,
       "attack_stat": "CHA",
       "attack_bonus": 5,
       "notes": "Generated from asset name",
-      "current_hp": 18,
-      "xp_total": 6,
-      "xp_current": 6,
-      "xp_needed": 17
+      "current_hp": 9,
+      "xp_current": 0,
+      "xp_needed": 3,
+      "xp_total": 0
     },
+    {
+      "name": "StarterBarbarian5",
+      "class_name": "Barbarian",
+      "level": 1,
+      "abilities": {
+        "STR": 15,
+        "DEX": 13,
+        "CON": 14,
+        "INT": 11,
+        "WIS": 9,
+        "CHA": 8
+      },
+      "mods": {
+        "STR": 2,
+        "DEX": 1,
+        "CON": 2,
+        "INT": 0,
+        "WIS": -1,
+        "CHA": -1
+      },
+      "prof": 2,
+      "ac": 15,
+      "hp": 15,
+      "initiative": 1,
+      "attack_stat": "STR",
+      "attack_bonus": 4,
+      "notes": "Generated from asset name",
+      "current_hp": 15,
+      "xp_current": 0,
+      "xp_needed": 3,
+      "xp_total": 0
+    },
+    null,
+    null,
     {
       "name": "RVesselRanger1.png",
       "class_name": "Ranger",
-      "level": 11,
+      "level": 10,
       "abilities": {
         "STR": 11,
-        "DEX": 18,
+        "DEX": 17,
         "CON": 12,
         "INT": 10,
-        "WIS": 15,
+        "WIS": 16,
         "CHA": 10
       },
       "mods": {
         "STR": 0,
-        "DEX": 4,
+        "DEX": 3,
         "CON": 1,
         "INT": 0,
-        "WIS": 2,
+        "WIS": 3,
         "CHA": 0
       },
       "prof": 2,
-      "ac": 17,
-      "hp": 19,
-      "initiative": 4,
+      "ac": 16,
+      "hp": 13,
+      "initiative": 3,
       "attack_stat": "DEX",
-      "attack_bonus": 6,
-      "notes": "Level up rebuild (milestone HP handled in XP)",
-      "current_hp": 19,
-      "xp_current": 15,
-      "xp_needed": 20,
-      "xp_total": 32
+      "attack_bonus": 5,
+      "notes": "Generated from asset name",
+      "current_hp": 13,
+      "xp_current": 0,
+      "xp_needed": 17,
+      "xp_total": 0
     },
     {
       "name": "FTokenBarbarian1.png",
       "class_name": "FTokenBarbarian",
-      "level": 11,
+      "level": 10,
       "abilities": {
-        "STR": 16,
-        "DEX": 16,
-        "CON": 14,
-        "INT": 14,
-        "WIS": 14,
-        "CHA": 9
+        "STR": 17,
+        "DEX": 11,
+        "CON": 11,
+        "INT": 9,
+        "WIS": 6,
+        "CHA": 6
       },
       "mods": {
         "STR": 3,
-        "DEX": 3,
-        "CON": 2,
-        "INT": 2,
-        "WIS": 2,
-        "CHA": -1
+        "DEX": 0,
+        "CON": 0,
+        "INT": -1,
+        "WIS": -2,
+        "CHA": -2
       },
       "prof": 2,
-      "ac": 14,
-      "hp": 18,
-      "initiative": 3,
+      "ac": 11,
+      "hp": 13,
+      "initiative": 0,
       "attack_stat": "STR",
       "attack_bonus": 5,
-      "notes": "Level up rebuild (milestone HP handled in XP)",
-      "current_hp": 16,
-      "xp_current": 9,
-      "xp_needed": 20,
-      "xp_total": 26
+      "notes": "Generated from asset name",
+      "current_hp": 13,
+      "xp_current": 0,
+      "xp_needed": 17,
+      "xp_total": 0
     }
   ],
   "rivals_on_map": [
     {
-      "name": "Arothir Hellslayer",
-      "filename": "MSummoner14",
-      "side": "right",
-      "x": 1381.0,
-      "y": 68179.77999999077
+      "name": "Saffira Cavernwhisper",
+      "filename": "FSummoner2",
+      "side": "left",
+      "x": 1101.0,
+      "y": 86704.85999999676
     },
     {
-      "name": "Taldor Doomwhisper",
-      "filename": "MSummoner18",
-      "side": "right",
-      "x": 1381.0,
-      "y": 66800.75999999046
+      "name": "Saffira Cavernwhisper",
+      "filename": "FSummoner2",
+      "side": "left",
+      "x": 1101.0,
+      "y": 84261.84999999522
     },
     {
-      "name": "Rokara Searingstone",
+      "name": "Liora Windbeard",
+      "filename": "FSummoner11",
+      "side": "left",
+      "x": 1101.0,
+      "y": 86078.51999999509
+    },
+    {
+      "name": "Blagg Nightshade",
+      "filename": "MSummoner11",
+      "side": "left",
+      "x": 1101.0,
+      "y": 85099.82999999476
+    },
+    {
+      "name": "Korg'zuk Ironfist",
+      "filename": "MSummoner1",
+      "side": "right",
+      "x": 1381.0,
+      "y": 81275.48999999274
+    },
+    {
+      "name": "Razaga Ironfury",
+      "filename": "FSummoner4",
+      "side": "right",
+      "x": 1381.0,
+      "y": 81009.61999999249
+    },
+    {
+      "name": "Razaga Ironfury",
       "filename": "FSummoner4",
       "side": "left",
       "x": 1101.0,
-      "y": 64856.08999998988
+      "y": 79906.18999999229
     },
     {
-      "name": "Soren Ashstorm",
+      "name": "Alorin Thunderhammer",
       "filename": "MSummoner3",
       "side": "right",
       "x": 1381.0,
-      "y": 65434.299999989744
+      "y": 84649.32999999191
     },
     {
-      "name": "Vera Soulclaw",
-      "filename": "FSummoner13",
+      "name": "Blagg Nightshade",
+      "filename": "MSummoner11",
       "side": "right",
       "x": 1381.0,
-      "y": 67759.13999998943
-    },
-    {
-      "name": "Thump Thornfall",
-      "filename": "MSummoner13",
-      "side": "left",
-      "x": 1101.0,
-      "y": 61948.45999998938
-    },
-    {
-      "name": "Vera Soulclaw",
-      "filename": "FSummoner13",
-      "side": "left",
-      "x": 1101.0,
-      "y": 67296.669999989
+      "y": 83735.7599999917
     }
   ],
   "vessels_on_map": [
     {
-      "side": "left",
-      "x": 1101.0,
-      "y": 63869.29999999018
+      "side": "right",
+      "x": 1381.0,
+      "y": 88015.54999999775
     },
     {
       "side": "left",
       "x": 1101.0,
-      "y": 65858.69999999015
+      "y": 86904.33999999755
     },
     {
       "side": "left",
       "x": 1101.0,
-      "y": 66234.1599999901
+      "y": 87665.3999999972
     },
     {
       "side": "left",
       "x": 1101.0,
-      "y": 62913.9699999897
+      "y": 86520.19999999639
     },
     {
       "side": "left",
       "x": 1101.0,
-      "y": 67958.39999998968
+      "y": 85650.55999999621
     },
     {
       "side": "left",
       "x": 1101.0,
-      "y": 63637.239999989484
+      "y": 86322.50999999604
     },
     {
       "side": "left",
       "x": 1101.0,
-      "y": 62414.4799999894
-    },
-    {
-      "side": "left",
-      "x": 1101.0,
-      "y": 67503.8399999894
-    },
-    {
-      "side": "left",
-      "x": 1101.0,
-      "y": 63162.949999989345
+      "y": 85403.95999999557
     },
     {
       "side": "right",
       "x": 1381.0,
-      "y": 60538.299999989
+      "y": 85864.95999999453
     },
     {
       "side": "right",
       "x": 1381.0,
-      "y": 59197.84999998877
+      "y": 81653.50999999353
+    },
+    {
+      "side": "left",
+      "x": 1101.0,
+      "y": 82917.15999999324
+    },
+    {
+      "side": "left",
+      "x": 1101.0,
+      "y": 82444.51999999295
     }
   ],
   "merchants_on_map": [
     {
+      "side": "right",
+      "x": 1381.0,
+      "y": 87392.38999999661
+    },
+    {
       "side": "left",
       "x": 1101.0,
-      "y": 68794.73999999139
+      "y": 83173.54999999385
     },
     {
       "side": "right",
       "x": 1381.0,
-      "y": 65643.63999999069
+      "y": 87130.84999999369
     },
     {
       "side": "left",
       "x": 1101.0,
-      "y": 66419.81999999064
+      "y": 86603.1299999934
     },
     {
       "side": "left",
       "x": 1101.0,
-      "y": 65160.43999999021
-    },
-    {
-      "side": "left",
-      "x": 1101.0,
-      "y": 61464.11999998895
+      "y": 84016.8299999931
     }
   ],
   "taverns_on_map": [
     {
       "side": "left",
       "x": 1101.0,
-      "y": 63372.61999998939
+      "y": 88251.25999999586
+    },
+    {
+      "side": "right",
+      "x": 1381.0,
+      "y": 84876.64999999397
     }
   ],
   "monsters_on_map": [],
@@ -353,75 +309,35 @@
     "scroll_of_command": 5,
     "scroll_of_sealing": 5,
     "scroll_of_subjugation": 3,
+    "scroll_of_eternity": 3,
     "scroll_of_healing": 3,
     "scroll_of_regeneration": 2,
-    "scroll_of_revivity": 1
+    "scroll_of_revivity": 1,
+    "rations": 1,
+    "alcohol": 1
   },
-  "total_points": 1475,
-  "gold": 103,
+  "total_points": 0,
+  "gold": 78,
   "silver": 0,
   "bronze": 0,
   "book_of_bound_discovered": [
-    "FVesselPaladin2",
-    "StarterRogue3",
-    "MVesselSorcerer2",
-    "StarterBarbarian4",
-    "MVesselWarlock1",
-    "StarterBarbarian1",
-    "StarterRogue4"
+    "StarterBarbarian5"
   ],
-  "archives": [
-    {
-      "vessel_name": "StarterRogue3",
-      "token_name": "StarterTokenRogue3",
-      "stats": {
-        "name": "StarterRogue3",
-        "class_name": "Rogue",
-        "level": 4,
-        "abilities": {
-          "STR": 14,
-          "DEX": 16,
-          "CON": 13,
-          "INT": 16,
-          "WIS": 8,
-          "CHA": 15
-        },
-        "mods": {
-          "STR": 2,
-          "DEX": 3,
-          "CON": 1,
-          "INT": 3,
-          "WIS": -1,
-          "CHA": 2
-        },
-        "prof": 2,
-        "ac": 15,
-        "hp": 9,
-        "initiative": 3,
-        "attack_stat": "DEX",
-        "attack_bonus": 5,
-        "notes": "Level up rebuild (milestone HP handled in XP)",
-        "current_hp": 6,
-        "xp_current": 1,
-        "xp_needed": 6,
-        "xp_total": 13
-      }
-    }
-  ],
+  "archives": [],
   "active_buffs": [
     {
-      "tier": "Rare",
-      "id": 4,
-      "name": "Rare4",
-      "image_path": "Assets\\Blessings\\Rare4.png"
+      "tier": "Common",
+      "id": 2,
+      "name": "Common2",
+      "image_path": "Assets\\Blessings\\Common2.png"
     }
   ],
   "buffs_history": [
     {
-      "tier": "Rare",
-      "id": 4,
-      "name": "Rare4",
-      "image_path": "Assets\\Blessings\\Rare4.png"
+      "tier": "Common",
+      "id": 2,
+      "name": "Common2",
+      "image_path": "Assets\\Blessings\\Common2.png"
     }
   ],
   "first_overworld_blessing_given": true,

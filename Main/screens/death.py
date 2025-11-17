@@ -166,7 +166,8 @@ def draw(screen: pygame.Surface, gs, dt, **_):
     if st is None:
         enter(gs); st = gs._death
 
-    sw, sh = screen.get_size()
+    # Use logical dimensions for consistency (per screen development guide)
+    sw, sh = S.LOGICAL_WIDTH, S.LOGICAL_HEIGHT
 
     # --- Background ---
     bg = _load_bg()

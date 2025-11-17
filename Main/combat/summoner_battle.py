@@ -668,8 +668,8 @@ def draw(screen: pygame.Surface, gs, dt, **_):
                 else:
                     if os.path.exists(TELEPORT_SFX):
                         _tmp = pygame.mixer.Sound(TELEPORT_SFX)
-                        _tmp.set_volume(0.9)
-                        _tmp.play()
+                        # Use audio_sys.play_sound to respect volume settings
+                        audio_sys.play_sound(_tmp, vol_scale=0.9)
             except Exception as e:
                 print(f"⚠️ Teleport sound failed: {e}")
 
@@ -718,7 +718,8 @@ def draw(screen: pygame.Surface, gs, dt, **_):
 
     # --- Challenge textbox (drawn over sprites, before buttons)
     if st.get("textbox_active", False):
-        sw, sh = screen.get_size()
+        # Use logical dimensions for consistency (per screen development guide)
+        sw, sh = S.LOGICAL_WIDTH, S.LOGICAL_HEIGHT
         box_h = 120
         margin_x = 36
         margin_bottom = 28

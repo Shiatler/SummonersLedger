@@ -632,11 +632,12 @@ def _player_roll(gs):
 def _play_win_sound():
     """Play win sound (Angry.mp3)."""
     try:
+        from systems import audio
         sound_path = os.path.join("Assets", "Tavern", "Angry.mp3")
         if os.path.exists(sound_path):
             sfx = pygame.mixer.Sound(sound_path)
-            ch = pygame.mixer.find_channel(True)
-            ch.play(sfx)
+            # Use audio.play_sound to respect volume settings
+            audio.play_sound(sfx)
             print("🎵 Playing win sound (Angry.mp3)")
         else:
             print(f"⚠️ Win sound not found at {sound_path}")
@@ -646,11 +647,12 @@ def _play_win_sound():
 def _play_lose_sound():
     """Play lose sound (Laugh.mp3)."""
     try:
+        from systems import audio
         sound_path = os.path.join("Assets", "Tavern", "Laugh.mp3")
         if os.path.exists(sound_path):
             sfx = pygame.mixer.Sound(sound_path)
-            ch = pygame.mixer.find_channel(True)
-            ch.play(sfx)
+            # Use audio.play_sound to respect volume settings
+            audio.play_sound(sfx)
             print("🎵 Playing lose sound (Laugh.mp3)")
         else:
             print(f"⚠️ Lose sound not found at {sound_path}")

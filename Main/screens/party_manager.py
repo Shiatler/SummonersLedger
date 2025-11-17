@@ -581,7 +581,8 @@ def _draw_heal_textbox(screen: pygame.Surface, dt: float = 0.016):
     if not _HEAL_TEXTBOX_ACTIVE:
         return
     
-    sw, sh = screen.get_size()
+    # Use logical dimensions for consistency (per screen development guide)
+    sw, sh = S.LOGICAL_WIDTH, S.LOGICAL_HEIGHT
     box_h = 120
     margin_x = 36
     margin_bottom = 28
@@ -814,8 +815,13 @@ def handle_event(e, gs) -> bool:
                     return True
 
     if e.type == pygame.MOUSEBUTTONDOWN:
-        # Convert mouse coordinates to logical coordinates for QHD support
-        mx, my = coords.screen_to_logical(e.pos)
+        # Events are already converted to logical coordinates in main.py
+        # Use e.pos directly (already in logical coordinates)
+        if hasattr(e, 'pos') and e.pos is not None:
+            mx, my = e.pos
+        else:
+            # Fallback: convert from screen coordinates
+            mx, my = coords.screen_to_logical(pygame.mouse.get_pos())
 
         if _PANEL_RECT and not _PANEL_RECT.collidepoint(mx, my):
             # Don't close if textbox is active - let textbox handle the click
@@ -957,7 +963,8 @@ def draw(screen: pygame.Surface, gs, dt: float = 0.016):
     _ITEM_RECTS = []
     _ITEM_INDEXES = []
 
-    sw, sh = screen.get_size()
+    # Use logical dimensions for consistency (per screen development guide)
+    sw, sh = S.LOGICAL_WIDTH, S.LOGICAL_HEIGHT
     layer = pygame.Surface((sw, sh), pygame.SRCALPHA)
 
     # Cache dim surface to avoid recreating every frame
@@ -1079,7 +1086,8 @@ def draw(screen: pygame.Surface, gs, dt: float = 0.016):
     # Draw rename textbox modal if active
     if _RENAME_ACTIVE and _RENAME_IDX is not None:
         _RENAME_BLINK_T += dt
-        sw2, sh2 = layer.get_size()
+        # Use logical dimensions for consistency (per screen development guide)
+        sw2, sh2 = S.LOGICAL_WIDTH, S.LOGICAL_HEIGHT
         box_h = 140
         margin_x = 60
         rect = pygame.Rect(margin_x, sh2 - box_h - 36, sw2 - margin_x * 2, box_h)

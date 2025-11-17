@@ -6,7 +6,7 @@
 import os
 import pygame
 import settings as S
-from systems import leaderboard as lb_sys, party_ui, coords
+from systems import leaderboard as lb_sys, party_ui, coords, audio as audio_sys
 from systems.theme import PANEL_BG, PANEL_BORDER, DND_RED, DND_RED_HOV
 
 # Mode constants are defined in main.py
@@ -52,7 +52,7 @@ def enter(gs, **_):
     st["max_scroll"] = max(0, total_height - visible_height)
 
 
-def handle(events, gs, **_):
+def handle(events, gs, audio_bank=None, **_):
     """Handle leaderboard screen events."""
     st = getattr(gs, "_leaderboard", None)
     if st is None:
@@ -62,6 +62,10 @@ def handle(events, gs, **_):
     for event in events:
         if event.type == pygame.KEYDOWN:
             if event.key == pygame.K_ESCAPE:
+                try:
+                    audio_sys.play_click(audio_bank or audio_sys.get_global_bank())
+                except Exception:
+                    pass
                 return S.MODE_MENU
             # Scroll with arrow keys
             elif event.key == pygame.K_UP:
@@ -77,9 +81,18 @@ def handle(events, gs, **_):
             
             # Check if back button clicked
             back_rect = st.get("back_button_rect")
-            # Convert mouse coordinates to logical coordinates for QHD support
-            mx, my = coords.screen_to_logical(event.pos)
+            # Events are already converted to logical coordinates in main.py
+            # Use event.pos directly (already in logical coordinates)
+            if hasattr(event, 'pos') and event.pos is not None:
+                mx, my = event.pos
+            else:
+                # Fallback: convert from screen coordinates
+                mx, my = coords.screen_to_logical(pygame.mouse.get_pos())
             if back_rect and back_rect.collidepoint(mx, my):
+                try:
+                    audio_sys.play_click(audio_bank or audio_sys.get_global_bank())
+                except Exception:
+                    pass
                 return S.MODE_MENU
     
     return None

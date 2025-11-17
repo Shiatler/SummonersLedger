@@ -357,10 +357,10 @@ def start_buff_selection(gs):
     else:
         print(f"✅ Using intro image for tier '{tier}': {intro_image.get_size()}")
     
-    # Play the sound
+    # Play the sound (using audio.play_sound to respect volume settings)
     if intro_sound:
         try:
-            intro_sound.play()
+            audio.play_sound(intro_sound)
             print(f"🔊 Playing {tier} sound")
         except Exception as e:
             print(f"⚠️ Failed to play {tier} sound: {e}")

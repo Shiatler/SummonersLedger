@@ -1054,7 +1054,8 @@ def _draw_result_screen(screen: pygame.Surface, st: dict, dt: float):
             pass
         res["played"] = True
 
-    sw, sh = screen.get_size()
+    # Use logical dimensions for consistency (per screen development guide)
+    sw, sh = S.LOGICAL_WIDTH, S.LOGICAL_HEIGHT
     # No dim overlay - matches heal textbox style
     # dim = pygame.Surface((sw, sh), pygame.SRCALPHA); dim.fill((0, 0, 0, min(160, a)))
     # screen.blit(dim, (0, 0))
@@ -1461,7 +1462,8 @@ def _try_revive_dead_vessel_with_infernal_rebirth(gs, st, vessel_slot: int):
                 pygame.mixer.init()
             try:
                 sound = pygame.mixer.Sound(sound_path)
-                sound.play()
+                # Use audio_sys.play_sound to respect volume settings
+                audio_sys.play_sound(sound)
                 print(f"🔊 Played Infernal Rebirth sound: {sound_path}")
             except Exception as e:
                 print(f"⚠️ Failed to load/play Infernal Rebirth sound: {e}")
