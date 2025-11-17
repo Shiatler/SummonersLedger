@@ -2279,11 +2279,6 @@ while running:
 
         # --- Global hotkeys ---
         for e in events:
-            # Bag toggle (I)
-            if e.type == pygame.KEYDOWN and e.key == pygame.K_i:
-                bag_ui.toggle_popup()
-                just_toggled_bag = True
-
             # Party Manager toggle (Tab) — only if no other modal is open
             if e.type == pygame.KEYDOWN and e.key == pygame.K_TAB:
                 if not bag_ui.is_open() and not ledger.is_open():
@@ -2340,11 +2335,10 @@ while running:
                 if party_manager.handle_event(e, gs):
                     continue
             
-            # Ignore the exact key that toggled a modal this frame to avoid double-handling
+            # Handle bag UI events
             if bag_ui.is_open():
-                if not (just_toggled_bag and e.type == pygame.KEYDOWN and e.key == pygame.K_i):
-                    if bag_ui.handle_event(e, gs, screen):
-                        continue
+                if bag_ui.handle_event(e, gs, screen):
+                    continue
 
             if party_manager.is_open():
                 if not (just_toggled_pm and e.type == pygame.KEYDOWN and e.key == pygame.K_TAB):

@@ -309,6 +309,103 @@ def _display_name(token_name: str | None, stats: dict | None) -> str:
     from systems.name_generator import get_display_vessel_name
     return get_display_vessel_name(token_name or "", stats or {})
 
+def _draw_vessel_tooltip(layer: pygame.Surface, gs, hover_idx: int, mouse_pos: tuple[int, int]):
+    """Draw tooltip showing vessel information when hovering."""
+    if hover_idx is None:
+        return
+    
+    names = getattr(gs, "party_slots_names", None) or [None]*6
+    stats = getattr(gs, "party_vessel_stats", None) or [None]*6
+    
+    if hover_idx >= len(names) or not names[hover_idx]:
+        return
+    
+    vessel_name = names[hover_idx]
+    vessel_stats = stats[hover_idx] if hover_idx < len(stats) else None
+    
+    if not isinstance(vessel_stats, dict):
+        return
+    
+    # Get vessel information
+    display_name = _display_name(vessel_name, vessel_stats) or "Vessel"
+    class_name = vessel_stats.get("class_name", "Unknown")
+    
+    # Get type chart information
+    from combat.type_chart import get_class_damage_type, get_class_weaknesses, get_class_resistances
+    
+    dmg_type = get_class_damage_type(class_name) or "Unknown"
+    weaknesses = get_class_weaknesses(class_name)
+    resistances = get_class_resistances(class_name)
+    
+    # Format class name (capitalize first letter)
+    class_display = class_name.capitalize() if class_name else "Unknown"
+    
+    # Build tooltip lines
+    tooltip_lines = [
+        f"Name: {display_name}",
+        f"Class: {class_display}",
+        f"Dmg type: {dmg_type}",
+        f"Weakness: {', '.join(weaknesses) if weaknesses else 'None'}",
+        f"Resist: {', '.join(resistances) if resistances else 'None'}"
+    ]
+    
+    # Get fonts
+    tooltip_font = _get_dh_font(18)
+    name_font = _get_dh_font(20, bold=True)
+    
+    # Calculate tooltip size
+    tooltip_padding = 12
+    line_height = 24
+    
+    # Calculate max width
+    max_width = 0
+    for line in tooltip_lines:
+        # Use name font for first line, tooltip font for others
+        font = name_font if line.startswith("Name:") else tooltip_font
+        width = font.size(line)[0]
+        max_width = max(max_width, width)
+    
+    tooltip_w = max(250, max_width + tooltip_padding * 2)
+    tooltip_h = len(tooltip_lines) * line_height + tooltip_padding * 2
+    
+    # Position tooltip near mouse, but keep it on screen
+    mx, my = mouse_pos
+    sw, sh = S.LOGICAL_WIDTH, S.LOGICAL_HEIGHT
+    
+    # Position to the right of mouse, or left if too close to right edge
+    tooltip_x = mx + 20
+    if tooltip_x + tooltip_w > sw - 20:
+        tooltip_x = mx - tooltip_w - 20
+    
+    # Position above mouse, or below if too close to top
+    tooltip_y = my - tooltip_h - 10
+    if tooltip_y < 20:
+        tooltip_y = my + 30
+    
+    # Make sure tooltip stays on screen
+    tooltip_x = max(20, min(tooltip_x, sw - tooltip_w - 20))
+    tooltip_y = max(20, min(tooltip_y, sh - tooltip_h - 20))
+    
+    tooltip_rect = pygame.Rect(tooltip_x, tooltip_y, tooltip_w, tooltip_h)
+    
+    # Draw tooltip background (matching shop/textbox style)
+    tooltip_bg = pygame.Surface((tooltip_w, tooltip_h), pygame.SRCALPHA)
+    tooltip_bg.fill((245, 245, 245))
+    pygame.draw.rect(tooltip_bg, (0, 0, 0), tooltip_bg.get_rect(), 4, border_radius=8)
+    inner_tooltip = tooltip_bg.get_rect().inflate(-8, -8)
+    pygame.draw.rect(tooltip_bg, (60, 60, 60), inner_tooltip, 2, border_radius=6)
+    layer.blit(tooltip_bg, tooltip_rect.topleft)
+    
+    # Draw text
+    text_y = tooltip_rect.y + tooltip_padding
+    for i, line in enumerate(tooltip_lines):
+        # Use name font for first line, tooltip font for others
+        font = name_font if i == 0 else tooltip_font
+        text_color = (16, 16, 16)
+        line_s = font.render(line, True, text_color)
+        layer.blit(line_s, (tooltip_rect.x + tooltip_padding, text_y))
+        text_y += line_height
+
 def _hp_tuple(stats: dict | None) -> tuple[int, int]:
     if isinstance(stats, dict):
         hp = int(stats.get("hp", 10))
@@ -468,6 +565,9 @@ _RENAME_TEXT = ""
 _RENAME_BLINK_T = 0.0
 _RENAME_IDX: int | None = None
 _HOVER_IDX: int | None = None
+_RENAME_KEYS_PRESSED = set()  # Track which keys are currently held during rename
+_RENAME_KEY_REPEAT_TIMER = 0.0  # Timer for key repeat
+_RENAME_KEY_REPEAT_DELAY = 0.05  # Repeat every 50ms when held
 
 # --- Lightweight "use-on-click" mode (e.g., healing, revive) ---
 # mode example: {"kind":"heal", "dice":(1,8), "add_con":True, "revive":False}
@@ -693,7 +793,7 @@ def _set_active(gs, idx):
 def handle_event(e, gs) -> bool:
     global _SELECTED, _PANEL_RECT, _USE_MODE, _HEAL_TEXTBOX_ACTIVE
     global _RENAME_ACTIVE, _RENAME_TEXT, _RENAME_BLINK_T, _RENAME_IDX
-    global _HOVER_IDX
+    global _HOVER_IDX, _RENAME_KEYS_PRESSED, _RENAME_KEY_REPEAT_TIMER
     
     # Handle heal textbox dismissal first (modal) - works even when party manager is closed
     if _HEAL_TEXTBOX_ACTIVE:
@@ -723,11 +823,15 @@ def handle_event(e, gs) -> bool:
     # Inline rename mode (modal within Party Manager)
     if _RENAME_ACTIVE:
         if e.type == pygame.KEYDOWN:
+            _RENAME_KEYS_PRESSED.add(e.key)  # Track that key is pressed
+            _RENAME_KEY_REPEAT_TIMER = 0.0  # Reset timer on new key press
+            
             if e.key == pygame.K_ESCAPE:
                 _RENAME_ACTIVE = False
                 _RENAME_IDX = None
                 _RENAME_TEXT = ""
                 _RENAME_BLINK_T = 0.0
+                _RENAME_KEYS_PRESSED.clear()
                 _play_click()
                 return True
             elif e.key in (pygame.K_RETURN, pygame.K_KP_ENTER):
@@ -756,6 +860,7 @@ def handle_event(e, gs) -> bool:
                 _RENAME_IDX = None
                 _RENAME_TEXT = ""
                 _RENAME_BLINK_T = 0.0
+                _RENAME_KEYS_PRESSED.clear()
                 _play_click()
                 return True
             elif e.key == pygame.K_BACKSPACE:
@@ -766,6 +871,9 @@ def handle_event(e, gs) -> bool:
                 if ch and ch.isprintable() and len(_RENAME_TEXT) < 30:
                     _RENAME_TEXT += ch
                     return True
+        elif e.type == pygame.KEYUP:
+            _RENAME_KEYS_PRESSED.discard(e.key)  # Remove key when released
+            _RENAME_KEY_REPEAT_TIMER = 0.0  # Reset timer when key is released
         # Block other inputs while renaming
         return True
 
@@ -795,6 +903,8 @@ def handle_event(e, gs) -> bool:
                 _RENAME_IDX = target_idx
                 _RENAME_TEXT = prefill[:30]
                 _RENAME_BLINK_T = 0.0
+                _RENAME_KEYS_PRESSED.clear()
+                _RENAME_KEY_REPEAT_TIMER = 0.0
                 _play_click()
                 return True
         if e.key == pygame.K_DELETE:
@@ -939,7 +1049,7 @@ def handle_event(e, gs) -> bool:
 # ---------------- Drawing ----------------
 def draw(screen: pygame.Surface, gs, dt: float = 0.016):
     global _ITEM_RECTS, _ITEM_INDEXES, _PANEL_RECT, _FADE_START_MS
-    global _RENAME_BLINK_T  # incremented below when rename UI is active
+    global _RENAME_BLINK_T, _RENAME_TEXT  # incremented below when rename UI is active
     # Draw heal textbox even if party manager is closed (it's modal)
     _draw_heal_textbox(screen, dt)
     
@@ -1086,6 +1196,16 @@ def draw(screen: pygame.Surface, gs, dt: float = 0.016):
     # Draw rename textbox modal if active
     if _RENAME_ACTIVE and _RENAME_IDX is not None:
         _RENAME_BLINK_T += dt
+        
+        # Process key repeat for held keys
+        global _RENAME_KEY_REPEAT_TIMER, _RENAME_KEY_REPEAT_DELAY
+        _RENAME_KEY_REPEAT_TIMER += dt
+        if _RENAME_KEYS_PRESSED and _RENAME_KEY_REPEAT_TIMER >= _RENAME_KEY_REPEAT_DELAY:
+            _RENAME_KEY_REPEAT_TIMER = 0.0  # Reset timer
+            # Process backspace if held
+            if pygame.K_BACKSPACE in _RENAME_KEYS_PRESSED:
+                _RENAME_TEXT = _RENAME_TEXT[:-1]
+        
         # Use logical dimensions for consistency (per screen development guide)
         sw2, sh2 = S.LOGICAL_WIDTH, S.LOGICAL_HEIGHT
         box_h = 140
@@ -1109,6 +1229,11 @@ def draw(screen: pygame.Surface, gs, dt: float = 0.016):
 
         hint = body_font.render("Enter to confirm • Esc to cancel • Backspace to delete", True, (80, 80, 80))
         layer.blit(hint, (inner_rect.x + 16, inner_rect.bottom - 36))
+
+    # Draw vessel tooltip when hovering (only if not in rename mode)
+    if _HOVER_IDX is not None and not _RENAME_ACTIVE:
+        mx, my = coords.screen_to_logical(pygame.mouse.get_pos())
+        _draw_vessel_tooltip(layer, gs, _HOVER_IDX, (mx, my))
 
     if _FADE_START_MS is None:
         alpha = 255

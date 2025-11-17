@@ -1,6 +1,6 @@
 {
-  "player_y": 93070.1299999948,
-  "distance_travelled": 6850.870000005205,
+  "player_y": 92983.0299999948,
+  "distance_travelled": 6937.970000005196,
   "next_event_at": 6971.0,
   "player_gender": "male",
   "party_slots_names": [
@@ -42,7 +42,8 @@
       "current_hp": 8,
       "xp_current": 0,
       "xp_needed": 3,
-      "xp_total": 0
+      "xp_total": 0,
+      "custom_name": "Nigger Bitch"
     },
     {
       "name": "StarterBarbarian5",
@@ -74,7 +75,8 @@
       "current_hp": 14,
       "xp_current": 0,
       "xp_needed": 3,
-      "xp_total": 0
+      "xp_total": 0,
+      "custom_name": "BITCHES"
     },
     null,
     null,

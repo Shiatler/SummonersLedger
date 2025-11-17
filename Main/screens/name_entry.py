@@ -7,7 +7,14 @@ import settings as S
 
 def enter(gs, **_):
     if not hasattr(gs, "_name_state"):
-        gs._name_state = {"text": "", "blink_timer": 0.0, "cursor_on": True}
+        gs._name_state = {
+            "text": "", 
+            "blink_timer": 0.0, 
+            "cursor_on": True,
+            "keys_pressed": set(),  # Track which keys are currently held
+            "key_repeat_timer": 0.0,  # Timer for key repeat
+            "key_repeat_delay": 0.05  # Repeat every 50ms when held
+        }
 
 def draw(screen, gs, dt, fonts=None, menu_bg=None, **_):
     if menu_bg:
@@ -44,8 +51,27 @@ def handle(events, gs, dt, **_):
         st["blink_timer"] = 0.0
         st["cursor_on"] = not st["cursor_on"]
 
+    # Initialize keys_pressed if not present (for backwards compatibility)
+    if "keys_pressed" not in st:
+        st["keys_pressed"] = set()
+        st["key_repeat_timer"] = 0.0
+        st["key_repeat_delay"] = 0.05
+
+    # Update key repeat timer
+    st["key_repeat_timer"] += dt
+
+    # Process key repeat for held keys
+    if st["keys_pressed"] and st["key_repeat_timer"] >= st["key_repeat_delay"]:
+        st["key_repeat_timer"] = 0.0  # Reset timer
+        # Process backspace if held
+        if pygame.K_BACKSPACE in st["keys_pressed"]:
+            st["text"] = st["text"][:-1]
+
     for event in events:
         if event.type == pygame.KEYDOWN:
+            st["keys_pressed"].add(event.key)  # Track that key is pressed
+            st["key_repeat_timer"] = 0.0  # Reset timer on new key press
+            
             if event.key == pygame.K_ESCAPE:
                 return "CHAR_SELECT"
             elif event.key in (pygame.K_RETURN, pygame.K_KP_ENTER):
@@ -62,4 +88,7 @@ def handle(events, gs, dt, **_):
                 ch = event.unicode
                 if ch and ch.isprintable() and len(st["text"]) < 30:
                     st["text"] += ch
+        elif event.type == pygame.KEYUP:
+            st["keys_pressed"].discard(event.key)  # Remove key when released
+            st["key_repeat_timer"] = 0.0  # Reset timer when key is released
     return None
