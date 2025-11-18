@@ -17,6 +17,7 @@ PREFIX_TO_TOKEN  = (
     ("Ogre", "TokenOgre"),
     ("Owlbear", "TokenOwlbear"),
     ("Myconid", "TokenMyconid"),
+    ("Chestmonster", "TokenChestmonster"),
 )
 PREFIX_TO_VESSEL = tuple((t, v) for (v, t) in PREFIX_TO_TOKEN)
 

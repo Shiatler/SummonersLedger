@@ -17,6 +17,7 @@ MONSTER_STAT_MULTIPLIERS = {
     "Ogre": 1.3,       # 30% stronger = 1.3x stats, 1.3x HP
     "Nothic": 1.3,     # 30% stronger = 1.3x stats, 1.3x HP
     "Myconid": 1.2,    # 20% stronger = 1.2x stats, 1.2x HP
+    "Chestmonster": 1.75,  # 75% stronger = 1.75x stats, 1.75x HP
 }
 
 def _extract_monster_name(asset_name: str) -> Optional[str]:

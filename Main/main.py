@@ -17,7 +17,7 @@ from game_state import GameState
 # systems & world
 from world import assets, actors, world, procgen
 from systems import save_system as saves, theme, ui, audio, party_ui
-from systems import score_display, hud_buttons, currency_display, shop
+from systems import score_display, hud_buttons, shop
 from systems import rest_popup, bottom_right_hud, left_hud, buff_popup
 from systems import coords  # Coordinate conversion utilities
 from bootstrap.default_party import add_default_on_new_game   # ← add this
@@ -419,7 +419,6 @@ def _handle_rival_dialogue_input(events, gs):
                 
                 print(f"💬 Rival dialogue dismissed, transitioning to VS screen: {gs.encounter_name}")
                 return True  # Signal that we should transition to VS screen
-        elif event.type == pygame.MOUSEBUTTONDOWN and event.button == 1:
             # Stop walking sound if still playing
             if hasattr(gs, "rival_walking_channel") and gs.rival_walking_channel:
                 gs.rival_walking_channel.stop()
@@ -442,7 +441,176 @@ def _handle_rival_dialogue_input(events, gs):
     return False
 
 
-def try_trigger_encounter(gs, summoners, merchant_frames, tavern_sprite=None, monsters=None):
+def _open_chest(gs):
+    """Handle chest opening: 85% item reward, 15% Chestmonster battle."""
+    if not getattr(gs, "near_chest", None):
+        return
+    
+    # Remove chest from map
+    chest = gs.near_chest
+    if hasattr(gs, "chests_on_map") and chest in gs.chests_on_map:
+        gs.chests_on_map.remove(chest)
+    gs.near_chest = None
+    
+    # Play chest opening sound
+    _play_chest_sound()
+    
+    # Roll: 85% item, 15% battle
+    roll = random.random()
+    if roll < 0.85:
+        # Give item reward and show result card
+        item_name = _give_chest_item(gs)
+        gs.chest_result_card_active = True
+        gs.chest_result_card_title = "Chest Opened!"
+        gs.chest_result_card_subtitle = f"You found: {item_name}"
+        gs.chest_result_is_monster = False
+    else:
+        # Trigger Chestmonster battle - show attack message
+        _trigger_chestmonster_battle(gs)
+        attack_messages = [
+            "The chest springs open! A Chest Monster lunges at you!",
+            "As you open the chest, a monstrous form emerges and attacks!",
+            "The chest was a trap! A Chest Monster bursts forth!",
+            "Something moves inside the chest... A Chest Monster attacks!",
+            "The lid flies open! A Chest Monster leaps out at you!",
+        ]
+        gs.chest_result_card_active = True
+        gs.chest_result_card_title = "Chest Monster!"
+        gs.chest_result_card_subtitle = random.choice(attack_messages)
+        gs.chest_result_is_monster = True
+
+
+def _give_chest_item(gs):
+    """Give a random item from chest with weighted distribution. Returns formatted item name."""
+    # Weighted item distribution (total = 100%)
+    items = [
+        ("scroll_of_command", 25),      # Highest chance
+        ("scroll_of_mending", 25),     # Highest chance
+        ("scroll_of_healing", 15),
+        ("scroll_of_regeneration", 10),
+        ("scroll_of_revivity", 8),
+        ("scroll_of_sealing", 7),
+        ("scroll_of_subjugation", 5),
+        ("rations", 3),
+        ("alcohol", 2),
+        # scroll_of_eternity is EXCLUDED
+    ]
+    
+    # Select item based on weights
+    total_weight = sum(weight for _, weight in items)
+    roll = random.random() * total_weight
+    cumulative = 0
+    selected_item = None
+    
+    for item_id, weight in items:
+        cumulative += weight
+        if roll <= cumulative:
+            selected_item = item_id
+            break
+    
+    if not selected_item:
+        # Fallback to first item if something went wrong
+        selected_item = items[0][0]
+    
+    # Add item to inventory
+    if not hasattr(gs, "inventory"):
+        gs.inventory = {}
+    if not isinstance(gs.inventory, dict):
+        gs.inventory = {}
+    
+    current_qty = gs.inventory.get(selected_item, 0)
+    gs.inventory[selected_item] = current_qty + 1
+    
+    # Format item name for display
+    item_name = selected_item.replace("_", " ").title()
+    print(f"💎 Chest opened! Received: {item_name}")
+    return item_name
+
+
+def _play_chest_sound():
+    """Play chest opening sound effect."""
+    try:
+        chest_sfx_path = os.path.join("Assets", "Music", "Sounds", "Chest.mp3")
+        if os.path.exists(chest_sfx_path):
+            chest_sfx = pygame.mixer.Sound(chest_sfx_path)
+            audio.play_sound(chest_sfx)
+        else:
+            print(f"⚠️ Chest.mp3 not found at: {chest_sfx_path}")
+    except Exception as e:
+        print(f"⚠️ Failed to play chest sound: {e}")
+
+
+def _trigger_chestmonster_battle(gs):
+    """Set up Chestmonster encounter."""
+    from combat.team_randomizer import scaled_enemy_level
+    from rolling.roller import Roller
+    
+    # Generate stats for Chestmonster (75% boost = 1.75x multiplier)
+    seed = (pygame.time.get_ticks() ^ hash("Chestmonster") ^ int(gs.distance_travelled)) & 0xFFFFFFFF
+    try:
+        rng = Roller(seed=seed)
+    except TypeError:
+        rng = Roller()
+        for method in ("reseed", "seed", "set_seed"):
+            fn = getattr(rng, method, None)
+            if callable(fn):
+                try:
+                    fn(seed)
+                    break
+                except Exception:
+                    pass
+    
+    enemy_level = scaled_enemy_level(gs, rng)
+    
+    # Generate Chestmonster stats with 75% boost
+    stats = _generate_chestmonster_stats(enemy_level, rng)
+    
+    # Load Chestmonster sprites
+    chestmonster_sprite = None
+    token_sprite = None
+    try:
+        chestmonster_path = os.path.join("Assets", "VesselMonsters", "Chestmonster.png")
+        token_path = os.path.join("Assets", "VesselMonsters", "TokenChestmonster.png")
+        if os.path.exists(chestmonster_path):
+            chestmonster_sprite = pygame.image.load(chestmonster_path).convert_alpha()
+        if os.path.exists(token_path):
+            token_sprite = pygame.image.load(token_path).convert_alpha()
+    except Exception as e:
+        print(f"⚠️ Failed to load Chestmonster sprites: {e}")
+    
+    # Set up encounter
+    # Use name generator to get monster name (will return "Chestmonster" directly, like other monsters)
+    from systems.name_generator import generate_vessel_name
+    gs.encounter_name = generate_vessel_name("Chestmonster")
+    gs.encounter_sprite = chestmonster_sprite
+    gs.encounter_stats = stats
+    # Use "Chestmonster" (not "TokenChestmonster") - the system will convert it to token when needed
+    # This matches how other monsters work (they use asset_name like "Dragon.png")
+    gs.encounter_token_name = "Chestmonster"
+    gs.encounter_type = "MONSTER"  # Use monster battle system (so Chestmonster.mp3 plays)
+    
+    print(f"⚔️ Chest opened! A Chest Monster appears!")
+
+
+def _generate_chestmonster_stats(level: int, rng) -> dict:
+    """Generate Chestmonster stats with 75% boost (1.75x multiplier)."""
+    from combat.monster_stats import generate_monster_stats_from_asset
+    
+    # Use the monster stats generator which applies the multiplier properly
+    stats = generate_monster_stats_from_asset(
+        asset_name="Chestmonster",
+        level=level,
+        rng=rng,
+        notes="Chestmonster with 75% stat boost"
+    )
+    
+    # Ensure class_name is set to Chestmonster for move recognition
+    stats["class_name"] = "Chestmonster"
+    
+    return stats
+
+
+def try_trigger_encounter(gs, summoners, merchant_frames, tavern_sprite=None, monsters=None, chest_sprite=None):
     if gs.in_encounter:
         return
     if gs.distance_travelled >= gs.next_event_at:
@@ -468,8 +636,9 @@ def try_trigger_encounter(gs, summoners, merchant_frames, tavern_sprite=None, mo
             # Normal chance-based spawning (reference values)
             merchant_chance = 0.10  # 10%
             tavern_chance   = 0.05  # 5%
+            chest_chance    = 0.05  # 5%
             monster_chance  = 0.01  # 1%
-            vessel_chance   = 0.54  # 54%
+            vessel_chance   = 0.49  # 49% (reduced from 54% to make room for chest)
             summoner_chance = 0.30  # 30%
             
             if merchant_frames and len(merchant_frames) > 0 and roll < merchant_chance:
@@ -482,7 +651,11 @@ def try_trigger_encounter(gs, summoners, merchant_frames, tavern_sprite=None, mo
                 # Spawn tavern (merchant_chance to merchant_chance + tavern_chance)
                 if tavern_sprite:
                     actors.spawn_tavern_ahead(gs, gs.start_x, tavern_sprite)
-            elif roll < merchant_chance + tavern_chance + monster_chance:
+            elif roll < merchant_chance + tavern_chance + chest_chance:
+                # Spawn chest (tavern_chance to tavern_chance + chest_chance)
+                if chest_sprite:
+                    actors.spawn_chest_ahead(gs, gs.start_x, chest_sprite)
+            elif roll < merchant_chance + tavern_chance + chest_chance + monster_chance:
                 # Spawn monster (0.15 to 0.155) - VERY RARE!
                 if monsters and len(monsters) > 0:
                     actors.spawn_monster_ahead(gs, gs.start_x, monsters)
@@ -563,9 +736,129 @@ def update_encounter_popup(screen, dt, gs, mist_frame, width, height, pg_instanc
     return True
 
 
+def _get_dh_font_chest(size: int) -> pygame.font.Font:
+    """Get D&D font if available, fallback to system font (for chest result card)."""
+    try:
+        dh_font_path = os.path.join(S.ASSETS_FONTS_DIR, S.DND_FONT_FILE)
+        if os.path.exists(dh_font_path):
+            return pygame.font.Font(dh_font_path, size)
+    except Exception:
+        pass
+    return pygame.font.SysFont(None, size)
+
+
+def draw_chest_result_card(screen, gs, dt):
+    """Draw chest result card at bottom of screen (same style as gambling result cards)."""
+    if not getattr(gs, "chest_result_card_active", False):
+        return
+    
+    sw, sh = S.LOGICAL_WIDTH, S.LOGICAL_HEIGHT
+    box_h = 120
+    margin_x = 36
+    margin_bottom = 28
+    rect = pygame.Rect(margin_x, sh - box_h - margin_bottom, sw - margin_x * 2, box_h)
+    
+    # Box styling (matches gambling result card)
+    pygame.draw.rect(screen, (245, 245, 245), rect)
+    pygame.draw.rect(screen, (0, 0, 0), rect, 4, border_radius=8)
+    inner = rect.inflate(-8, -8)
+    pygame.draw.rect(screen, (60, 60, 60), inner, 2, border_radius=6)
+    
+    # Text rendering
+    title = getattr(gs, "chest_result_card_title", "")
+    subtitle = getattr(gs, "chest_result_card_subtitle", "")
+    text = f"{title} - {subtitle}" if title and subtitle else (title or subtitle or "")
+    font = _get_dh_font_chest(28)
+    words = text.split(" ")
+    lines, cur = [], ""
+    max_w = rect.w - 40
+    for w in words:
+        test = (cur + " " + w).strip()
+        if not cur or font.size(test)[0] <= max_w:
+            cur = test
+        else:
+            lines.append(cur)
+            cur = w
+    if cur:
+        lines.append(cur)
+    
+    y = rect.y + 20
+    for line in lines:
+        surf = font.render(line, False, (16, 16, 16))
+        screen.blit(surf, (rect.x + 20, y))
+        y += surf.get_height() + 6
+    
+    # Blinking prompt
+    if not hasattr(draw_chest_result_card, "blink_t"):
+        draw_chest_result_card.blink_t = 0.0
+    draw_chest_result_card.blink_t += dt
+    blink_on = int(draw_chest_result_card.blink_t * 2) % 2 == 0
+    if blink_on:
+        prompt_font = _get_dh_font_chest(20)
+        prompt = "Press SPACE or Click to continue"
+        psurf = prompt_font.render(prompt, False, (100, 100, 100))
+        screen.blit(psurf, (rect.right - psurf.get_width() - 20, rect.bottom - psurf.get_height() - 12))
+
+
 def draw_shop_ui(screen, gs):
     """Draw the shop UI."""
     shop.draw(screen, gs)
+
+
+def draw_chest_speech_bubble(screen, cam, gs, chest):
+    """Draw a speech bubble above the chest saying 'Press E To Open Chest'."""
+    if not chest:
+        return
+    
+    # Chests are bigger (1.5x player size)
+    CHEST_SIZE_MULT = 1.5
+    SIZE_W = int(S.PLAYER_SIZE[0] * CHEST_SIZE_MULT)
+    SIZE_H = int(S.PLAYER_SIZE[1] * CHEST_SIZE_MULT)
+    
+    pos = chest["pos"]
+    screen_x = int(pos.x - cam.x)
+    screen_y = int(pos.y - cam.y - SIZE_H // 2 - 40)  # Above chest
+    
+    # Medieval-style text
+    text = "Press E To Open Chest"
+    
+    # Load DH font if available, fallback to default
+    try:
+        dh_font_path = os.path.join(S.ASSETS_FONTS_DIR, S.DND_FONT_FILE)
+        if os.path.exists(dh_font_path):
+            font = pygame.font.Font(dh_font_path, 20)
+        else:
+            font = pygame.font.SysFont(None, 20)
+    except:
+        font = pygame.font.SysFont(None, 20)
+    
+    text_surf = font.render(text, True, (255, 255, 255))
+    text_rect = text_surf.get_rect()
+    
+    # Speech bubble background
+    padding = 12
+    bubble_w = text_rect.width + padding * 2
+    bubble_h = text_rect.height + padding * 2
+    bubble = pygame.Surface((bubble_w, bubble_h), pygame.SRCALPHA)
+    
+    # Draw bubble with rounded corners effect (using filled rect + border)
+    bubble.fill((40, 35, 30, 240))  # Dark brown/medieval color
+    pygame.draw.rect(bubble, (80, 70, 60, 255), bubble.get_rect(), 2)  # Border
+    
+    # Draw small triangle pointing down to chest
+    triangle_points = [
+        (bubble_w // 2 - 8, bubble_h),
+        (bubble_w // 2 + 8, bubble_h),
+        (bubble_w // 2, bubble_h + 10),
+    ]
+    pygame.draw.polygon(bubble, (40, 35, 30, 240), triangle_points)
+    pygame.draw.polygon(bubble, (80, 70, 60, 255), triangle_points, 2)
+    
+    bubble_x = screen_x - bubble_w // 2
+    bubble_y = screen_y - bubble_h - 10
+    
+    screen.blit(bubble, (bubble_x, bubble_y))
+    screen.blit(text_surf, (bubble_x + padding, bubble_y + padding))
 
 
 def draw_merchant_speech_bubble(screen, cam, gs, merchant):
@@ -745,6 +1038,7 @@ def start_new_game(gs):
     gs.spawned_boss_scores = []
     gs.bosses_on_map = []
     gs.monsters_on_map = []
+    gs.chests_on_map = []
     
     # Reset rival tracking for new game
     # NOTE: Don't reset rival_name here - it's already set during name entry BEFORE start_new_game is called
@@ -1043,6 +1337,7 @@ if __name__ == "__main__":
     MIST_FRAMES     = loaded["mist_frames"]
     MERCHANT_FRAMES = loaded["merchant_frames"]
     TAVERN_SPRITE   = loaded.get("tavern_sprite")
+    CHEST_SPRITE    = loaded.get("chest_sprite")
     
     # Debug: Check if merchant frames loaded
     if MERCHANT_FRAMES:
@@ -1055,6 +1350,12 @@ if __name__ == "__main__":
         print(f"✅ Tavern sprite loaded")
     else:
         print("⚠️ No tavern sprite loaded - check Assets/Tavern/Tavern.png")
+    
+    # Debug: Check if chest sprite loaded
+    if CHEST_SPRITE:
+        print(f"✅ Chest sprite loaded")
+    else:
+        print("⚠️ No chest sprite loaded - check Assets/Map/Chest.png")
     
     # Load tavern ambient audio
     TAVERN_AUDIO_PATH = os.path.join("Assets", "Tavern", "OutsideTavern.mp3")
@@ -1940,8 +2241,7 @@ while running:
     elif mode == MODE_TAVERN:
         # Track modal states for HUD button handling
         any_modal_open_tavern = (buff_popup.is_active() or bag_ui.is_open() or party_manager.is_open()
-                                 or ledger.is_open() or gs.shop_open or currency_display.is_open()
-                                 or rest_popup.is_open())
+                                 or ledger.is_open() or gs.shop_open or rest_popup.is_open())
         tavern_state = getattr(gs, "_tavern_state", None)
         if tavern_state is None:
             tavern_state = {}
@@ -1996,16 +2296,8 @@ while running:
                         party_manager.toggle()
                         hud_button_click_positions_tavern.add(e.pos)
                         audio.play_click(AUDIO)
-                elif button_clicked == 'currency':
-                    if not currency_display.is_open() and not bag_ui.is_open() and not party_manager.is_open() and not ledger.is_open():
-                        currency_display.toggle()
-                        # Play Coin.mp3 sound (using audio.play_sfx to respect volume settings)
-                        audio.play_sfx(AUDIO, "Coin")
-                    elif currency_display.is_open():
-                        currency_display.close()
-                    hud_button_click_positions_tavern.add(e.pos)
                 elif button_clicked == 'rest':
-                    if not bag_ui.is_open() and not party_manager.is_open() and not ledger.is_open() and not currency_display.is_open() and not gs.shop_open and not rest_popup.is_open():
+                    if not bag_ui.is_open() and not party_manager.is_open() and not ledger.is_open() and not gs.shop_open and not rest_popup.is_open():
                         rest_popup.open_popup()
                         hud_button_click_positions_tavern.add(e.pos)
                         audio.play_click(AUDIO)
@@ -2143,7 +2435,7 @@ while running:
         # --- Let HUD handle clicks in tavern mode (party UI can open Ledger) ---
         # Only if we didn't click a HUD button (to avoid conflicts) and not opening pause
         just_opened_ledger_tavern = False  # Initialize flag
-        if not esc_pressed_for_pause and not hud_button_click_positions_tavern and not bag_ui.is_open() and not party_manager.is_open() and not ledger.is_open() and not currency_display.is_open():
+        if not esc_pressed_for_pause and not hud_button_click_positions_tavern and not bag_ui.is_open() and not party_manager.is_open() and not ledger.is_open():
             was_ledger_open_tavern = ledger.is_open()  # should be False, safety check
             for e in tavern_events:
                 party_ui.handle_event(e, gs)
@@ -2166,17 +2458,8 @@ while running:
                     party_manager.toggle()
                     just_toggled_pm_tavern = True
             
-            # Currency display toggle (C)
-            if e.type == pygame.KEYDOWN and e.key == pygame.K_c:
-                if not currency_display.is_open() and not bag_ui.is_open() and not party_manager.is_open() and not ledger.is_open() and not gs.shop_open:
-                    currency_display.toggle()
-                    # Play Coin.mp3 sound (using audio.play_sfx to respect volume settings)
-                    audio.play_sfx(AUDIO, "Coin")
-                elif currency_display.is_open():
-                    currency_display.close()
-        
-        # --- Handle modal events (bag, party manager, ledger, currency, rest, hells deck) ---
-        # Route events to modals (priority: Bag → Party Manager → Ledger → Currency → Rest → Hells Deck)
+        # --- Handle modal events (bag, party manager, ledger, rest, hells deck) ---
+        # Route events to modals (priority: Bag → Party Manager → Ledger → Rest → Hells Deck)
         # Only process if not opening pause menu
         if not esc_pressed_for_pause:
             for e in tavern_events:
@@ -2205,8 +2488,6 @@ while running:
                     if ledger.handle_event(e, gs):
                         continue
                 
-                if currency_display.is_open():
-                    if currency_display.handle_event(e, gs):
                         continue
                 
                 if rest_popup.is_open():
@@ -2243,8 +2524,6 @@ while running:
                 party_manager.draw(virtual_screen, gs, dt)
             if ledger.is_open():
                 ledger.draw(virtual_screen, gs)
-            if currency_display.is_open():
-                currency_display.draw(virtual_screen, gs)
             if rest_popup.is_open():
                 rest_popup.draw(virtual_screen, gs)
             if hells_deck_popup.is_open():
@@ -2292,7 +2571,7 @@ while running:
         
         # --- Tavern walking SFX (same logic as overworld) ---
         # Check if any modal is open (block walking sounds if modal is open)
-        any_modal_open_walking = buff_popup.is_active() or bag_ui.is_open() or party_manager.is_open() or ledger.is_open() or gs.shop_open or currency_display.is_open() or rest_popup.is_open()
+        any_modal_open_walking = buff_popup.is_active() or bag_ui.is_open() or party_manager.is_open() or ledger.is_open() or gs.shop_open or rest_popup.is_open()
         # Check if kicked out textbox is active (block walking sounds)
         if (tavern_state.get("kicked_out_textbox_active", False)
                 or tavern_state.get("show_gambler_intro", False)
@@ -2465,7 +2744,7 @@ while running:
         # --- Snapshots for this frame (used to suppress ESC->Pause) ---
         bag_open_at_frame_start = bag_ui.is_open()
         modal_open_at_frame_start = (
-            bag_ui.is_open() or party_manager.is_open() or ledger.is_open() or gs.shop_open or currency_display.is_open() or rest_popup.is_open() or hells_deck_popup.is_open()
+            bag_ui.is_open() or party_manager.is_open() or ledger.is_open() or gs.shop_open or rest_popup.is_open() or hells_deck_popup.is_open()
         )
 
         just_toggled_pm = False
@@ -2495,16 +2774,8 @@ while running:
                         just_toggled_pm = True
                         hud_button_click_positions.add(e.pos)
                         audio.play_click(AUDIO)
-                elif button_clicked == 'currency':
-                    if not currency_display.is_open() and not bag_ui.is_open() and not party_manager.is_open() and not ledger.is_open():
-                        currency_display.toggle()
-                        # Play Coin.mp3 sound (using audio.play_sfx to respect volume settings)
-                        audio.play_sfx(AUDIO, "Coin")
-                    elif currency_display.is_open():
-                        currency_display.close()
-                    hud_button_click_positions.add(e.pos)
                 elif button_clicked == 'rest':
-                    if not bag_ui.is_open() and not party_manager.is_open() and not ledger.is_open() and not currency_display.is_open() and not gs.shop_open and not rest_popup.is_open():
+                    if not bag_ui.is_open() and not party_manager.is_open() and not ledger.is_open() and not gs.shop_open and not rest_popup.is_open():
                         rest_popup.open_popup()
                         hud_button_click_positions.add(e.pos)
                         audio.play_click(AUDIO)
@@ -2539,18 +2810,9 @@ while running:
                     party_manager.toggle()
                     just_toggled_pm = True
             
-            # Currency display toggle (C)
-            if e.type == pygame.KEYDOWN and e.key == pygame.K_c:
-                if not currency_display.is_open() and not bag_ui.is_open() and not party_manager.is_open() and not ledger.is_open():
-                    currency_display.toggle()
-                    # Play Coin.mp3 sound (using audio.play_sfx to respect volume settings)
-                    audio.play_sfx(AUDIO, "Coin")
-                elif currency_display.is_open():
-                    currency_display.close()
-        
         # --- Let HUD handle clicks ONLY when no modal is open (this can open the Ledger) ---
         # Only if we didn't click a HUD button (to avoid conflicts)
-        if not hud_button_click_positions and not bag_ui.is_open() and not party_manager.is_open() and not ledger.is_open() and not currency_display.is_open():
+        if not hud_button_click_positions and not bag_ui.is_open() and not party_manager.is_open() and not ledger.is_open():
             was_ledger_open = ledger.is_open()  # should be False, safety check
             for e in events:
                 party_ui.handle_event(e, gs)
@@ -2638,9 +2900,6 @@ while running:
                 if ledger.handle_event(e, gs):
                     continue
             
-            if currency_display.is_open():
-                if currency_display.handle_event(e, gs):
-                    continue
             
             if rest_popup.is_open():
                 rest_type = rest_popup.handle_event(e, gs)
@@ -2688,7 +2947,6 @@ while running:
                     or party_manager.is_open()
                     or ledger.is_open()
                     or gs.shop_open
-                    or currency_display.is_open()
                     or rest_popup.is_open()
                     or hells_deck_popup.is_open()
                 ):
@@ -2709,10 +2967,6 @@ while running:
                         if nxt:
                             audio.play_music(AUDIO, nxt, loop=False, fade_ms=600)
                             gs.last_overworld_track = nxt
-                        audio.play_click(AUDIO)
-                    # If currency is open, close it instead
-                    if currency_display.is_open():
-                        currency_display.close()
                         audio.play_click(AUDIO)
                     continue
                 audio.play_click(AUDIO)
@@ -2735,7 +2989,7 @@ while running:
                     near_tavern = getattr(gs, "near_tavern", None)
                     if (near_tavern and not bag_ui.is_open() 
                         and not party_manager.is_open() and not ledger.is_open()
-                        and not gs.shop_open and not currency_display.is_open()
+                        and not gs.shop_open
                         and not rest_popup.is_open() and not hells_deck_popup.is_open()):
                         # Enter tavern mode
                         mode = MODE_TAVERN
@@ -2745,6 +2999,13 @@ while running:
                         if tavern_audio_channel:
                             tavern_audio_channel.stop()
                             gs._tavern_audio_channel = None
+                    # Open chest when near chest and no other modals are open
+                    elif (getattr(gs, "near_chest", None) and not bag_ui.is_open() 
+                        and not party_manager.is_open() and not ledger.is_open()
+                        and not gs.shop_open and not rest_popup.is_open() 
+                        and not hells_deck_popup.is_open()):
+                        _open_chest(gs)
+                        audio.play_click(AUDIO)
                     # Open shop when near merchant and no other modals are open
                     elif (gs.near_merchant and not bag_ui.is_open() 
                         and not party_manager.is_open() and not ledger.is_open()):
@@ -2783,6 +3044,33 @@ while running:
                             if nxt:
                                 audio.play_music(AUDIO, nxt, loop=False, fade_ms=600)
                                 gs.last_overworld_track = nxt
+            # Handle chest result card dismissal on click
+            elif (event.type == pygame.MOUSEBUTTONDOWN and event.button == 1 
+                and getattr(gs, "chest_result_card_active", False)):
+                # Dismiss result card
+                gs.chest_result_card_active = False
+                audio.play_click(AUDIO)
+                
+                # If it's a monster, transition to battle
+                if getattr(gs, "chest_result_is_monster", False):
+                    # Transition to wild vessel battle
+                    try:
+                        pygame.mixer.music.fadeout(200)
+                    except Exception:
+                        pass
+                    ch = getattr(gs, "walking_channel", None)
+                    if ch:
+                        try: ch.stop()
+                        except Exception: pass
+                    gs.is_walking = False
+                    gs.is_running = False
+                    gs.movement_sfx_state = None
+                    gs.walking_channel = None
+                    gs._went_to_wild = True
+                    gs.in_encounter = False
+                    mode = MODE_WILD_VESSEL
+                continue
+            
             elif event.type == MUSIC_ENDEVENT:
                 # Don't restart music if shop music is playing (it should loop)
                 if getattr(gs, "_shop_music_playing", False):
@@ -2864,7 +3152,7 @@ while running:
             mist_frame = MIST_ANIM.current()
 
         # --- Movement & walking SFX (blocked by any modal) ---
-        any_modal_open = buff_popup.is_active() or bag_ui.is_open() or party_manager.is_open() or ledger.is_open() or gs.shop_open or currency_display.is_open() or rest_popup.is_open()
+        any_modal_open = buff_popup.is_active() or bag_ui.is_open() or party_manager.is_open() or ledger.is_open() or gs.shop_open or rest_popup.is_open()
         keys = pygame.key.get_pressed()
         vertical_input = keys[pygame.K_w] or keys[pygame.K_s]
         shift_down = keys[pygame.K_LSHIFT] or keys[pygame.K_RSHIFT]
@@ -2927,7 +3215,9 @@ while running:
             if gs.encounter_timer > 0:
                 update_encounter_popup(virtual_screen, dt, gs, mist_frame, S.LOGICAL_WIDTH, S.LOGICAL_HEIGHT, pg)
             # Timer expired - transition to battle
-            elif gs.encounter_stats and not getattr(gs, "_went_to_wild", False):
+            # BUT: Don't transition if chest result card is showing (wait for dismissal)
+            elif (gs.encounter_stats and not getattr(gs, "_went_to_wild", False)
+                  and not getattr(gs, "chest_result_card_active", False)):  # Don't start battle while result card is showing
                 # Wild vessel encounter
                 try:
                     pygame.mixer.music.fadeout(200)
@@ -2989,9 +3279,11 @@ while running:
             actors.update_monsters(gs, dt, gs.player_half)
             
             # Check if a wild vessel or monster encounter was triggered (no popup, go directly to battle)
+            # BUT: Don't transition if chest result card is showing (wait for dismissal)
             if (gs.encounter_stats is not None 
                 and not getattr(gs, "_went_to_wild", False)
-                and not gs.in_encounter):
+                and not gs.in_encounter
+                and not getattr(gs, "chest_result_card_active", False)):  # Don't start battle while result card is showing
                 # Wild vessel or monster encounter - go directly to battle
                 encounter_type = getattr(gs, "encounter_type", None)
                 if encounter_type in ("WILD_VESSEL", "MONSTER", None):  # None for backwards compatibility
@@ -3063,6 +3355,7 @@ while running:
                 mode = MODE_SUMMONER_BATTLE
             actors.update_merchants(gs, dt, gs.player_half)
             actors.update_taverns(gs, dt, gs.player_half)
+            actors.update_chests(gs, dt, gs.player_half)
             # Check for boss spawns based on score
             from world import bosses
             bosses.check_and_spawn_bosses(gs)
@@ -3071,7 +3364,7 @@ while running:
             if getattr(gs, "first_rival_encounter_complete", False):
                 # Only check for subsequent encounters after first one is complete
                 rival.check_and_spawn_rival(gs)
-            try_trigger_encounter(gs, RIVAL_SUMMONERS, MERCHANT_FRAMES, TAVERN_SPRITE, MONSTERS)
+            try_trigger_encounter(gs, RIVAL_SUMMONERS, MERCHANT_FRAMES, TAVERN_SPRITE, MONSTERS, CHEST_SPRITE)
 
             cam = world.get_camera_offset(gs.player_pos, S.LOGICAL_WIDTH, S.LOGICAL_HEIGHT, gs.player_half)
             world.draw_repeating_road(virtual_screen, cam.x, cam.y)
@@ -3082,6 +3375,7 @@ while running:
             actors.draw_rivals(virtual_screen, cam, gs)
             actors.draw_merchants(virtual_screen, cam, gs)
             actors.draw_taverns(virtual_screen, cam, gs)
+            actors.draw_chests(virtual_screen, cam, gs)
             actors.draw_bosses(virtual_screen, cam, gs)
             
             # Draw rival during intro walk-down
@@ -3109,12 +3403,21 @@ while running:
             # Draw speech bubble when near tavern
             if getattr(gs, "near_tavern", None):
                 draw_tavern_speech_bubble(virtual_screen, cam, gs, gs.near_tavern)
+            
+            # Draw speech bubble when near chest
+            if getattr(gs, "near_chest", None):
+                draw_chest_speech_bubble(virtual_screen, cam, gs, gs.near_chest)
 
         # --- Draw HUD then modals (z-order: Bag < Party Manager < Ledger < Shop < Rest Popup) ---
         left_hud.draw(virtual_screen, gs)  # Left side HUD panel behind character token and party UI (textbox style)
         party_ui.draw_party_hud(virtual_screen, gs)  # Character token and party slots (draws on top of left_hud)
         score_display.draw_score(virtual_screen, gs, dt)  # Score in top right (animated)
         bottom_right_hud.draw(virtual_screen, gs)  # Bottom right HUD panel with buttons inside (textbox style)
+        
+        # Draw chest result card if active (drawn on top of HUD)
+        if getattr(gs, "chest_result_card_active", False):
+            draw_chest_result_card(virtual_screen, gs, dt)
+        
         if bag_ui.is_open():
             bag_ui.draw_popup(virtual_screen, gs)
         # Always draw party manager to show heal textbox even when closed
@@ -3130,8 +3433,6 @@ while running:
             ledger.draw(virtual_screen, gs)
         if gs.shop_open:
             draw_shop_ui(virtual_screen, gs)
-        if currency_display.is_open():
-            currency_display.draw(virtual_screen, gs)
         if rest_popup.is_open():
             rest_popup.draw(virtual_screen, gs)
         if hells_deck_popup.is_open():

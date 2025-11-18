@@ -229,7 +229,7 @@ def _ally_sprite_from_token_name(fname: str | None):
         base_name = os.path.splitext(fname)[0]  # Remove .png extension if present
         monster_name = base_name[5:] if len(base_name) > 5 else base_name  # Remove "Token" prefix
         # Check if it's a known monster
-        monster_names = ["Beholder", "Dragon", "Golem", "Myconid", "Nothic", "Ogre", "Owlbear"]
+        monster_names = ["Beholder", "Dragon", "Golem", "Myconid", "Nothic", "Ogre", "Owlbear", "Chestmonster"]
         if any(monster_name.startswith(m) for m in monster_names):
             # Load from VesselMonsters folder
             monster_path = os.path.join("Assets", "VesselMonsters", f"{monster_name}.png")
@@ -743,7 +743,7 @@ def enter(gs, audio_bank=None, **_):
         # Remove "Token" prefix and file extension
         base_name = os.path.splitext(ally_token_name)[0]  # Remove .png extension if present
         monster_name = base_name[5:] if len(base_name) > 5 else base_name  # Remove "Token" prefix
-        monster_names = ["Beholder", "Dragon", "Golem", "Myconid", "Nothic", "Ogre", "Owlbear"]
+        monster_names = ["Beholder", "Dragon", "Golem", "Myconid", "Nothic", "Ogre", "Owlbear", "Chestmonster"]
         is_ally_monster = any(monster_name.startswith(m) for m in monster_names)
     
     # Load ally sprite - use same logic as enemy for monsters
@@ -1002,6 +1002,7 @@ def enter(gs, audio_bank=None, **_):
                 "nothic": os.path.join(monster_sound_dir, "Nothic.mp3"),
                 "ogre": os.path.join(monster_sound_dir, "Ogre.mp3"),
                 "owlbear": os.path.join(monster_sound_dir, "Owlbear.mp3"),
+                "chestmonster": os.path.join(monster_sound_dir, "Chestmonster.mp3"),
             }
 
             # Play monster-specific sound
@@ -1900,7 +1901,7 @@ def draw(screen, gs, dt, **_):
         # Remove "Token" prefix and file extension
         base_name = os.path.splitext(active_name)[0]  # Remove .png extension if present
         monster_name = base_name[5:] if len(base_name) > 5 else base_name  # Remove "Token" prefix
-        monster_names = ["Beholder", "Dragon", "Golem", "Myconid", "Nothic", "Ogre", "Owlbear"]
+        monster_names = ["Beholder", "Dragon", "Golem", "Myconid", "Nothic", "Ogre", "Owlbear", "Chestmonster"]
         is_active_monster = any(monster_name.startswith(m) for m in monster_names)
     
     if st.get("ally_from_slot") is None:

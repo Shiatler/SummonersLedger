@@ -23,7 +23,7 @@ MONSTER_OVERWORLD_SCALE = getattr(S, "MONSTER_OVERWORLD_SCALE", 1.8)
 
 # ===================== Shared spawn helpers ==================
 def _y_too_close(y: float, gs, min_sep: float) -> bool:
-    """Return True if y is within min_sep of any existing spawn (vessels, rivals, merchants, taverns, or monsters)."""
+    """Return True if y is within min_sep of any existing spawn (vessels, rivals, merchants, taverns, monsters, or chests)."""
     for r in gs.rivals_on_map:
         if abs(y - r["pos"].y) < min_sep:
             return True
@@ -38,6 +38,9 @@ def _y_too_close(y: float, gs, min_sep: float) -> bool:
             return True
     for mon in getattr(gs, "monsters_on_map", []):
         if abs(y - mon["pos"].y) < min_sep:
+            return True
+    for c in getattr(gs, "chests_on_map", []):
+        if abs(y - c["pos"].y) < min_sep:
             return True
     return False
 
@@ -672,6 +675,99 @@ def draw_taverns(screen, cam, gs):
     for t in gs.taverns_on_map:
         pos = t["pos"]
         sprite = t.get("sprite")
+        
+        if sprite:
+            screen.blit(
+                sprite,
+                (pos.x - cam.x - SIZE_W // 2,
+                 pos.y - cam.y - SIZE_H // 2)
+            )
+
+
+# ===================== Chests =================
+def spawn_chest_ahead(gs, start_x, chest_sprite):
+    """Spawn a chest (left/right lane) some distance above the player, with separation."""
+    if not chest_sprite:
+        return
+    
+    side = random.choice(["left", "right"])
+    x = start_x + (-S.LANE_OFFSET if side == "left" else S.LANE_OFFSET)
+    
+    spawn_gap = random.randint(S.SPAWN_GAP_MIN, S.SPAWN_GAP_MAX)
+    base_y = gs.player_pos.y - spawn_gap
+    
+    # Ensure vertical separation from ALL existing spawns
+    sep = getattr(S, "OVERWORLD_MIN_SEPARATION_Y", 200)
+    y = _pick_spawn_y(gs, base_y, sep)
+    if y is None:
+        # If no valid spawn location found, try spawning further away (force spawn)
+        print(f"⚠️ No valid spawn location found for chest, trying fallback position")
+        y = base_y - 500  # Spawn further away
+        # Check if even this position is too close, if so just use it anyway (force spawn)
+        if _y_too_close(y, gs, sep):
+            print(f"⚠️ Fallback position also too close, forcing spawn anyway")
+    
+    if not hasattr(gs, "chests_on_map"):
+        gs.chests_on_map = []
+    
+    gs.chests_on_map.append({
+        "sprite": chest_sprite,
+        "pos": Vector2(x, y),
+        "side": side,
+    })
+    print(f"✅ Chest spawned at position ({x}, {y}) on {side} side")
+
+
+def update_chests(gs, dt, player_half: Vector2):
+    """Update chest detection for player proximity."""
+    if not hasattr(gs, "chests_on_map"):
+        gs.chests_on_map = []
+        return
+    
+    # Chests are bigger than player (1.5x size)
+    CHEST_SIZE_MULT = 1.5
+    SIZE_W = int(S.PLAYER_SIZE[0] * CHEST_SIZE_MULT)
+    SIZE_H = int(S.PLAYER_SIZE[1] * CHEST_SIZE_MULT)
+    x_threshold = S.LANE_OFFSET + SIZE_W
+    
+    player_top    = gs.player_pos.y - player_half.y
+    player_bottom = gs.player_pos.y + player_half.y
+    
+    near_chest = None
+    
+    for c in gs.chests_on_map:
+        # Check if player is near chest
+        same_lane = abs(c["pos"].x - gs.player_pos.x) <= x_threshold
+        chest_top = c["pos"].y - SIZE_H // 2
+        chest_bottom = c["pos"].y + SIZE_H // 2
+        
+        in_front = player_top <= (chest_bottom + S.FRONT_TOLERANCE)
+        overlapping_vertically = player_bottom >= (chest_top - S.FRONT_TOLERANCE)
+        
+        if same_lane and in_front and overlapping_vertically:
+            near_chest = c
+    
+    # Store which chest is near (for popup display)
+    gs.near_chest = near_chest
+    
+    # Cull far below player
+    cutoff = gs.player_pos.y + S.HEIGHT * 1.5
+    gs.chests_on_map[:] = [c for c in gs.chests_on_map if c["pos"].y < cutoff]
+
+
+def draw_chests(screen, cam, gs):
+    """Draw chest sprites."""
+    if not hasattr(gs, "chests_on_map"):
+        return
+    
+    # Chests are bigger than player (1.5x size)
+    CHEST_SIZE_MULT = 1.5
+    SIZE_W = int(S.PLAYER_SIZE[0] * CHEST_SIZE_MULT)
+    SIZE_H = int(S.PLAYER_SIZE[1] * CHEST_SIZE_MULT)
+    
+    for c in gs.chests_on_map:
+        pos = c["pos"]
+        sprite = c.get("sprite")
         
         if sprite:
             screen.blit(

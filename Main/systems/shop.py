@@ -293,6 +293,32 @@ def get_medieval_description(item_id: str) -> str:
     
     return "A mystical scroll of unknown power."
 
+def get_item_stats_text(item_id: str) -> str:
+    """Get item stats text (heal dice, capture DC, etc.) to display at bottom of tooltip."""
+    # Healing scrolls
+    heal_dice = {
+        "scroll_of_mending": "Heal 1d4",
+        "scroll_of_healing": "Heal 1d8",
+        "scroll_of_regeneration": "Heal 2d8",
+        "scroll_of_revivity": "Heal 2d8 (Revive)",
+    }
+    if item_id in heal_dice:
+        return heal_dice[item_id]
+    
+    # Capture scrolls - show base DC (level 1, full HP, no status effects)
+    # Base DC 12 + HP +2 + scroll modifier (all increased by 2)
+    capture_dc = {
+        "scroll_of_command": "Capture DC 16",      # 12 + 2 + 2 (was 14)
+        "scroll_of_sealing": "Capture DC 14",       # 12 + 2 + 0 (was 12)
+        "scroll_of_subjugation": "Capture DC 12",  # 12 + 2 - 2 (was 10)
+        "scroll_of_eternity": "Capture DC Auto",    # Auto success
+    }
+    if item_id in capture_dc:
+        return capture_dc[item_id]
+    
+    # Other items (rations, alcohol) - no stats
+    return ""
+
 # --------------------- Drawing ---------------------
 
 def draw(screen: pygame.Surface, gs) -> None:
@@ -476,6 +502,7 @@ def draw(screen: pygame.Surface, gs) -> None:
     if _HOVERED_ITEM_INDEX is not None and _HOVERED_ITEM_INDEX < len(items):
         item = items[_HOVERED_ITEM_INDEX]
         tooltip_text = get_medieval_description(item["id"])
+        stats_text = get_item_stats_text(item["id"])
         
         # Wrap text
         words = tooltip_text.split()
@@ -493,6 +520,11 @@ def draw(screen: pygame.Surface, gs) -> None:
                 current_line = word
         if current_line:
             lines.append(current_line)
+        
+        # Add stats text at bottom if available
+        if stats_text:
+            lines.append("")  # Empty line separator
+            lines.append(stats_text)
         
         # Draw tooltip box
         tooltip_padding = 12
@@ -517,8 +549,11 @@ def draw(screen: pygame.Surface, gs) -> None:
         
         # Draw text (dark like textbox)
         text_y = tooltip_rect.y + tooltip_padding
-        for line in lines:
-            line_s = tooltip_font.render(line, True, (16, 16, 16))
+        for i, line in enumerate(lines):
+            # Stats text (last line) can be slightly different color/style
+            is_stats = stats_text and i == len(lines) - 1
+            color = (80, 80, 80) if is_stats else (16, 16, 16)  # Slightly lighter for stats
+            line_s = tooltip_font.render(line, True, color)
             panel.blit(line_s, (tooltip_rect.x + tooltip_padding, text_y))
             text_y += 22
     

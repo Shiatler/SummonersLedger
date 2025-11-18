@@ -56,9 +56,9 @@ def hp_dc_adjust(cur_hp: int, max_hp: int) -> int:
 ScrollName = Literal["command", "sealing", "subjugation", "eternity"]
 
 SCROLL_DC_ADJ: Dict[ScrollName, int] = {
-    "command":      0,
-    "sealing":     -2,
-    "subjugation": -4,
+    "command":      +2,  # Increased by 2 (was 0)
+    "sealing":      0,   # Increased by 2 (was -2)
+    "subjugation": -2,   # Increased by 2 (was -4)
     # "eternity": handled as auto-success
 }
 
@@ -109,7 +109,7 @@ def is_monster(asset_name: str) -> bool:
     if not asset_name:
         return False
     
-    monster_names = ["Dragon", "Owlbear", "Beholder", "Golem", "Ogre", "Nothic", "Myconid"]
+    monster_names = ["Dragon", "Owlbear", "Beholder", "Golem", "Ogre", "Nothic", "Myconid", "Chestmonster"]
     base = asset_name.split(".")[0].replace("_", "").lower()
     
     for monster in monster_names:

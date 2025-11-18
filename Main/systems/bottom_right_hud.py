@@ -59,7 +59,7 @@ from systems import party_ui
 portrait_h = party_ui.PORTRAIT_SIZE[1]  # 140 (reduced)
 slot_size, slot_gap, _ = party_ui._compute_slot_metrics(portrait_h)
 BUTTON_SIZE = slot_size  # Match slot size (smaller now)
-GRID_COLS = 4  # Number of columns in grid (horizontal layout) - expanded from 3 to fit 2 more buttons
+GRID_COLS = 3  # Number of columns in grid (3 columns x 2 rows = 6 buttons)
 GRID_GAP = slot_gap  # Match slot gap
 
 # Calculate base HUD size based on button grid
@@ -74,7 +74,6 @@ HUD_HEIGHT = base_hud_height
 _BUTTON_DESCRIPTIONS = {
     "bag": "Bag of Holding\n\nItem storage and inventory management. Access your collected scrolls, rations, and other consumables.",
     "party": "Party Manager\n\nView and manage your summoned vessels. Organize your party and inspect their moves and equipment.",
-    "coinbag": "Merchant's Purse\n\nView your current gold reserves and currency holdings.",
     "rest": "Campfire\n\nTake a rest to restore health and recover from battle. Requires a safe location.",
     "book_of_bound": "Book of Bound\n\nA mystical tome that catalogs all vessels you have bound to your will. Contains detailed knowledge of their forms, natures, and the bonds that tie them to you.",
     "archives": "Archives\n\nA repository where your bound vessels are stored and preserved. Access your collection of vessels that have been bound to your service.",

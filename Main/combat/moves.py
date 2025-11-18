@@ -627,6 +627,7 @@ def _class_and_level_from_move_id(move_id: str) -> tuple[str | None, int | None]
             "ogre": "ogre",
             "nothic": "nothic",
             "myconid": "myconid",
+            "chestmonster": "chestmonster",
         }
         class_key = None
         for prefix, key in id_to_class_key.items():
@@ -838,6 +839,7 @@ _CLASS_KEYS = {
     "ogre": "ogre",
     "nothic": "nothic",
     "myconid": "myconid",
+    "chestmonster": "chestmonster",
     # Regular classes
     "barbarian": "barbarian",
     "druid": "druid",
@@ -1005,6 +1007,13 @@ _MOVE_REGISTRY: Dict[str, List[Move]] = {
         Move("myconid_l20_animating_spores", "Animating Spores", "Spores that sap strength.", (3, 8), "CON", True, 0, 6),
         Move("myconid_l30_pacifying_spores", "Pacifying Spores", "Spores that calm enemies.", (4, 8), "WIS", True, 0, 3),
         Move("myconid_l40_spore_burst", "Spore Burst", "Massive spore explosion.", (5, 10), "CON", True, 0, 1),
+    ],
+    "chestmonster": [
+        Move("chestmonster_l1_treasure_trap", "Treasure Trap", "Physical attack from hidden trap.", (2, 6), "STR", True, 0, 20),
+        Move("chestmonster_l10_coin_barrage", "Coin Barrage", "Hurl coins in a ranged attack.", (3, 8), "DEX", True, 0, 12),
+        Move("chestmonster_l20_lock_slam", "Lock Slam", "High damage single target strike.", (4, 10), "STR", True, 0, 6),
+        Move("chestmonster_l30_chest_slam", "Chest Slam", "Area attack with chest lid.", (5, 10), "STR", True, 0, 3),
+        Move("chestmonster_l40_mimic_rage", "Mimic Rage", "Unleash the true form of the chest monster.", (6, 12), "STR", True, 0, 1),
     ],
 }
 

@@ -408,7 +408,7 @@ def _resolve_sprite_surface(name: str | None) -> pygame.Surface | None:
         base_name = os.path.splitext(name)[0]  # Remove .png extension if present
         monster_name = base_name[5:] if len(base_name) > 5 else base_name  # Remove "Token" prefix
         # Check if it's a known monster
-        monster_names = ["Beholder", "Dragon", "Golem", "Myconid", "Nothic", "Ogre", "Owlbear"]
+        monster_names = ["Beholder", "Dragon", "Golem", "Myconid", "Nothic", "Ogre", "Owlbear", "Chestmonster"]
         if any(monster_name.startswith(m) for m in monster_names):
             # Load from VesselMonsters folder
             monster_path = os.path.join("Assets", "VesselMonsters", f"{monster_name}.png")
@@ -941,7 +941,7 @@ def _build_initial_state(gs, preserved_bg=None, preserved_ally_pos=None, preserv
         # Remove "Token" prefix and file extension
         base_name = os.path.splitext(ally_token)[0]  # Remove .png extension if present
         monster_name = base_name[5:] if len(base_name) > 5 else base_name  # Remove "Token" prefix
-        monster_names = ["Beholder", "Dragon", "Golem", "Myconid", "Nothic", "Ogre", "Owlbear"]
+        monster_names = ["Beholder", "Dragon", "Golem", "Myconid", "Nothic", "Ogre", "Owlbear", "Chestmonster"]
         is_ally_monster = any(monster_name.startswith(m) for m in monster_names)
     
     ally_full = _ally_sprite_from_token_name(ally_token) or pygame.Surface(S.PLAYER_SIZE, pygame.SRCALPHA)
@@ -2070,7 +2070,7 @@ def draw(screen: pygame.Surface, gs, dt: float, **_):
         # Remove "Token" prefix and file extension
         base_name = os.path.splitext(active_name)[0]  # Remove .png extension if present
         monster_name = base_name[5:] if len(base_name) > 5 else base_name  # Remove "Token" prefix
-        monster_names = ["Beholder", "Dragon", "Golem", "Myconid", "Nothic", "Ogre", "Owlbear"]
+        monster_names = ["Beholder", "Dragon", "Golem", "Myconid", "Nothic", "Ogre", "Owlbear", "Chestmonster"]
         is_active_monster = any(monster_name.startswith(m) for m in monster_names)
 
     if st.get("ally_from_slot") is None:

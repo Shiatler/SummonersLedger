@@ -1,385 +1,171 @@
 {
-  "player_y": 86320.65999999363,
-  "distance_travelled": 13600.34000000637,
-  "next_event_at": 13664.0,
+  "player_y": 83328.05999999052,
+  "distance_travelled": 16592.940000009476,
+  "next_event_at": 16612.0,
   "player_gender": "male",
   "party_slots_names": [
-    "StarterTokenRogue1.png",
-    "MTokenSorcerer2.png",
-    "MTokenSorcerer1.png",
-    "FTokenRogue2.png",
-    "FTokenArtificer2.png",
+    "TokenChestmonster.png",
+    "StarterTokenBarbarian2.png",
+    null,
+    null,
+    null,
     null
   ],
   "party_vessel_stats": [
     {
-      "name": "StarterRogue1",
-      "class_name": "Rogue",
-      "level": 7,
-      "abilities": {
-        "STR": 11,
-        "DEX": 16,
-        "CON": 9,
-        "INT": 12,
-        "WIS": 9,
-        "CHA": 11
-      },
-      "mods": {
-        "STR": 0,
-        "DEX": 3,
-        "CON": -1,
-        "INT": 1,
-        "WIS": -1,
-        "CHA": 0
-      },
-      "prof": 2,
-      "ac": 15,
-      "hp": 17,
-      "initiative": 3,
-      "attack_stat": "DEX",
-      "attack_bonus": 5,
-      "notes": "Level up rebuild (milestone HP handled in XP)",
-      "current_hp": 0,
-      "xp_current": 7,
-      "xp_needed": 11,
-      "xp_total": 41
-    },
-    {
-      "name": "MVesselSorcerer2",
-      "class_name": "Sorcerer",
-      "level": 5,
-      "abilities": {
-        "STR": 11,
-        "DEX": 14,
-        "CON": 16,
-        "INT": 10,
-        "WIS": 7,
-        "CHA": 16
-      },
-      "mods": {
-        "STR": 0,
-        "DEX": 2,
-        "CON": 3,
-        "INT": 0,
-        "WIS": -2,
-        "CHA": 3
-      },
-      "prof": 2,
-      "ac": 12,
-      "hp": 9,
-      "initiative": 2,
-      "attack_stat": "CHA",
-      "attack_bonus": 5,
-      "notes": "Level up rebuild (milestone HP handled in XP)",
-      "current_hp": 0,
-      "xp_needed": 7,
-      "xp_total": 20,
-      "xp_current": 2
-    },
-    {
-      "name": "MVesselSorcerer1",
-      "class_name": "Sorcerer",
-      "level": 5,
-      "abilities": {
-        "STR": 11,
-        "DEX": 11,
-        "CON": 12,
-        "INT": 11,
-        "WIS": 7,
-        "CHA": 13
-      },
-      "mods": {
-        "STR": 0,
-        "DEX": 0,
-        "CON": 1,
-        "INT": 0,
-        "WIS": -2,
-        "CHA": 1
-      },
-      "prof": 2,
-      "ac": 10,
-      "hp": 7,
-      "initiative": 0,
-      "attack_stat": "CHA",
-      "attack_bonus": 3,
-      "notes": "Level up rebuild (milestone HP handled in XP)",
-      "current_hp": 0,
-      "xp_total": 17,
-      "xp_current": 6,
-      "xp_needed": 7
-    },
-    {
-      "name": "FVesselRogue2",
-      "class_name": "Rogue",
-      "level": 6,
+      "name": "Chestmonster",
+      "class_name": "Chestmonster",
+      "level": 1,
       "abilities": {
         "STR": 14,
-        "DEX": 15,
+        "DEX": 14,
         "CON": 13,
-        "INT": 14,
+        "INT": 11,
         "WIS": 11,
-        "CHA": 14
+        "CHA": 10
       },
       "mods": {
         "STR": 2,
         "DEX": 2,
         "CON": 1,
-        "INT": 2,
+        "INT": 0,
         "WIS": 0,
-        "CHA": 2
-      },
-      "prof": 2,
-      "ac": 14,
-      "hp": 9,
-      "initiative": 2,
-      "attack_stat": "DEX",
-      "attack_bonus": 4,
-      "notes": "Level up rebuild (milestone HP handled in XP)",
-      "current_hp": 0,
-      "xp_total": 28,
-      "xp_current": 6,
-      "xp_needed": 9
-    },
-    {
-      "name": "FVesselArtificer2",
-      "class_name": "Artificer",
-      "level": 6,
-      "abilities": {
-        "STR": 13,
-        "DEX": 13,
-        "CON": 15,
-        "INT": 18,
-        "WIS": 9,
-        "CHA": 7
-      },
-      "mods": {
-        "STR": 1,
-        "DEX": 1,
-        "CON": 2,
-        "INT": 4,
-        "WIS": -1,
-        "CHA": -2
+        "CHA": 0
       },
       "prof": 2,
       "ac": 13,
-      "hp": 10,
-      "initiative": 1,
-      "attack_stat": "INT",
-      "attack_bonus": 6,
-      "notes": "Level up rebuild (milestone HP handled in XP)",
-      "current_hp": 0,
-      "xp_total": 16,
-      "xp_current": 3,
-      "xp_needed": 9
+      "hp": 9,
+      "initiative": 2,
+      "attack_stat": "STR",
+      "attack_bonus": 4,
+      "notes": "Generated from asset name",
+      "current_hp": 1,
+      "xp_needed": 3,
+      "xp_total": 0,
+      "xp_current": 0
     },
+    {
+      "name": "StarterBarbarian2",
+      "class_name": "Barbarian",
+      "level": 1,
+      "abilities": {
+        "STR": 15,
+        "DEX": 14,
+        "CON": 14,
+        "INT": 13,
+        "WIS": 13,
+        "CHA": 12
+      },
+      "mods": {
+        "STR": 2,
+        "DEX": 2,
+        "CON": 2,
+        "INT": 1,
+        "WIS": 1,
+        "CHA": 1
+      },
+      "prof": 2,
+      "ac": 16,
+      "hp": 14,
+      "initiative": 2,
+      "attack_stat": "STR",
+      "attack_bonus": 4,
+      "notes": "Generated from asset name",
+      "current_hp": 1,
+      "permanent_damage_bonus": 1,
+      "xp_current": 2,
+      "xp_needed": 3,
+      "xp_total": 2
+    },
+    null,
+    null,
+    null,
     null
   ],
-  "rivals_on_map": [
-    {
-      "name": "Gareth Windflare",
-      "filename": "MSummoner20",
-      "side": "left",
-      "x": 1101.0,
-      "y": 84134.22999999605
-    },
-    {
-      "name": "Valthoka Brownbale",
-      "filename": "FSummoner11",
-      "side": "right",
-      "x": 1381.0,
-      "y": 84349.92999999526
-    },
-    {
-      "name": "Alison Firebeard",
-      "filename": "FSummoner6",
-      "side": "right",
-      "x": 1381.0,
-      "y": 83917.12999999525
-    },
-    {
-      "name": "Zaroth Gravefall",
-      "filename": "MSummoner11",
-      "side": "left",
-      "x": 1101.0,
-      "y": 82580.96999999508
-    },
-    {
-      "name": "Zarek Stonebloom",
-      "filename": "MSummoner9",
-      "side": "left",
-      "x": 1101.0,
-      "y": 83016.25999999481
-    },
-    {
-      "name": "Khorina Skyheart",
-      "filename": "FSummoner2",
-      "side": "left",
-      "x": 1101.0,
-      "y": 81519.21999999385
-    }
-  ],
-  "vessels_on_map": [
-    {
-      "side": "right",
-      "x": 1381.0,
-      "y": 86058.379999996
-    },
-    {
-      "side": "right",
-      "x": 1381.0,
-      "y": 85790.99999999582
-    },
-    {
-      "side": "left",
-      "x": 1101.0,
-      "y": 83225.51999999581
-    },
-    {
-      "side": "right",
-      "x": 1381.0,
-      "y": 85028.61999999579
-    },
-    {
-      "side": "left",
-      "x": 1101.0,
-      "y": 84538.14999999558
-    },
-    {
-      "side": "right",
-      "x": 1381.0,
-      "y": 85569.84999999516
-    },
-    {
-      "side": "left",
-      "x": 1101.0,
-      "y": 81731.86999999509
-    },
-    {
-      "side": "left",
-      "x": 1101.0,
-      "y": 78869.4699999942
-    },
-    {
-      "side": "right",
-      "x": 1381.0,
-      "y": 79759.73999999401
-    },
-    {
-      "side": "left",
-      "x": 1101.0,
-      "y": 81934.47999999393
-    },
-    {
-      "side": "left",
-      "x": 1101.0,
-      "y": 84818.73999999384
-    }
-  ],
-  "merchants_on_map": [
-    {
-      "side": "right",
-      "x": 1381.0,
-      "y": 82145.69999999566
-    },
-    {
-      "side": "right",
-      "x": 1381.0,
-      "y": 81108.73999999503
-    },
-    {
-      "side": "right",
-      "x": 1381.0,
-      "y": 85334.6899999945
-    },
-    {
-      "side": "left",
-      "x": 1101.0,
-      "y": 86845.02999999432
-    }
-  ],
-  "taverns_on_map": [
-    {
-      "side": "left",
-      "x": 1101.0,
-      "y": 83534.40999999603
-    },
-    {
-      "side": "left",
-      "x": 1101.0,
-      "y": 82184.99999999406
-    },
-    {
-      "side": "right",
-      "x": 1381.0,
-      "y": 80812.25999999382
-    },
-    {
-      "side": "right",
-      "x": 1381.0,
-      "y": 79521.65999999382
-    },
-    {
-      "side": "left",
-      "x": 1101.0,
-      "y": 82810.1199999937
-    }
-  ],
+  "rivals_on_map": [],
+  "vessels_on_map": [],
+  "merchants_on_map": [],
+  "taverns_on_map": [],
   "monsters_on_map": [],
   "inventory": {
-    "scroll_of_command": 5,
+    "scroll_of_command": 10,
     "scroll_of_sealing": 5,
-    "scroll_of_subjugation": 2,
-    "scroll_of_regeneration": 2,
-    "rations": 19
+    "scroll_of_subjugation": 5,
+    "scroll_of_eternity": 1,
+    "scroll_of_healing": 7,
+    "scroll_of_regeneration": 5,
+    "scroll_of_revivity": 3,
+    "rations": 2,
+    "alcohol": 1,
+    "scroll_of_mending": 11
   },
-  "total_points": 13962,
-  "gold": 54,
-  "silver": 2,
+  "total_points": 9000,
+  "gold": 100,
+  "silver": 0,
   "bronze": 0,
   "book_of_bound_discovered": [
-    "StarterRogue1",
-    "FVesselRogue2",
-    "MVesselSorcerer1",
-    "FVesselArtificer2",
-    "MVesselSorcerer2"
+    "Chestmonster",
+    "StarterBarbarian2"
   ],
-  "archives": [],
+  "archives": [
+    {
+      "vessel_name": "Chestmonster",
+      "token_name": "TokenChestmonster",
+      "stats": {
+        "name": "Chestmonster",
+        "class_name": "Chestmonster",
+        "level": 1,
+        "abilities": {
+          "STR": 15,
+          "DEX": 15,
+          "CON": 14,
+          "INT": 14,
+          "WIS": 11,
+          "CHA": 9
+        },
+        "mods": {
+          "STR": 2,
+          "DEX": 2,
+          "CON": 2,
+          "INT": 2,
+          "WIS": 0,
+          "CHA": -1
+        },
+        "prof": 2,
+        "ac": 13,
+        "hp": 10,
+        "initiative": 2,
+        "attack_stat": "STR",
+        "attack_bonus": 4,
+        "notes": "Generated from asset name",
+        "current_hp": 10,
+        "xp_needed": 3,
+        "xp_total": 0
+      }
+    }
+  ],
   "active_buffs": [
     {
-      "tier": "Epic",
-      "id": 2,
-      "name": "Epic2",
-      "image_path": "Assets\\Blessings\\Epic2.png"
-    },
-    {
-      "tier": "Rare",
-      "id": 4,
-      "name": "Rare4",
-      "image_path": "Assets\\Blessings\\Rare4.png"
+      "tier": "Common",
+      "id": 9,
+      "name": "Common9",
+      "image_path": "Assets\\Blessings\\Common9.png"
     }
   ],
   "buffs_history": [
     {
-      "tier": "Epic",
-      "id": 2,
-      "name": "Epic2",
-      "image_path": "Assets\\Blessings\\Epic2.png"
-    },
-    {
-      "tier": "Rare",
-      "id": 4,
-      "name": "Rare4",
-      "image_path": "Assets\\Blessings\\Rare4.png"
+      "tier": "Common",
+      "id": 9,
+      "name": "Common9",
+      "image_path": "Assets\\Blessings\\Common9.png"
     }
   ],
   "first_overworld_blessing_given": true,
   "rival_gender": "female",
   "rival_name": "d",
-  "rival_starter_class": "druid",
-  "rival_starter_name": "StarterDruid5",
-  "rival_encounters_completed": [
-    10000
-  ],
-  "first_rival_encounter_complete": true,
+  "rival_starter_class": "rogue",
+  "rival_starter_name": "StarterRogue2",
+  "rival_encounters_completed": [],
+  "first_rival_encounter_complete": false,
   "saved_in_tavern": false
 }

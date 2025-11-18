@@ -28,7 +28,7 @@ def _extract_class(asset_name: str) -> Optional[str]:
     base = re.sub(r"\d+$", "", base)
     
     # Check for monster names first (before vessel patterns)
-    monster_names = ["Dragon", "Owlbear", "Beholder", "Golem", "Ogre", "Nothic", "Myconid"]
+    monster_names = ["Dragon", "Owlbear", "Beholder", "Golem", "Ogre", "Nothic", "Myconid", "Chestmonster"]
     base_lower = base.lower()
     for monster in monster_names:
         if monster.lower() in base_lower:

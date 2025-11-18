@@ -131,7 +131,7 @@ def generate_vessel_name(token_name: str) -> str:
     elif base.startswith("Token"):
         # Already a token (including monster tokens like "TokenBeholder")
         normalized = base
-    elif base in ("Beholder", "Dragon", "Golem", "Nothic", "Ogre", "Owlbear", "Myconid"):
+    elif base in ("Beholder", "Dragon", "Golem", "Nothic", "Ogre", "Owlbear", "Myconid", "Chestmonster"):
         # Monster name without prefix - add Token prefix
         normalized = "Token" + base
     else:
@@ -144,7 +144,7 @@ def generate_vessel_name(token_name: str) -> str:
         return _NAME_CACHE[normalized]
     
     # Determine gender / type from normalized prefix
-    is_monster = normalized.startswith("Token") and normalized[5:] in ("Beholder", "Dragon", "Golem", "Nothic", "Ogre", "Owlbear", "Myconid")
+    is_monster = normalized.startswith("Token") and normalized[5:] in ("Beholder", "Dragon", "Golem", "Nothic", "Ogre", "Owlbear", "Myconid", "Chestmonster")
 
     # Monsters keep their species name instead of generated names
     if is_monster:

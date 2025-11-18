@@ -18,7 +18,7 @@ from systems import audio
 # Import modal modules for blocking checks
 from combat.btn import bag_action as bag_ui
 from screens import party_manager, ledger
-from systems import currency_display, rest_popup
+from systems import rest_popup
 
 # ===================== Constants =====================
 TAVERN_MAP_PATH = os.path.join("Assets", "Tavern", "TavernMap.png")
@@ -1962,13 +1962,12 @@ def handle(events, gs, dt: float, **_):
                         bag_ui.is_open() or
                         party_manager.is_open() or
                         ledger.is_open() or
-                        currency_display.is_open() or
                         rest_popup.is_open()
                     )
                     
                     if blocking_modals:
                         # Block whore interaction while other modals are active or shop is open
-                        print(f"💋 Whore interaction blocked - shop_open={gs.shop_open}, bag={bag_ui.is_open()}, party={party_manager.is_open()}, ledger={ledger.is_open()}, currency={currency_display.is_open()}, rest={rest_popup.is_open()}")
+                        print(f"💋 Whore interaction blocked - shop_open={gs.shop_open}, bag={bag_ui.is_open()}, party={party_manager.is_open()}, ledger={ledger.is_open()}, rest={rest_popup.is_open()}")
                         continue
                     
                     whore_number = st.get("whore_number", 0)

@@ -17,7 +17,7 @@ from systems import party_ui
 portrait_h = party_ui.PORTRAIT_SIZE[1]  # 180
 slot_size, slot_gap, _ = party_ui._compute_slot_metrics(portrait_h)
 BUTTON_SIZE = slot_size  # Match slot size (approximately 90x90)
-GRID_COLS = 4  # Number of columns in grid (horizontal layout) - expanded from 3 to fit 2 more buttons
+GRID_COLS = 3  # Number of columns in grid (3 columns x 2 rows = 6 buttons)
 GRID_GAP = slot_gap  # Match slot gap
 BOTTOM_PADDING = 12  # Padding from bottom edge
 RIGHT_PADDING = 12  # Padding from right edge
@@ -28,7 +28,6 @@ HOVER_GLOW_ALPHA = 48  # Alpha value for hover glow effect
 _BUTTONS = [
     {"id": "bag", "path": "Bag.png", "action": "bag"},
     {"id": "party", "path": "Party.png", "action": "party"},
-    {"id": "coinbag", "path": "CoinBag.png", "action": "currency"},
     {"id": "rest", "path": "Campfire.png", "action": "rest"},
     {"id": "book_of_bound", "path": "BookOfBound.png", "action": "book_of_bound"},
     {"id": "archives", "path": "Archives.png", "action": "archives"},

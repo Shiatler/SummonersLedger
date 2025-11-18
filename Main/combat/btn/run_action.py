@@ -49,20 +49,24 @@ def handle_click(pos, gs) -> bool:
 
     # Determine DC based on battle type:
     # - Boss battles: DC 20
-    # - Normal summoner battles: DC 18
+    # - Monster battles: DC 20
+    # - Normal summoner battles: DC 20
     # - Wild vessel battles: DC 10
     is_boss = getattr(gs, "encounter_type", None) == "BOSS"
+    is_monster = getattr(gs, "encounter_type", None) == "MONSTER"
     is_summoner_battle = getattr(gs, "_battle", None) is not None
     
     if is_boss:
         run_dc = 20
+    elif is_monster:
+        run_dc = 20  # Monsters are harder to escape from
     elif is_summoner_battle:
-        run_dc = 18
+        run_dc = 20
     else:
         run_dc = 10  # Wild vessel battle
 
     dex_score = getattr(gs, "dexterity", 10)
-    result = roller.roll_check(dex_score, dc=run_dc, notify=True)
+    result = roller.roll_check(dex_score, dc=run_dc, notify=True)  # notify=True ensures dice sounds play
     print(f"🏃 Run Attempt: {result.text} (DC {run_dc})")
     # Check both _wild and _battle (battle.py uses _battle, wild_vessel uses _wild)
     st = getattr(gs, "_wild", None) or getattr(gs, "_battle", None)

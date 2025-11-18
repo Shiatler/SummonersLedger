@@ -20,6 +20,19 @@ try:
 except Exception:
     _ROLLER = None
 
+# Import shop functions for descriptions and stats
+try:
+    from systems.shop import get_medieval_description, get_item_stats_text
+    # Import shop's font function directly (it's private but we need exact match)
+    import systems.shop as shop_module
+    shop_dh_font = shop_module._dh_font
+except Exception:
+    def get_medieval_description(item_id: str) -> str:
+        return "A mystical item."
+    def get_item_stats_text(item_id: str) -> str:
+        return ""
+    shop_dh_font = None
+
 # ---------------- Use callback ----------------
 _USE_CALLBACK = None  # fn(gs, item_dict) -> bool (True => consume one)
 _LAST_ITEMS = []  # kept in sync with _ITEM_RECTS during draw
@@ -751,11 +764,51 @@ def _draw_inventory_on_popup(screen: pygame.Surface, popup_rect: pygame.Rect, fa
     ink       = (232, 220, 180)
     ink_dim   = (150, 130, 100)
 
-    # total content height for scrolling/clamp
+    # Draw currency at the top of the viewport
+    currency_y_offset = 10
+    currency_row_height = 50
+    currency_font = _font(24, bold=False)
+    
+    # Get currency from game state
+    gold = getattr(gs, "gold", 0)
+    silver = getattr(gs, "silver", 0)
+    bronze = getattr(gs, "bronze", 0)
+    
+    # Load coin icons
+    coin_size = 32
+    gold_icon = _get_icon_surface(os.path.join("Assets", "Map", "Gold.png"), coin_size)
+    silver_icon = _get_icon_surface(os.path.join("Assets", "Map", "Silver.png"), coin_size)
+    bronze_icon = _get_icon_surface(os.path.join("Assets", "Map", "Bronze.png"), coin_size)
+    
+    # Draw currency row
+    currency_y = currency_y_offset
+    coin_spacing = 120  # Horizontal spacing between each coin type
+    coin_start_x = 20
+    
+    # Gold
+    if gold_icon:
+        layer.blit(gold_icon, (coin_start_x, currency_y))
+    gold_text = currency_font.render(f"{gold}", True, ink)
+    layer.blit(gold_text, (coin_start_x + coin_size + 8, currency_y + (coin_size - gold_text.get_height()) // 2))
+    
+    # Silver
+    if silver_icon:
+        layer.blit(silver_icon, (coin_start_x + coin_spacing, currency_y))
+    silver_text = currency_font.render(f"{silver}", True, ink)
+    layer.blit(silver_text, (coin_start_x + coin_spacing + coin_size + 8, currency_y + (coin_size - silver_text.get_height()) // 2))
+    
+    # Bronze
+    if bronze_icon:
+        layer.blit(bronze_icon, (coin_start_x + coin_spacing * 2, currency_y))
+    bronze_text = currency_font.render(f"{bronze}", True, ink)
+    layer.blit(bronze_text, (coin_start_x + coin_spacing * 2 + coin_size + 8, currency_y + (coin_size - bronze_text.get_height()) // 2))
+
+    # total content height for scrolling/clamp (add space for currency display)
+    currency_height = currency_row_height + currency_y_offset
     if items:
-        _TOTAL_CONTENT_H = len(items) * _ROW_H + (len(items) - 1) * _ROW_GAP
+        _TOTAL_CONTENT_H = currency_height + len(items) * _ROW_H + (len(items) - 1) * _ROW_GAP
     else:
-        _TOTAL_CONTENT_H = 0
+        _TOTAL_CONTENT_H = currency_height
 
     max_scroll = max(0, _TOTAL_CONTENT_H - vh)
     if _SCROLL_Y > max_scroll:
@@ -772,11 +825,12 @@ def _draw_inventory_on_popup(screen: pygame.Surface, popup_rect: pygame.Rect, fa
     local_mouse = (mx - vx, my - vy)
     screen_mouse = (mx, my)  # For arrow collision detection (already in logical coords)
 
-    y = -_SCROLL_Y
+    # Start items below currency display
+    y = currency_height - _SCROLL_Y
     if not items:
         msg = "No items yet"
         txt = name_font.render(msg, True, ink_dim)
-        layer.blit(txt, txt.get_rect(center=(vw//2, vh//2)))
+        layer.blit(txt, txt.get_rect(center=(vw//2, currency_height + (vh - currency_height) // 2)))
     else:
         for idx, it in enumerate(items):
             row_rect = pygame.Rect(0, y, vw, _ROW_H)
@@ -841,10 +895,85 @@ def _draw_inventory_on_popup(screen: pygame.Surface, popup_rect: pygame.Rect, fa
             pygame.draw.rect(layer, (0, 0, 0, 60), (sb_x, 0, sb_w, vh), border_radius=4)
             pygame.draw.rect(layer, (220, 210, 180, 160), (sb_x, sb_y, sb_w, sb_h), border_radius=4)
     
+    # Draw tooltip if hovering over an item
+    hovered_item = None
+    if items:
+        for idx, it in enumerate(items):
+            row_rect = pygame.Rect(0, currency_height - _SCROLL_Y + idx * (_ROW_H + _ROW_GAP), vw, _ROW_H)
+            if row_rect.collidepoint(local_mouse):
+                hovered_item = it
+                break
+    
+    if hovered_item:
+        tooltip_text = get_medieval_description(hovered_item["id"])
+        stats_text = get_item_stats_text(hovered_item["id"])
+        
+        # Use exact same DH font function as shop to ensure identical rendering
+        if shop_dh_font:
+            tooltip_font = shop_dh_font(16)  # Use shop's font function for exact match
+        else:
+            tooltip_font = _dh_font(16)  # Fallback to local function
+        
+        # Wrap text
+        words = tooltip_text.split()
+        lines = []
+        current_line = ""
+        max_width = 300  # Match shop tooltip max width exactly
+        
+        for word in words:
+            test_line = current_line + (" " if current_line else "") + word
+            if tooltip_font.size(test_line)[0] <= max_width:
+                current_line = test_line
+            else:
+                if current_line:
+                    lines.append(current_line)
+                current_line = word
+        if current_line:
+            lines.append(current_line)
+        
+        # Add stats text at bottom if available
+        if stats_text:
+            lines.append("")  # Empty line separator
+            lines.append(stats_text)
+        
+        # Draw tooltip box (matching shop tooltip exactly)
+        tooltip_padding = 12
+        tooltip_w = max(250, max([tooltip_font.size(line)[0] for line in lines]) + tooltip_padding * 2)
+        tooltip_h = len(lines) * 22 + tooltip_padding * 2  # Fixed 22px line height matching shop
+        
+        # Position tooltip near mouse, but keep it in viewport
+        tooltip_x = min(local_mouse[0] + 20, vw - tooltip_w - 20)
+        tooltip_y = local_mouse[1] - tooltip_h - 10
+        
+        # Make sure tooltip stays in viewport
+        if tooltip_y < 0:
+            tooltip_y = local_mouse[1] + 30
+        if tooltip_x < 0:
+            tooltip_x = 20
+        
+        tooltip_rect = pygame.Rect(tooltip_x, tooltip_y, tooltip_w, tooltip_h)
+        tooltip_bg = pygame.Surface((tooltip_w, tooltip_h), pygame.SRCALPHA)
+        # Match shop tooltip style exactly
+        tooltip_bg.fill((245, 245, 245))
+        pygame.draw.rect(tooltip_bg, (0, 0, 0), tooltip_bg.get_rect(), 4, border_radius=8)
+        inner_tooltip = tooltip_bg.get_rect().inflate(-8, -8)
+        pygame.draw.rect(tooltip_bg, (60, 60, 60), inner_tooltip, 2, border_radius=6)
+        layer.blit(tooltip_bg, tooltip_rect.topleft)
+        
+        # Draw text (dark like textbox, matching shop exactly)
+        text_y = tooltip_rect.y + tooltip_padding
+        for i, line in enumerate(lines):
+            # Stats text (last line) can be slightly different color/style
+            is_stats = stats_text and i == len(lines) - 1
+            color = (80, 80, 80) if is_stats else (16, 16, 16)  # Slightly lighter for stats
+            line_s = tooltip_font.render(line, True, color)
+            layer.blit(line_s, (tooltip_rect.x + tooltip_padding, text_y))
+            text_y += 22  # Fixed 22px line height matching shop
+    
     # Draw navigation arrows at bottom (cycling enabled)
     global _LEFT_ARROW_RECT, _RIGHT_ARROW_RECT
     arrow_size = 40
-    arrow_y = vh - 30
+    arrow_y = vh - 15  # Moved down a bit after adding currency display
     arrow_tip_size = 12
     arrow_color = ink
     arrow_hover_color = (255, 255, 255)

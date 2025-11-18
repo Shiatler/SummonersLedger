@@ -144,7 +144,20 @@ def load_everything():
     else:
         print(f"⚠️ Tavern sprite not found at: {tavern_path}")
 
-    print(f"🧪 Loaded: {len(summoners)} summoners, {len(vessels)} vessels, {len(rare_vessels)} rare, {len(monsters)} monsters, {len(mist_frames)} mist frames, {len(merchant_frames)} merchant frames, {'1' if tavern_sprite else '0'} tavern")
+    # Chest sprite (Assets/Map/Chest.png)
+    chest_sprite = None
+    chest_path = os.path.join(S.ASSETS_MAP_DIR, "Chest.png")
+    CHEST_SIZE = (int(S.PLAYER_SIZE[0] * 1.5), int(S.PLAYER_SIZE[1] * 1.5))  # 1.5x player size (same as tavern)
+    if os.path.exists(chest_path):
+        try:
+            chest_sprite = load_image(chest_path, size=CHEST_SIZE)
+            print(f"✅ Loaded chest sprite: {chest_path}")
+        except Exception as e:
+            print(f"⚠️ Failed to load chest sprite {chest_path}: {e}")
+    else:
+        print(f"⚠️ Chest sprite not found at: {chest_path}")
+
+    print(f"🧪 Loaded: {len(summoners)} summoners, {len(vessels)} vessels, {len(rare_vessels)} rare, {len(monsters)} monsters, {len(mist_frames)} mist frames, {len(merchant_frames)} merchant frames, {'1' if tavern_sprite else '0'} tavern, {'1' if chest_sprite else '0'} chest")
     return {
         "player": player,
         "summoners": summoners,
@@ -154,6 +167,7 @@ def load_everything():
         "mist_frames": mist_frames,   # <-- frames list
         "merchant_frames": merchant_frames,  # <-- merchant frames list
         "tavern_sprite": tavern_sprite,  # <-- tavern sprite
+        "chest_sprite": chest_sprite,  # <-- chest sprite
     }
 
 
