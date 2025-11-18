@@ -350,6 +350,17 @@ def _get_dex_text_for_vessel(vessel_name: str, category: str) -> str:
                 txt_path = os.path.join("Assets", "VesselsMale", f"MDex{class_name}{number}.txt")
             else:
                 return "???"
+        elif category == "monster":
+            # Monsters: MonsterDexDragon.txt, MonsterDexNothic.txt, etc.
+            # Monster names are already the class name (e.g., "Dragon", "Nothic", "Chestmonster")
+            # Extract monster name from vessel name (remove any extensions)
+            import re
+            from combat.vessel_stats import _extract_class
+            monster_name = _extract_class(vessel_name)
+            if monster_name:
+                txt_path = os.path.join("Assets", "VesselMonsters", f"MonsterDex{monster_name}.txt")
+            else:
+                return "???"
         else:
             return "???"
         
@@ -675,7 +686,7 @@ def handle(events, gs, dt=None, audio_bank=None, **_):
         # Mouse wheel scrolling
         if e.type == pygame.MOUSEWHEEL:
             # Scroll the grid - much faster and more responsive
-            scroll_speed = 10  # How many pixels to scroll per wheel tick (much faster)
+            scroll_speed = 60  # How many pixels to scroll per wheel tick (much faster)
             max_scroll = _calculate_max_scroll()
             _scroll_offset = max(0, min(_scroll_offset - e.y * scroll_speed, max_scroll))
         
