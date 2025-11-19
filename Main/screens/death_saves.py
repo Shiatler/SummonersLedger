@@ -298,19 +298,8 @@ def handle(events, gs, **_):
                     # Do not resolve to DEATH/GAME immediately; wait until overlay dismissed.
                     return None
 
-        # Escape hatch: any key without overlay goes straight to death
-        if e.type == pygame.KEYDOWN:
-            # Save game before going to death screen (prevents save scumming)
-            try:
-                from systems import save_system as saves
-                saves.save_game(gs, force=True)
-                print("💾 Game saved: Death saves escape hatch - going to death screen")
-            except Exception as ex:
-                print(f"⚠️ Save failed on death saves escape: {ex}")
-            
-            try: pygame.mixer.music.stop()
-            except Exception: pass
-            return MODE_DEATH
+        # Escape hatch disabled - players must complete death saves properly
+        # (Previously allowed ESC/Enter to skip to death screen)
 
     return None
 

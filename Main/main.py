@@ -419,6 +419,8 @@ def _handle_rival_dialogue_input(events, gs):
                 
                 print(f"💬 Rival dialogue dismissed, transitioning to VS screen: {gs.encounter_name}")
                 return True  # Signal that we should transition to VS screen
+        
+        elif event.type == pygame.MOUSEBUTTONDOWN and event.button == 1:
             # Stop walking sound if still playing
             if hasattr(gs, "rival_walking_channel") and gs.rival_walking_channel:
                 gs.rival_walking_channel.stop()
@@ -430,7 +432,10 @@ def _handle_rival_dialogue_input(events, gs):
             # Set up encounter flags for VS screen
             gs.in_encounter = True
             gs.encounter_timer = S.ENCOUNTER_SHOW_TIME
-            gs.encounter_name = gs.rival_encounter_data["name"]
+            # Use gs.rival_name (set during name entry) instead of encounter_data name
+            gs.encounter_name = getattr(gs, "rival_name", None) or gs.rival_encounter_data.get("name") or "Rival"
+            # Update encounter_boss_data with correct name
+            gs.rival_encounter_data["name"] = gs.encounter_name
             gs.encounter_sprite = gs.rival_encounter_data["sprite"]
             gs.encounter_type = "RIVAL"  # Mark as rival encounter
             gs.encounter_boss_data = gs.rival_encounter_data  # Store full data for battle
@@ -1997,8 +2002,8 @@ while running:
 
     # ===================== BLACK SCREEN ====================
     elif mode == MODE_BLACK_SCREEN:
-        next_mode = black_screen.handle(events, gs, **deps, saves=saves)
-        black_screen.draw(virtual_screen, gs, **deps)
+        next_mode = black_screen.handle(events, gs, dt, **deps, saves=saves)
+        black_screen.draw(virtual_screen, gs, dt, **deps)
         blit_virtual_to_screen(virtual_screen, screen)
         mouse_pos = pygame.mouse.get_pos()
         cursor_manager.draw_cursor(screen, mouse_pos, gs, mode)

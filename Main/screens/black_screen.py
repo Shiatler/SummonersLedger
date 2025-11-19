@@ -249,8 +249,13 @@ def enter(gs, **_):
     gs.starter_clicked = None
     gs._starter_last_rect = None
     gs._starter_circle_rect = None
+    
+    # Fade out state
+    gs._fade_out_active = False
+    gs._fade_out_timer = 0.0
+    gs._fade_out_duration = 2.0  # 2 seconds
 
-def draw(screen, gs, **_):
+def draw(screen, gs, dt=0.016, **_):
     screen.fill((0, 0, 0))
     _draw_grass(screen, gs._class_select["grass"])
 
@@ -287,15 +292,34 @@ def draw(screen, gs, **_):
             gs._starter_circle_rect.w // 2, width=3
         )
         screen.blit(ring, gs._starter_circle_rect.topleft)
+    
+    # Draw fade out overlay if active
+    if getattr(gs, "_fade_out_active", False):
+        fade_progress = min(1.0, gs._fade_out_timer / gs._fade_out_duration)
+        fade_alpha = int(fade_progress * 255)
+        fade_overlay = pygame.Surface((S.LOGICAL_WIDTH, S.LOGICAL_HEIGHT), pygame.SRCALPHA)
+        fade_overlay.fill((0, 0, 0, fade_alpha))
+        screen.blit(fade_overlay, (0, 0))
 
-def handle(events, gs, saves=None, audio_bank=None, **_):
+def handle(events, gs, dt=0.016, saves=None, audio_bank=None, **_):
+    # Update fade out timer if active
+    if getattr(gs, "_fade_out_active", False):
+        gs._fade_out_timer += dt
+        # Transition to overworld after fade completes
+        if gs._fade_out_timer >= gs._fade_out_duration:
+            return S.MODE_GAME
+    
+    # Block input during fade out
+    if getattr(gs, "_fade_out_active", False):
+        return None
+    
     for event in events:
         if event.type == pygame.KEYDOWN and event.key == pygame.K_ESCAPE:
             audio_sys.play_click(audio_bank)
             return S.MODE_MENU
 
         elif event.type == pygame.MOUSEBUTTONDOWN and event.button == 1:
-            # Accept spotlighted starter -> add token + continue
+            # Accept spotlighted starter -> add token + start fade
             # Convert mouse coordinates to logical coordinates for QHD support
             mx, my = coords.screen_to_logical(event.pos)
             if gs._starter_last_rect and gs._starter_last_rect.collidepoint(mx, my):
@@ -358,7 +382,11 @@ def handle(events, gs, saves=None, audio_bank=None, **_):
                         print("ℹ️ No starter_name available to map a token.")
                 except Exception as e:
                     print(f"⚠️ Failed to add starter token to party: {e}")
-                return "INTRO_VIDEO"
+                
+                # Start fade out transition
+                gs._fade_out_active = True
+                gs._fade_out_timer = 0.0
+                return None  # Stay on this screen until fade completes
 
             # Reveal: pick ONCE per class (remember thereafter)
             # Convert mouse coordinates to logical coordinates for QHD support

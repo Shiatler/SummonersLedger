@@ -1391,6 +1391,27 @@ def _exit_battle(gs):
     if hasattr(gs, "_ending_battle"):
         delattr(gs, "_ending_battle")
     
+    # Check if all vessels are dead - if so, go to death saves
+    # Rival battles: first encounter sets to 1 HP (handled above), subsequent go to death saves
+    # Boss battles and normal battles: go directly to death saves
+    if not has_living:
+        # Check if this was a first rival encounter (which sets vessels to 1 HP, so shouldn't reach here)
+        # But if it's a subsequent rival encounter or boss/normal battle, go to death saves
+        is_first_rival_loss = was_rival_battle and encounter_number == 1
+        if not is_first_rival_loss:
+            # Boss battle, normal battle, or subsequent rival encounter loss - go directly to death saves
+            from screens import death_saves as death_saves_screen
+            death_saves_screen.enter(gs)
+            # Save game when all vessels hit 0 HP (prevents save scumming)
+            try:
+                from systems import save_system as saves
+                saves.save_game(gs, force=True)
+                print("💾 Game saved: All vessels at 0 HP after battle - entering death saves")
+            except Exception as e:
+                print(f"⚠️ Save failed on death: {e}")
+            MODE_DEATH_SAVES = getattr(S, "MODE_DEATH_SAVES", "DEATH_SAVES")
+            return MODE_DEATH_SAVES
+    
     # Trigger score animation if this was a summoner battle victory
     # BUT only if buff selection is NOT pending (otherwise it will start after buff selection)
     if trigger_animation and not getattr(gs, "pending_buff_selection", False):

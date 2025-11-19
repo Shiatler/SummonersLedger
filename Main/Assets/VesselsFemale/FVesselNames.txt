@@ -1095,3 +1095,7 @@ Krosha
 Zarothar
 Gorgrasha
 Zyra
+Cercei
+Karlach
+Shadowheart
+Mother
