@@ -170,15 +170,6 @@ def _move_rows(panel: pygame.Rect, gs):
         disabled.append(rem <= 0)
         handlers.append((lambda _id=mv.id: (lambda gs: moves.queue(gs, _id)))())
 
-    # BACK row
-    i = len(rects)
-    rects.append(pygame.Rect(panel.x + pad, first_y + i * (row_h + 6), panel.w - pad*2, row_h))
-    labels.append("BACK")
-    subs_left.append("")
-    subs_right.append("")
-    disabled.append(False)
-    handlers.append(lambda gs: close_popup())
-
     return rects, labels, subs_left, subs_right, handlers, disabled
 
 #-------------- NO PP Helper -----------------------
@@ -219,7 +210,7 @@ def handle_event(e, gs) -> bool:
             audio_sys.play_click(bank)
             if not disabled[_SELECTED]:
                 ok = handlers[_SELECTED](gs)
-                if labels[_SELECTED] == "BACK" or ok:
+                if ok:
                     close_popup()
                     gs._turn_ready = False  # <-- mark turn consumed
             else:
@@ -255,7 +246,7 @@ def handle_event(e, gs) -> bool:
                     audio_sys.play_click(bank)
                     if not disabled[i]:
                         ok = handlers[i](gs)
-                        if labels[i] == "BACK" or ok:
+                        if ok:
                             close_popup()
                             gs._turn_ready = False  # <-- mark turn consumed
                     else:

@@ -20,7 +20,7 @@ DEFAULT_DURATION_MS = 500
 DEFAULT_ANGLE_DEG = -90.0  # rotate sprite -90deg so the blade points downward
 
 _MELEE_CLASSES = {"Paladin", "Fighter", "Barbarian", "Monk", "Rogue", "Bloodhunter"}
-_MONSTER_CLASSES = {"Dragon", "Owlbear", "Beholder", "Golem", "Ogre", "Nothic", "Myconid"}
+_MONSTER_CLASSES = {"Dragon", "Owlbear", "Beholder", "Golem", "Ogre", "Nothic", "Myconid", "Chestmonster"}
 _RANGED_MONSTER_EXCEPTIONS = {"Beholder", "Nothic", "Myconid"}
 
 def _ensure_anim_blob(gs):

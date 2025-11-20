@@ -10,6 +10,7 @@ def class_and_level_from_move_id(move_id: str) -> tuple[str | None, int | None]:
         "fighter": "fighter", "bard": "bard",
         "dragon": "dragon", "owlbear": "owlbear", "beholder": "beholder",
         "golem": "golem", "ogre": "ogre", "nothic": "nothic", "myconid": "myconid",
+        "chestmonster": "chestmonster",
     }
     klass = None
     for p, k in id_to_class_key.items():

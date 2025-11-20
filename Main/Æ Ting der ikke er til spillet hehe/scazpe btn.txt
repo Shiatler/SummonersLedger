@@ -1,0 +1,11 @@
+When clicking escape in these screens it cuts back. 
+Pressing escape these places should just do nothing. It been used to skip around for testing
+Remove the option to hit escape these places:
+
+Selecting character
+Choosing starter
+Blessing/buff animation
+Choosing blessing/buff
+Choosing what vessel to give buff in party manager
+Wild_vessel.py
+Summoner_battle.py

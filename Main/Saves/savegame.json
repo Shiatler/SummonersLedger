@@ -1,0 +1,229 @@
+{
+  "player_y": 92726.53999999576,
+  "distance_travelled": 7194.460000004241,
+  "next_event_at": 7263.0,
+  "player_gender": "male",
+  "party_slots_names": [
+    "StarterTokenBarbarian6.png",
+    null,
+    null,
+    null,
+    null,
+    null
+  ],
+  "party_vessel_stats": [
+    {
+      "name": "StarterBarbarian6",
+      "class_name": "Barbarian",
+      "level": 1,
+      "abilities": {
+        "STR": 13,
+        "DEX": 10,
+        "CON": 12,
+        "INT": 9,
+        "WIS": 8,
+        "CHA": 8
+      },
+      "mods": {
+        "STR": 1,
+        "DEX": 0,
+        "CON": 1,
+        "INT": -1,
+        "WIS": -1,
+        "CHA": -1
+      },
+      "prof": 2,
+      "ac": 13,
+      "hp": 13,
+      "initiative": 0,
+      "attack_stat": "STR",
+      "attack_bonus": 3,
+      "notes": "Generated from asset name",
+      "current_hp": 1,
+      "xp_current": 0,
+      "xp_needed": 3,
+      "xp_total": 0
+    },
+    null,
+    null,
+    null,
+    null,
+    null
+  ],
+  "rivals_on_map": [
+    {
+      "name": "Oskar Mistfall",
+      "filename": "MSummoner12",
+      "side": "left",
+      "x": 1101.0,
+      "y": 92100.03
+    },
+    {
+      "name": "Faelithar Silverwind",
+      "filename": "MSummoner3",
+      "side": "left",
+      "x": 1101.0,
+      "y": 87679.10999999839
+    },
+    {
+      "name": "Oskar Mistfall",
+      "filename": "MSummoner12",
+      "side": "right",
+      "x": 1381.0,
+      "y": 89513.97999999797
+    },
+    {
+      "name": "Zane Dreadflame",
+      "filename": "MSummoner15",
+      "side": "left",
+      "x": 1101.0,
+      "y": 92386.15999999778
+    },
+    {
+      "name": "Zane Dreadflame",
+      "filename": "MSummoner15",
+      "side": "right",
+      "x": 1381.0,
+      "y": 91578.53999999746
+    },
+    {
+      "name": "Noelle Blazeclaw",
+      "filename": "FSummoner8",
+      "side": "right",
+      "x": 1381.0,
+      "y": 89890.2099999973
+    },
+    {
+      "name": "Homer Silverclaw",
+      "filename": "MSummoner10",
+      "side": "right",
+      "x": 1381.0,
+      "y": 91850.02999999703
+    },
+    {
+      "name": "Gorlan Ironshard",
+      "filename": "MSummoner5",
+      "side": "left",
+      "x": 1101.0,
+      "y": 86955.22999999684
+    },
+    {
+      "name": "Noelle Blazeclaw",
+      "filename": "FSummoner8",
+      "side": "left",
+      "x": 1101.0,
+      "y": 88301.91999999658
+    },
+    {
+      "name": "Liliana Ravenshade",
+      "filename": "FSummoner10",
+      "side": "right",
+      "x": 1381.0,
+      "y": 86707.22999999655
+    },
+    {
+      "name": "Liliana Ravenshade",
+      "filename": "FSummoner10",
+      "side": "right",
+      "x": 1381.0,
+      "y": 84595.60999999593
+    }
+  ],
+  "vessels_on_map": [
+    {
+      "side": "left",
+      "x": 1101.0,
+      "y": 90359.88999999872
+    },
+    {
+      "side": "right",
+      "x": 1381.0,
+      "y": 91231.4499999982
+    },
+    {
+      "side": "right",
+      "x": 1381.0,
+      "y": 85997.40999999725
+    },
+    {
+      "side": "left",
+      "x": 1101.0,
+      "y": 87418.96999999679
+    },
+    {
+      "side": "left",
+      "x": 1101.0,
+      "y": 85798.38999999677
+    },
+    {
+      "side": "left",
+      "x": 1101.0,
+      "y": 86504.67999999586
+    }
+  ],
+  "merchants_on_map": [
+    {
+      "side": "left",
+      "x": 1101.0,
+      "y": 90614.76999999954
+    }
+  ],
+  "taverns_on_map": [
+    {
+      "side": "left",
+      "x": 1101.0,
+      "y": 93655.07999999724
+    },
+    {
+      "side": "left",
+      "x": 1101.0,
+      "y": 83440.55999999614
+    }
+  ],
+  "monsters_on_map": [
+    {
+      "asset_name": "Owlbear",
+      "side": "right",
+      "x": 1381.0,
+      "y": 90922.60999999635
+    }
+  ],
+  "inventory": {
+    "scroll_of_command": 5,
+    "scroll_of_mending": 10,
+    "rations": 1,
+    "alcohol": 1
+  },
+  "total_points": 0,
+  "gold": 10,
+  "silver": 0,
+  "bronze": 0,
+  "book_of_bound_discovered": [
+    "StarterBarbarian6"
+  ],
+  "archives": [],
+  "active_buffs": [
+    {
+      "tier": "Common",
+      "id": 4,
+      "name": "Common4",
+      "image_path": "Assets\\Blessings\\Common4.png"
+    }
+  ],
+  "buffs_history": [
+    {
+      "tier": "Common",
+      "id": 4,
+      "name": "Common4",
+      "image_path": "Assets\\Blessings\\Common4.png"
+    }
+  ],
+  "first_overworld_blessing_given": true,
+  "rival_gender": "female",
+  "rival_name": "s",
+  "rival_starter_class": "rogue",
+  "rival_starter_name": "StarterRogue4",
+  "rival_encounters_completed": [],
+  "first_rival_encounter_complete": false,
+  "saved_in_tavern": false
+}

@@ -1024,10 +1024,10 @@ def start_new_game(gs):
     gs.silver = 0
     gs.bronze = 0
     
-    # Initialize score with bootstrap value
+    # Initialize score (starts at 0, no bootstrap score)
     from systems import points as points_sys
     points_sys.ensure_points_field(gs)
-    gs.total_points = getattr(S, "BOOTSTRAP_TOTAL_POINTS", 0)
+    gs.total_points = 0
     
     # Reset first overworld blessing flag for new run
     gs.first_overworld_blessing_given = False
